@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <Windows.h>
 
+// Test push
+
 void log(const char* format, ...) {
 	va_list arguments;
 	const int size = 1000;
