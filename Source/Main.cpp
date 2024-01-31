@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <Windows.h>
 #include <stdint.h>
+#include <stdlib.h>
+#include <string>
 
 #include <gl/GL.h>
 #define GL_VERTEX_SHADER                  0x8B31
@@ -142,6 +144,47 @@ void loadglFunctions() {
 	glBufferData = (glBufferDataFunc)wglGetProcAddress("glBufferData");
 }
 
+const char* readShaderSource(const char* filePath) {
+	FILE* file;
+	errno_t err = fopen_s(&file, filePath, "rb");
+
+	if (err != 0 || file == NULL) {
+		log("ERROR: Shader source file did not open correctly");
+		return NULL;
+	}
+
+	fseek(file, 0, SEEK_END);
+	long length = ftell(file);
+	fseek(file, 0, SEEK_SET);
+
+	char* buffer = (char*)malloc(length + 1);
+
+	if (buffer == NULL) {
+		log("ERROR: Unable to allocate memory for file contents");
+		fclose(file);
+		return NULL;
+	}
+
+	if (length < 0) {
+		log("ERROR: length is negative when reading shader source file");
+		return NULL;
+	}
+
+	size_t readSize = fread(buffer, 1, length, file);
+	if (readSize < (size_t)length) {
+		log("ERROR: Could not read entire file.");
+		free(buffer);
+		fclose(file);
+		return NULL;
+	}
+
+	buffer[length] = '\0';
+
+	fclose(file);
+
+	return buffer;
+}
+
 uint32_t compileShader(GLenum shaderType, const char* shaderSource)
 {
 	uint32_t shader = glCreateShader(shaderType);
@@ -184,6 +227,10 @@ struct Vertex {
 int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd) {
 	OutputDebugString("Hello World!\n");
 
+	(void)hPrevInstance;
+	(void)lpCmdLine;
+	(void)nShowCmd;
+
 	WNDCLASS wndClass = {};
 	wndClass.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
 	wndClass.lpfnWndProc = windowProcedure;
@@ -198,7 +245,7 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 
 	RegisterClass(&wndClass);
 
-	HWND window = CreateWindowEx(WS_EX_APPWINDOW, "MyClassName", "2D Project Chris", WS_OVERLAPPEDWINDOW, 
+	HWND window = CreateWindowEx(WS_EX_APPWINDOW, "MyClassName", "2D Project Chris", WS_OVERLAPPEDWINDOW,
 		CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, NULL, NULL, hInstance, NULL
 	);
 
@@ -228,10 +275,10 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 	int pixelFormatIndex = ChoosePixelFormat(hdc, &pfd);
 
 	if (pixelFormatIndex == 0) {
-		log("Error: ChoosePixelFormat function returned 0"); 
+		log("Error: ChoosePixelFormat function returned 0");
 		return 1;
 	}
-	
+
 	if (!SetPixelFormat(hdc, pixelFormatIndex, &pfd)) {
 		log("Error: SetPixelFormat function returned false");
 		return 1;
@@ -249,36 +296,23 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		return 1;
 	}
 
-	MSG msg = {};
-
-	bool running = true;
-
 	loadglFunctions();
 
-	const char* vertexShaderString = "#version 330\n"
-		"layout(location = 0) in vec2 v_position;\n"
-		"layout(location = 1) in vec4 v_color;\n"
-		"out vec4 f_color;\n"
-		"void main()\n"
-		"{\n"
-		"f_color = v_color;\n"
-		"gl_Position = vec4(v_position.xy, 0, 1);\n"
-		"}\n";
+	const char* vertexShaderString = readShaderSource("C:\\Projects\\2D_Project_Chris\\Shaders\\vertexShader.txt");
 
-	const char* fragmentShaderString = "#version 330\n"
-		"out vec4 o_color;\n"
-		"in vec4 f_color;\n"
-		"void main()\n"
-		"{\n"
-		"o_color = f_color;\n"
-		"}\n";
+	const char* fragmentShaderString = readShaderSource("C:\\Projects\\2D_Project_Chris\\Shaders\\fragmentShader.txt");
+
+	if (vertexShaderString == NULL || fragmentShaderString == NULL) {
+		log("ERROR: shaderString returned NULL");
+		return 1;
+	}
 
 	uint32_t vertexShader = compileShader(GL_VERTEX_SHADER, vertexShaderString);
 
 	uint32_t fragmentShader = compileShader(GL_FRAGMENT_SHADER, fragmentShaderString);
 
 	if (vertexShader == 0 || fragmentShader == 0) {
-		// TODO LOG
+		log("Error: vertexShader or fragmentShader result == 0");
 		return 1;
 	}
 
@@ -324,21 +358,34 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 
 	glVertexAttribPointer(1, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(Vertex), (void*)offsetof(Vertex, color));
 
-	Vertex vertices[3];
+	// Have the square share the same points
+	Vertex vertices[6];
 
-	vertices[0].position.x = -0.5;
-	vertices[0].position.y = 0.5;
+	// First triangle
+	vertices[0].position = {-0.5f, 0.5f};
 	vertices[0].color = { 255, 0, 0, 255 };
 
-	vertices[1].position.x = 0.2;
-	vertices[1].position.y = 0;
-	vertices[1].color = { 0, 255, 0, 255 };
+	vertices[1].position = { 0.5f, -0.5f };
+	vertices[1].color = { 0, 0, 255, 255 };
 
-	vertices[2].position.x = -0.5;
-	vertices[2].position.y = -0.5;
-	vertices[2].color = { 0, 0, 255, 255 };
+	vertices[2].position = { -0.5f, -0.5f };
+	vertices[2].color = { 255, 0, 0, 255 };
+	
+	// Second triangle
+	vertices[3].position = { -0.5f, 0.5f };
+	vertices[3].color = { 255, 0, 0, 255 };
+
+	vertices[4].position = { 0.5f, -0.5f };
+	vertices[4].color = { 0, 0, 255, 255 };
+
+	vertices[5].position = { 0.5f, 0.5f };
+	vertices[5].color = { 0, 0, 255, 255 };
 
 	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+
+	MSG msg = {};
+
+	bool running = true;
 
 	while (running) {
 		while (PeekMessage(&msg, window, 0, 0, PM_REMOVE)) {
@@ -361,7 +408,7 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 
 		glUseProgram(shaderProgram);
 
-		glDrawArrays(GL_TRIANGLES, 0, 3);
+		glDrawArrays(GL_TRIANGLES, 0, 6);
 
 		if (!SwapBuffers(hdc)) {
 			log("Error: SwapBuffers function returned false");
@@ -369,6 +416,8 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		}
 	}
 
+	free((void*)vertexShaderString);
+	free((void*)fragmentShaderString);
 	glDeleteProgram(shaderProgram);
 
 	return 0;
