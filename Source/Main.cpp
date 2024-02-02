@@ -3,6 +3,12 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string>
+#include <unordered_map>
+
+#include <errno.h>
+#include <string.h> // For strerror
+
+#define arraySize(arr) (sizeof(arr) / sizeof((arr)[0]))
 
 #include <gl/GL.h>
 #define GL_VERTEX_SHADER                  0x8B31
@@ -18,6 +24,31 @@
 #define GL_DYNAMIC_COPY                   0x88EA
 
 typedef int64_t GLsizeiptr;
+
+/**********************************************
+ *
+ * Defer
+ *
+ ***************/
+
+template <typename T>
+struct ExitScope
+{
+	T lambda;
+	ExitScope(T lambda) : lambda(lambda) { }
+	~ExitScope() { lambda(); }
+	// NO_COPY(ExitScope);
+};
+
+struct ExitScopeHelp
+{
+	template<typename T>
+	ExitScope<T> operator+(T t) { return t; }
+};
+
+#define _SG_CONCAT(a, b) a ## b
+#define SG_CONCAT(a, b) _SG_CONCAT(a, b)
+#define DEFER auto SG_CONCAT(defer__, __LINE__) = ExitScopeHelp() + [&]()
 
 void log(const char* format, ...) {
 	va_list arguments;
@@ -156,17 +187,18 @@ const char* readShaderSource(const char* filePath) {
 	fseek(file, 0, SEEK_END);
 	long length = ftell(file);
 	fseek(file, 0, SEEK_SET);
+	
+	if (length < 0) {
+		log("ERROR: length is negative when reading shader source file");
+		fclose(file);
+		return NULL;
+	}
 
 	char* buffer = (char*)malloc(length + 1);
 
 	if (buffer == NULL) {
 		log("ERROR: Unable to allocate memory for file contents");
 		fclose(file);
-		return NULL;
-	}
-
-	if (length < 0) {
-		log("ERROR: length is negative when reading shader source file");
 		return NULL;
 	}
 
@@ -223,6 +255,84 @@ struct Vertex {
 	Vec2 position;
 	Color color;
 };
+
+uint32_t loadShaderProgram(const char* vertexShaderFilePath, const char* fragmentShaderFilePath) {
+	const char* vertexShaderString = readShaderSource(vertexShaderFilePath);
+	DEFER{ 
+		free((void*)vertexShaderString); 
+	};
+	const char* fragmentShaderString = readShaderSource(fragmentShaderFilePath);
+	DEFER{ 
+		free((void*)fragmentShaderString); 
+	};
+
+	if (vertexShaderString == NULL || fragmentShaderString == NULL) {
+		log("ERROR: vertexShaderString or fragmentShaderString == NULL");
+		return 0;
+	}
+
+	uint32_t vertexShader = compileShader(GL_VERTEX_SHADER, vertexShaderString);
+	uint32_t fragmentShader = compileShader(GL_FRAGMENT_SHADER, fragmentShaderString);
+	DEFER{
+		if (vertexShader != 0) {
+			glDeleteShader(vertexShader);
+		}
+		if (fragmentShader != 0) {
+			glDeleteShader(fragmentShader);
+		}
+	};
+
+	if (vertexShader == 0 || fragmentShader == 0) {
+		log("ERROR: vertexShader or fragmentShader result == 0");
+		return 0;
+	}
+
+	uint32_t shaderProgram = glCreateProgram();
+	glAttachShader(shaderProgram, vertexShader);
+	glAttachShader(shaderProgram, fragmentShader);
+	glLinkProgram(shaderProgram);
+
+	int linkStatus = 0;
+	glGetProgramiv(shaderProgram, GL_LINK_STATUS, &linkStatus);
+	if (linkStatus == GL_FALSE)
+	{
+		log("ERROR: linkStatus variable returned false");
+		int stringLength = 0;
+		char infoLog[1000] = {};
+		glGetProgramInfoLog(shaderProgram, 1000, &stringLength, infoLog);
+		glDeleteProgram(shaderProgram);
+		return 0;
+	}
+
+	return shaderProgram;
+}
+
+time_t getLastChangedFileTime(const char* filePath) {
+	struct stat fileAttrib;
+	if (stat(filePath, &fileAttrib) < 0) {
+		char errorMessage[256];
+
+		strerror_s(errorMessage, sizeof(errorMessage), errno);
+		log("ERROR: stat failed for %s, Error: %s", filePath, errorMessage);
+	}
+
+	return fileAttrib.st_mtime;
+}
+
+bool hasShaderChanged(const char* filePath) {
+	// We could use a struct to tract the shader attributes
+	static std::unordered_map<std::string, time_t> lastChangedTimes = {};
+	time_t currentFileTime = getLastChangedFileTime(filePath);
+
+	// Unordered maps will automatically create a new element if 
+	// one doesn't exist and initialzize the value to 0
+	if (lastChangedTimes[filePath] != currentFileTime) {
+		lastChangedTimes[filePath] = currentFileTime;
+		return true;
+	}
+	
+	return false;
+}
 
 int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd) {
 	OutputDebugString("Hello World!\n");
@@ -298,48 +408,11 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 
 	loadglFunctions();
 
-	const char* vertexShaderString = readShaderSource("C:\\Projects\\2D_Project_Chris\\Shaders\\vertexShader.txt");
+	const char* vertexShaderFilePath = "Shaders\\vertexShader.txt";
 
-	const char* fragmentShaderString = readShaderSource("C:\\Projects\\2D_Project_Chris\\Shaders\\fragmentShader.txt");
-
-	if (vertexShaderString == NULL || fragmentShaderString == NULL) {
-		log("ERROR: shaderString returned NULL");
-		return 1;
-	}
-
-	uint32_t vertexShader = compileShader(GL_VERTEX_SHADER, vertexShaderString);
-
-	uint32_t fragmentShader = compileShader(GL_FRAGMENT_SHADER, fragmentShaderString);
-
-	if (vertexShader == 0 || fragmentShader == 0) {
-		log("Error: vertexShader or fragmentShader result == 0");
-		return 1;
-	}
-
-	uint32_t shaderProgram = glCreateProgram();
-	glAttachShader(shaderProgram, vertexShader);
-	glAttachShader(shaderProgram, fragmentShader);
-	glLinkProgram(shaderProgram);
-
-	int linkStatus = 0;
-
-	glGetProgramiv(shaderProgram, GL_LINK_STATUS, &linkStatus);
-
-	if (linkStatus == GL_FALSE)
-	{
-		log("Error: linkStatus variable returned false");
-		int stringLength = 0;
-		char infoLog[1000] = {};
-		glGetProgramInfoLog(shaderProgram, 1000, &stringLength, infoLog);
-
-		return 1;
-	}
-
-	// Attached shaders will only be deleted when they are no longer attached
-	// to a object. They will be flagged for deletion and deleted when they 
-	// are no longer attached.
-	glDeleteShader(vertexShader);
-	glDeleteShader(fragmentShader);
+	const char* fragmentShaderFilePath = "Shaders\\fragmentShader.txt";
+	
+	uint32_t shaderProgram = {};
 
 	GLuint vbo;
 	glGenBuffers(1, &vbo);
@@ -398,7 +471,7 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		}
 
 		Sleep(1);
-
+		
 		RECT rect = {};
 		GetClientRect(window, &rect);
 		glViewport(0, 0, rect.right, rect.bottom);
@@ -406,18 +479,30 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		glClearColor(0, 0, 0, 0);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
+		if (hasShaderChanged(vertexShaderFilePath) || hasShaderChanged(fragmentShaderFilePath)) {
+			uint32_t newShaderProgram = loadShaderProgram(vertexShaderFilePath, fragmentShaderFilePath);
+
+			if (newShaderProgram == 0) {
+				log("ERROR: shaderProgram returned 0");
+				return 1;
+			}
+
+			if (shaderProgram != 0) {
+				glDeleteProgram(shaderProgram);
+			}
+			shaderProgram = newShaderProgram;
+		}
+
 		glUseProgram(shaderProgram);
 
-		glDrawArrays(GL_TRIANGLES, 0, 6);
-
+		glDrawArrays(GL_TRIANGLES, 0, arraySize(vertices));
+		
 		if (!SwapBuffers(hdc)) {
 			log("Error: SwapBuffers function returned false");
 			return 1;
 		}
 	}
 
-	free((void*)vertexShaderString);
-	free((void*)fragmentShaderString);
 	glDeleteProgram(shaderProgram);
 
 	return 0;
