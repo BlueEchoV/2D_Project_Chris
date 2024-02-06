@@ -1,9 +1,28 @@
 #version 330
+
+uniform float screenWidth;
+uniform float screenHeight;
+
 layout(location = 0) in vec2 v_position;
 layout(location = 1) in vec4 v_color;
+layout(location = 2) in vec2 v_uv;
+
 out vec4 f_color;
+out vec2 f_uv;
+
 void main()
 {
     f_color = v_color;
-    gl_Position = vec4(v_position.xy, 1, 1);
+	f_uv = v_uv;
+	
+	// Convert pixel coordinates to NDC
+	// [0,1] -> [0,2] -> [-1,1] - To match OpenGL's 
+	// coordinate system
+	float x = (v_position.x / screenWidth)  * 2.0 - 1.0;
+	// I could do a transformation here though? -> -2.0 + 1.0
+	// And not call STBI Flip when I load the image
+	// This would flip the origin from the bottom left to the top right
+	float y = (v_position.y / screenHeight) * 2.0 - 1.0;
+	
+    gl_Position = vec4(x, y, 0, 1);
 }

@@ -5,8 +5,13 @@
 #include <string>
 #include <unordered_map>
 
+
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
 #include <errno.h>
 #include <string.h> // For strerror
+
 
 #define arraySize(arr) (sizeof(arr) / sizeof((arr)[0]))
 
@@ -22,6 +27,18 @@
 #define GL_DYNAMIC_DRAW                   0x88E8
 #define GL_DYNAMIC_READ                   0x88E9
 #define GL_DYNAMIC_COPY                   0x88EA
+#define WGL_CONTEXT_MAJOR_VERSION_ARB     0x2091
+#define WGL_CONTEXT_MINOR_VERSION_ARB     0x2092
+#define WGL_CONTEXT_FLAGS_ARB             0x2094
+#define WGL_CONTEXT_DEBUG_BIT_ARB         0x00000001
+#define WGL_CONTEXT_PROFILE_MASK_ARB      0x9126
+#define WGL_CONTEXT_CORE_PROFILE_BIT_ARB  0x00000001
+
+int widthScreen = 1920;
+int heightScreen = 1080;
+bool screenSizeChanged = false;
+GLuint screenWidthLocation = {};
+GLuint screenHeightLocation = {};
 
 typedef int64_t GLsizeiptr;
 
@@ -72,6 +89,12 @@ LRESULT windowProcedure(HWND windowHandle, UINT messageType, WPARAM wParam, LPAR
 	switch (messageType) {
 	case WM_KEYDOWN: {
 		log("WM_KEYDOWN: %llu", wParam);
+		break;
+	}
+	case WM_SIZE: {
+		widthScreen = LOWORD(lParam);
+		heightScreen = HIWORD(lParam);
+		screenSizeChanged = true;
 		break;
 	}
 
@@ -148,7 +171,16 @@ glBindBufferFunc glBindBuffer = {};
 typedef void(*glBufferDataFunc)(GLenum target, GLsizeiptr size, const void* data, GLenum usage);
 glBufferDataFunc glBufferData = {};
 
-void loadglFunctions() {
+typedef GLuint(*glGetUniformLocationFunc)(GLuint program, const GLchar* name);
+glGetUniformLocationFunc glGetUniformLocation = {};
+
+typedef void(*glUniform1fFunc)(GLint location,GLfloat v0);
+glUniform1fFunc glUniform1f = {};
+
+typedef HGLRC(WINAPI* wglCreateContextAttribsARBFunc) (HDC hDC, HGLRC hShareContext, const int* attribList);
+wglCreateContextAttribsARBFunc wglCreateContextAttribsARB = {};
+
+void loadGLFunctions() {
 	glCreateShader = (glCreateShaderFunc)wglGetProcAddress("glCreateShader");
 	glShaderSource = (glShaderSourceFunc)wglGetProcAddress("glShaderSource");
 	glCompileShader = (glCompileShaderFunc)wglGetProcAddress("glCompileShader");
@@ -173,6 +205,11 @@ void loadglFunctions() {
 	glBindVertexArray = (glBindVertexArrayFunc)wglGetProcAddress("glBindVertexArray");
 	glBindBuffer = (glBindBufferFunc)wglGetProcAddress("glBindBuffer");
 	glBufferData = (glBufferDataFunc)wglGetProcAddress("glBufferData");
+
+	glGetUniformLocation = (glGetUniformLocationFunc)wglGetProcAddress("glGetUniformLocation");
+	glUniform1f = (glUniform1fFunc)wglGetProcAddress("glUniform1f");
+
+	wglCreateContextAttribsARB = (wglCreateContextAttribsARBFunc)wglGetProcAddress("wglCreateContextAttribsARB");
 }
 
 const char* readShaderSource(const char* filePath) {
@@ -184,13 +221,16 @@ const char* readShaderSource(const char* filePath) {
 		return NULL;
 	}
 
+	DEFER{
+		fclose(file);
+	};
+
 	fseek(file, 0, SEEK_END);
 	long length = ftell(file);
 	fseek(file, 0, SEEK_SET);
-	
+
 	if (length < 0) {
 		log("ERROR: length is negative when reading shader source file");
-		fclose(file);
 		return NULL;
 	}
 
@@ -198,7 +238,6 @@ const char* readShaderSource(const char* filePath) {
 
 	if (buffer == NULL) {
 		log("ERROR: Unable to allocate memory for file contents");
-		fclose(file);
 		return NULL;
 	}
 
@@ -206,13 +245,10 @@ const char* readShaderSource(const char* filePath) {
 	if (readSize < (size_t)length) {
 		log("ERROR: Could not read entire file.");
 		free(buffer);
-		fclose(file);
 		return NULL;
 	}
 
 	buffer[length] = '\0';
-
-	fclose(file);
 
 	return buffer;
 }
@@ -234,6 +270,16 @@ uint32_t compileShader(GLenum shaderType, const char* shaderSource)
 		int stringLength = 0;
 		char infoLog[1000] = {};
 		glGetShaderInfoLog(shader, 1000, &stringLength, infoLog);
+		
+		const char* shaderTypeName = "Shader Type Unknown";
+		if (shaderType == GL_VERTEX_SHADER) {
+			shaderTypeName = "Vertex Shader";
+		}
+		else if (shaderType == GL_FRAGMENT_SHADER) {
+			shaderTypeName = "Fragment Shader";
+		}
+
+		MessageBox(NULL, infoLog, shaderTypeName, MB_OK);
 
 		glDeleteShader(shader);
 
@@ -254,16 +300,17 @@ struct Color {
 struct Vertex {
 	Vec2 position;
 	Color color;
+	Vec2 uv;
 };
 
 uint32_t loadShaderProgram(const char* vertexShaderFilePath, const char* fragmentShaderFilePath) {
 	const char* vertexShaderString = readShaderSource(vertexShaderFilePath);
-	DEFER{ 
-		free((void*)vertexShaderString); 
+	DEFER{
+		free((void*)vertexShaderString);
 	};
 	const char* fragmentShaderString = readShaderSource(fragmentShaderFilePath);
-	DEFER{ 
-		free((void*)fragmentShaderString); 
+	DEFER{
+		free((void*)fragmentShaderString);
 	};
 
 	if (vertexShaderString == NULL || fragmentShaderString == NULL) {
@@ -273,6 +320,7 @@ uint32_t loadShaderProgram(const char* vertexShaderFilePath, const char* fragmen
 
 	uint32_t vertexShader = compileShader(GL_VERTEX_SHADER, vertexShaderString);
 	uint32_t fragmentShader = compileShader(GL_FRAGMENT_SHADER, fragmentShaderString);
+
 	DEFER{
 		if (vertexShader != 0) {
 			glDeleteShader(vertexShader);
@@ -283,7 +331,7 @@ uint32_t loadShaderProgram(const char* vertexShaderFilePath, const char* fragmen
 	};
 
 	if (vertexShader == 0 || fragmentShader == 0) {
-		log("ERROR: vertexShader or fragmentShader result == 0");
+		log("ERROR: vertexShader or fragmentShader didn't compile");
 		return 0;
 	}
 
@@ -317,6 +365,34 @@ time_t getLastChangedFileTime(const char* filePath) {
 	}
 
 	return fileAttrib.st_mtime;
+}
+
+GLuint loadTexture(const char* filePath) {
+	stbi_set_flip_vertically_on_load(true);
+
+	int width, height, channels;
+	unsigned char* imageData = stbi_load(filePath, &width, &height, &channels, 4);
+	if (!imageData) {
+		log("ERROR: stbi_load failed");
+		return 0;
+	}
+	DEFER{
+		stbi_image_free(imageData);
+	};
+
+	GLuint textureID;
+	glGenTextures(1, &textureID);
+	glBindTexture(GL_TEXTURE_2D, textureID);
+	
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width,
+		height, 0, GL_RGBA, GL_UNSIGNED_BYTE, imageData);
+
+	return textureID;
 }
 
 bool hasShaderChanged(const char* filePath) {
@@ -356,7 +432,7 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 	RegisterClass(&wndClass);
 
 	HWND window = CreateWindowEx(WS_EX_APPWINDOW, "MyClassName", "2D Project Chris", WS_OVERLAPPEDWINDOW,
-		CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, NULL, NULL, hInstance, NULL
+		CW_USEDEFAULT, CW_USEDEFAULT, widthScreen, heightScreen, NULL, NULL, hInstance, NULL
 	);
 
 	ShowWindow(window, SW_SHOW);
@@ -394,19 +470,28 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		return 1;
 	}
 
-	HGLRC glRendereringContext = wglCreateContext(hdc);
+	HGLRC temp_context = wglCreateContext(hdc);
+	wglMakeCurrent(hdc, temp_context);
+	loadGLFunctions();
+
+	int attrib_list[] = {
+		WGL_CONTEXT_MAJOR_VERSION_ARB, 3,
+		WGL_CONTEXT_MINOR_VERSION_ARB, 3,
+#if _DEBUG
+		WGL_CONTEXT_FLAGS_ARB, WGL_CONTEXT_DEBUG_BIT_ARB, //WGL_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB,
+#endif
+		WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
+		0, 0
+	};
+
+	HGLRC glRendereringContext = wglCreateContextAttribsARB(hdc, 0, attrib_list);
+	wglMakeCurrent(hdc, glRendereringContext);
+	wglDeleteContext(temp_context);
 
 	if (glRendereringContext == NULL) {
 		log("Error: wglCreateContext function returned false");
 		return 1;
 	}
-
-	if (!wglMakeCurrent(hdc, glRendereringContext)) {
-		log("Error: wglMakeCurrent function returned false");
-		return 1;
-	}
-
-	loadglFunctions();
 
 	const char* vertexShaderFilePath = "Shaders\\vertexShader.txt";
 
@@ -414,51 +499,124 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 	
 	uint32_t shaderProgram = {};
 
-	GLuint vbo;
-	glGenBuffers(1, &vbo);
-	glBindBuffer(GL_ARRAY_BUFFER, vbo);
+	// TODO: Review VAO and VBO with Chris
+	GLuint vaoOne;
+	glGenVertexArrays(1, &vaoOne);
+	glBindVertexArray(vaoOne);
 
-	GLuint vao;
-	glGenVertexArrays(1, &vao);
-	glBindVertexArray(vao);
+	GLuint vboOne;
+	glGenBuffers(1, &vboOne);
+	glBindBuffer(GL_ARRAY_BUFFER, vboOne);
 
 	glEnableVertexAttribArray(0);
-
-	// The buffer must be bound before we call this
 	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, position));
 
 	glEnableVertexAttribArray(1);
-
 	glVertexAttribPointer(1, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(Vertex), (void*)offsetof(Vertex, color));
 
+	glEnableVertexAttribArray(2);
+	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
+
 	// Have the square share the same points
-	Vertex vertices[6];
+	Vertex verticesImage1[6];
+
+	// Center of the window for an 800x600 resolution
+	float centerX = widthScreen / 2.0f;
+	float centerY = heightScreen / 2.0f;
+
+	// Adjust positions to be around the center
+	float halfSize = 200.0f; // Half the size of your square
+
+	// Origin is the top left
 
 	// First triangle
-	vertices[0].position = {-0.5f, 0.5f};
-	vertices[0].color = { 255, 0, 0, 255 };
+	verticesImage1[0].position = { centerX - halfSize, centerY + halfSize };
+	verticesImage1[0].color = { 255, 0, 0, 255 };
+	verticesImage1[0].uv = { 0.0f, 1.0f };
 
-	vertices[1].position = { 0.5f, -0.5f };
-	vertices[1].color = { 0, 0, 255, 255 };
+	verticesImage1[1].position = { centerX + halfSize, centerY - halfSize };
+	verticesImage1[1].color = { 0, 0, 255, 255 };
+	verticesImage1[1].uv = { 1.0f, 0.0f };
 
-	vertices[2].position = { -0.5f, -0.5f };
-	vertices[2].color = { 255, 0, 0, 255 };
-	
+	verticesImage1[2].position = { centerX - halfSize, centerY - halfSize };
+	verticesImage1[2].color = { 255, 0, 0, 255 };
+	verticesImage1[2].uv = { 0.0f, 0.0f };
+
 	// Second triangle
-	vertices[3].position = { -0.5f, 0.5f };
-	vertices[3].color = { 255, 0, 0, 255 };
+	verticesImage1[3].position = { centerX - halfSize, centerY + halfSize };
+	verticesImage1[3].color = { 255, 0, 0, 255 };
+	verticesImage1[3].uv = { 0.0f, 1.0f };
 
-	vertices[4].position = { 0.5f, -0.5f };
-	vertices[4].color = { 0, 0, 255, 255 };
+	verticesImage1[4].position = { centerX + halfSize, centerY - halfSize };
+	verticesImage1[4].color = { 0, 0, 255, 255 };
+	verticesImage1[4].uv = { 1.0f, 0.0f };
 
-	vertices[5].position = { 0.5f, 0.5f };
-	vertices[5].color = { 0, 0, 255, 255 };
+	verticesImage1[5].position = { centerX + halfSize, centerY + halfSize };
+	verticesImage1[5].color = { 0, 0, 255, 255 };
+	verticesImage1[5].uv = { 1.0f, 1.0f };
 
-	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(verticesImage1), verticesImage1, GL_STATIC_DRAW);
+
+	GLuint vaoTwo;
+	glGenVertexArrays(1, &vaoTwo);
+	glBindVertexArray(vaoTwo); 
+
+	GLuint vboTwo;
+	glGenBuffers(1, &vboTwo);
+	glBindBuffer(GL_ARRAY_BUFFER, vboTwo);
+
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, position));
+
+	glEnableVertexAttribArray(1);
+	glVertexAttribPointer(1, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(Vertex), (void*)offsetof(Vertex, color));
+
+	glEnableVertexAttribArray(2);
+	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
+
+	// Have the square share the same points
+	Vertex verticesImage2[6];
+	// First triangle
+	verticesImage2[0].position = { centerX - halfSize, centerY + halfSize };
+	verticesImage2[0].color = { 255, 0, 0, 255 };
+	verticesImage2[0].uv = { 0.0f, 1.0f };
+				 
+	verticesImage2[1].position = { centerX + halfSize, centerY - halfSize };
+	verticesImage2[1].color = { 0, 0, 255, 255 };
+	verticesImage2[1].uv = { 1.0f, 0.0f };
+				 
+	verticesImage2[2].position = { centerX - halfSize, centerY - halfSize };
+	verticesImage2[2].color = { 255, 0, 0, 255 };
+	verticesImage2[2].uv = { 0.0f, 0.0f };
+				 
+	// Second tri2ngle
+	verticesImage2[3].position = { centerX - halfSize, centerY + halfSize };
+	verticesImage2[3].color = { 255, 0, 0, 255 };
+	verticesImage2[3].uv = { 0.0f, 1.0f };
+				 
+	verticesImage2[4].position = { centerX + halfSize, centerY - halfSize };
+	verticesImage2[4].color = { 0, 0, 255, 255 };
+	verticesImage2[4].uv = { 1.0f, 0.0f };
+				 
+	verticesImage2[5].position = { centerX + halfSize, centerY + halfSize };
+	verticesImage2[5].color = { 0, 0, 255, 255 };
+	verticesImage2[5].uv = { 1.0f, 1.0f };
+
+	float offsetX = halfSize * 2;
+
+	for (int i = 0; i < arraySize(verticesImage2); i++) {
+		verticesImage2[i].position.x += offsetX;
+	}
+
+	glBufferData(GL_ARRAY_BUFFER, sizeof(verticesImage2), verticesImage2, GL_STATIC_DRAW);
 
 	MSG msg = {};
 
 	bool running = true;
+
+	GLuint textureAzir = loadTexture("assets/azir.jpg");
+
+	GLuint textureSmolder = loadTexture("assets/smolder.jpg");
 
 	while (running) {
 		while (PeekMessage(&msg, window, 0, 0, PM_REMOVE)) {
@@ -468,13 +626,14 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 			if (msg.message == WM_QUIT) {
 				running = false;
 			}
+
 		}
 
 		Sleep(1);
-		
-		RECT rect = {};
-		GetClientRect(window, &rect);
-		glViewport(0, 0, rect.right, rect.bottom);
+
+		// RECT rect = {};
+		// GetClientRect(window, &rect);
+		// glViewport(0, 0, widthScreen, heightScreen);
 
 		glClearColor(0, 0, 0, 0);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
@@ -482,21 +641,41 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		if (hasShaderChanged(vertexShaderFilePath) || hasShaderChanged(fragmentShaderFilePath)) {
 			uint32_t newShaderProgram = loadShaderProgram(vertexShaderFilePath, fragmentShaderFilePath);
 
-			if (newShaderProgram == 0) {
-				log("ERROR: shaderProgram returned 0");
-				return 1;
-			}
-
 			if (shaderProgram != 0) {
 				glDeleteProgram(shaderProgram);
 			}
-			shaderProgram = newShaderProgram;
+
+			if (newShaderProgram == 0) {
+				log("ERROR: shaderProgram returned 0");
+			}
+			else {
+				shaderProgram = newShaderProgram;
+				glUseProgram(shaderProgram);
+
+				screenWidthLocation = glGetUniformLocation(shaderProgram, "screenWidth");
+				screenHeightLocation = glGetUniformLocation(shaderProgram, "screenHeight");
+
+				glUniform1f(screenWidthLocation, (GLfloat)widthScreen);
+				glUniform1f(screenHeightLocation, (GLfloat)heightScreen);
+			}
+
 		}
 
-		glUseProgram(shaderProgram);
+		if (screenSizeChanged) {
+			glUniform1f(screenWidthLocation, (GLfloat)widthScreen);
+			glUniform1f(screenHeightLocation, (GLfloat)heightScreen);
+			glViewport(0, 0, widthScreen, heightScreen);
+			screenSizeChanged = false;
+		}
 
-		glDrawArrays(GL_TRIANGLES, 0, arraySize(vertices));
-		
+		glBindVertexArray(vaoOne);
+		glBindTexture(GL_TEXTURE_2D, textureAzir);
+		glDrawArrays(GL_TRIANGLES, 0, arraySize(verticesImage1));
+
+		glBindVertexArray(vaoTwo);
+		glBindTexture(GL_TEXTURE_2D, textureSmolder);
+		glDrawArrays(GL_TRIANGLES, 0, arraySize(verticesImage2));
+
 		if (!SwapBuffers(hdc)) {
 			log("Error: SwapBuffers function returned false");
 			return 1;
