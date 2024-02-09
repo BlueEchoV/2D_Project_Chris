@@ -1,5 +1,4 @@
 #version 330
-
 uniform float screenWidth;
 uniform float screenHeight;
 
@@ -14,15 +13,9 @@ void main()
 {
     f_color = v_color;
 	f_uv = v_uv;
-	
-	// Convert pixel coordinates to NDC
-	// [0,1] -> [0,2] -> [-1,1] - To match OpenGL's 
-	// coordinate system
+	 
 	float x = (v_position.x / screenWidth)  * 2.0 - 1.0;
-	// I could do a transformation here though? -> -2.0 + 1.0
-	// And not call STBI Flip when I load the image
-	// This would flip the origin from the bottom left to the top right
 	float y = (v_position.y / screenHeight) * 2.0 - 1.0;
 	
-    gl_Position = vec4(x, y, 0, 1);
+    gl_Position = vec4(x, -y, 0, 1);
 }
