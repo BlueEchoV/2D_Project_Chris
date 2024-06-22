@@ -11,8 +11,6 @@
 #include <errno.h>
 #include <string.h>
 
-#include "Backend.h"
-
 #define arraySize(arr) (sizeof(arr) / sizeof((arr)[0]))
 
 #include <gl/GL.h>
@@ -34,30 +32,8 @@
 #define WGL_CONTEXT_PROFILE_MASK_ARB      0x9126
 #define WGL_CONTEXT_CORE_PROFILE_BIT_ARB  0x00000001
 
-struct MouseClick {
-	bool clicked = false;
-	Vec2 position = {};
-};
-
-MouseClick lastMouseClick;
-
-std::vector<Command> commandQueue;
-
-void processCommands() {
-	// Sort commands based of the layer being drawn
-	// Sort(commandQueue);
-
-	/*
-	for (const auto& command : commandQueue) {
-		glUseProgram(command.shaderType);
-	}
-	*/
-
-	// comandQueue.clear();
-}
-
-GLuint screenWidthLocation = {};
-GLuint screenHeightLocation = {};
+#define GL_TEXTURE0                       0x84C0
+#define GL_TEXTURE1                       0x84C1
 
 typedef int64_t GLsizeiptr;
 
@@ -86,12 +62,6 @@ struct ExitScopeHelp
 #define SG_CONCAT(a, b) _SG_CONCAT(a, b)
 #define DEFER auto SG_CONCAT(defer__, __LINE__) = ExitScopeHelp() + [&]()
 
-struct ShaderProgramData {
-	uint32_t shaderProgramID;
-	time_t vertexShaderLastModTime;
-	time_t fragmentShaderLastModTime;
-};
-
 void log(const char* format, ...) {
 	va_list arguments;
 	const int size = 1000;
@@ -117,10 +87,16 @@ LRESULT windowProcedure(HWND windowHandle, UINT messageType, WPARAM wParam, LPAR
 		break;
 	}
 	case WM_LBUTTONDOWN: {
-		lastMouseClick.position.x = static_cast<float>LOWORD(lParam);
-		lastMouseClick.position.y = static_cast<float>HIWORD(lParam);
-		lastMouseClick.clicked = true;
+		break;
 	}
+	case WM_CLOSE: {
+		DestroyWindow(windowHandle);
+		break;
+	}
+	case WM_DESTROY: {
+		PostQuitMessage(0);
+		break;
+	} 
 	default: {
 		result = DefWindowProc(windowHandle, messageType, wParam, lParam);
 	}
@@ -203,6 +179,12 @@ glUniform1fFunc glUniform1f = {};
 typedef HGLRC(WINAPI* wglCreateContextAttribsARBFunc) (HDC hDC, HGLRC hShareContext, const int* attribList);
 wglCreateContextAttribsARBFunc wglCreateContextAttribsARB = {};
 
+typedef void(*glActiveTextureFunc)(GLenum texture);
+glActiveTextureFunc glActiveTexture= {};
+
+typedef void(*glUniform1iFunc)(GLint location, GLint v0);
+glUniform1iFunc glUniform1i = {};
+
 void loadGLFunctions() {
 	glCreateShader = (glCreateShaderFunc)wglGetProcAddress("glCreateShader");
 	glShaderSource = (glShaderSourceFunc)wglGetProcAddress("glShaderSource");
@@ -231,201 +213,64 @@ void loadGLFunctions() {
 
 	glGetUniformLocation = (glGetUniformLocationFunc)wglGetProcAddress("glGetUniformLocation");
 	glUniform1f = (glUniform1fFunc)wglGetProcAddress("glUniform1f");
+	glUniform1i = (glUniform1iFunc)wglGetProcAddress("glUniform1i");
 
 	wglCreateContextAttribsARB = (wglCreateContextAttribsARBFunc)wglGetProcAddress("wglCreateContextAttribsARB");
+
+	glActiveTexture = (glActiveTextureFunc)wglGetProcAddress("glActiveTexture");
 }
 
-const char* readShaderSource(const char* filePath) {
-	FILE* file;
-	errno_t err = fopen_s(&file, filePath, "rb");
-
-	if (err != 0 || file == NULL) {
-		log("ERROR: Shader source file did not open correctly");
-		return NULL;
-	}
-
-	DEFER{
-		fclose(file);
-	};
-
-	fseek(file, 0, SEEK_END);
-	long length = ftell(file);
-	fseek(file, 0, SEEK_SET);
-
-	if (length < 0) {
-		log("ERROR: length is negative when reading shader source file");
-		return NULL;
-	}
-
-	char* buffer = (char*)malloc(length + 1);
-
-	if (buffer == NULL) {
-		log("ERROR: Unable to allocate memory for file contents");
-		return NULL;
-	}
-
-	size_t readSize = fread(buffer, 1, length, file);
-	if (readSize < (size_t)length) {
-		log("ERROR: Could not read entire file.");
-		free(buffer);
-		return NULL;
-	}
-
-	buffer[length] = '\0';
-
-	return buffer;
-}
-
-uint32_t compileShader(GLenum shaderType, const char* shaderSource)
-{
-	uint32_t shader = glCreateShader(shaderType);
-
-	glShaderSource(shader, 1, &shaderSource, NULL);
-
-	glCompileShader(shader);
-
-	int compileStatus = 0;
-
-	glGetShaderiv(shader, GL_COMPILE_STATUS, &compileStatus);
-
-	if (compileStatus == GL_FALSE) {
-		log("ERROR: compileStatus variable returned false (compileShader)");
-		int stringLength = 0;
-		char infoLog[1000] = {};
-		glGetShaderInfoLog(shader, 1000, &stringLength, infoLog);
-		
-		const char* shaderTypeName = "Shader Type Unknown";
-		if (shaderType == GL_VERTEX_SHADER) {
-			shaderTypeName = "Vertex Shader";
-		}
-		else if (shaderType == GL_FRAGMENT_SHADER) {
-			shaderTypeName = "Fragment Shader";
-		}
-
-		MessageBox(NULL, infoLog, shaderTypeName, MB_OK);
-
-		glDeleteShader(shader);
-
-		return 0;
-	}
-
-	return shader;
-}
+struct V2 {
+	float x;
+	float y;
+};
 
 struct Color {
-	uint8_t r, g, b, a;
+	float r;
+	float g;
+	float b;
+	float a;
 };
 
 struct Vertex {
-	Vec2 position;
+	V2 pos;
 	Color color;
-	Vec2 uv;
+	V2 uv;
 };
 
-uint32_t loadShaderProgram(const char* vertexShaderFilePath, const char* fragmentShaderFilePath) {
-	const char* vertexShaderString = readShaderSource(vertexShaderFilePath);
-	DEFER{
-		free((void*)vertexShaderString);
-	};
-	const char* fragmentShaderString = readShaderSource(fragmentShaderFilePath);
-	DEFER{
-		free((void*)fragmentShaderString);
-	};
+struct Texture {
+	int w;
+	int h;
+	GLuint handle;
+};
 
-	if (vertexShaderString == NULL || fragmentShaderString == NULL) {
-		log("ERROR: vertexShaderString or fragmentShaderString == NULL");
-		return 0;
-	}
-
-	uint32_t vertexShader = compileShader(GL_VERTEX_SHADER, vertexShaderString);
-	uint32_t fragmentShader = compileShader(GL_FRAGMENT_SHADER, fragmentShaderString);
-
-	DEFER{
-		if (vertexShader != 0) {
-			glDeleteShader(vertexShader);
-		}
-		if (fragmentShader != 0) {
-			glDeleteShader(fragmentShader);
-		}
-	};
-
-	if (vertexShader == 0 || fragmentShader == 0) {
-		log("ERROR: vertexShader or fragmentShader didn't compile");
-		return 0;
-	}
-
-	uint32_t shaderProgram = glCreateProgram();
-	glAttachShader(shaderProgram, vertexShader);
-	glAttachShader(shaderProgram, fragmentShader);
-	glLinkProgram(shaderProgram);
-
-	int linkStatus = 0;
-	glGetProgramiv(shaderProgram, GL_LINK_STATUS, &linkStatus);
-	if (linkStatus == GL_FALSE)
-	{
-		log("ERROR: linkStatus variable returned false");
-		int stringLength = 0;
-		char infoLog[1000] = {};
-		glGetProgramInfoLog(shaderProgram, 1000, &stringLength, infoLog);
-		glDeleteProgram(shaderProgram);
-		return 0;
-	}
-
-	return shaderProgram;
-}
-
-time_t getLastChangedFileTime(const char* filePath) {
-	struct stat fileAttrib;
-	if (stat(filePath, &fileAttrib) < 0) {
-		char errorMessage[256];
-
-		strerror_s(errorMessage, sizeof(errorMessage), errno);
-		log("ERROR: stat failed for %s, Error: %s", filePath, errorMessage);
-	}
-
-	return fileAttrib.st_mtime;
-}
-
-GLuint loadTexture(const char* filePath) {
+Texture load_Texture_Data(const char* file_Name) {
+	Texture result;
+	
 	stbi_set_flip_vertically_on_load(true);
 
-	int width, height, channels;
-	unsigned char* imageData = stbi_load(filePath, &width, &height, &channels, 4);
-	if (!imageData) {
-		log("ERROR: stbi_load failed");
-		return 0;
+	int x, y, n;
+	unsigned char* data = stbi_load(file_Name, &x, &y, &n, 4);
+
+	if (data == nullptr) {
+		log("ERROR: stbi_load returned nullptr");
+		assert(false);
 	}
 	DEFER{
-		stbi_image_free(imageData);
+		stbi_image_free(data);
 	};
 
-	GLuint textureID;
-	glGenTextures(1, &textureID);
-	glBindTexture(GL_TEXTURE_2D, textureID);
-	
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	result.w = x;
+	result.h = y;
+
+	glGenTextures(1, &result.handle);
+	glBindTexture(GL_TEXTURE_2D, result.handle);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, result.w, result.h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width,
-		height, 0, GL_RGBA, GL_UNSIGNED_BYTE, imageData);
-
-	return textureID;
-}
-
-bool haveShadersChanged(const char* vertexFilePath, const char* fragmentFilePath, ShaderProgramData& shaderProgramData) {
-	time_t currentVertexTime = getLastChangedFileTime(vertexFilePath);
-	time_t currentFragmentTime = getLastChangedFileTime(fragmentFilePath);
-	
-	if (currentVertexTime != shaderProgramData.vertexShaderLastModTime 
-		|| currentFragmentTime != shaderProgramData.fragmentShaderLastModTime) {
-		shaderProgramData.vertexShaderLastModTime = currentVertexTime;
-		shaderProgramData.fragmentShaderLastModTime = currentFragmentTime;
-		return true;
-	}
-	
-	return false;
+	return result;
 }
 
 int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd) {
@@ -488,6 +333,8 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		return 1;
 	}
 
+	// We need this context (which is literally garbage) to load the functions
+	// We need wglCreateContext to load the context that we ACTUALLY need
 	HGLRC temp_context = wglCreateContext(hdc);
 	wglMakeCurrent(hdc, temp_context);
 	loadGLFunctions();
@@ -503,230 +350,228 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 	};
 
 	HGLRC glRendereringContext = wglCreateContextAttribsARB(hdc, 0, attrib_list);
+	// Make the new context current
 	wglMakeCurrent(hdc, glRendereringContext);
+	// Delete the garbage context
 	wglDeleteContext(temp_context);
 
 	if (glRendereringContext == NULL) {
 		log("Error: wglCreateContext function returned false");
 		return 1;
 	}
-
-	const char* vertexShaderFilePath = "Shaders\\vertexShader.txt";
-
-	const char* fragmentShaderFilePath = "Shaders\\fragmentShader.txt";
 	
-	ShaderProgramData shaderProgramData = {};
+	Vertex vertices[6];
+	// ***First Triangle***
+	// Bottom Left
+	vertices[0].pos = { -0.5f, -0.5f };
+	vertices[0].color = { 1.0f, 0.0f, 0.0f, 1.0f };
+	vertices[0].uv = { 0.0f, 0.0f };
+	// Top Left
+	vertices[1].pos = { -0.5f, 0.5f };
+	vertices[1].color = { 0.0f, 1.0f, 0.0f, 1.0f };
+	vertices[1].uv = { 0.0f, 1.0f };
+	// Top Right
+	vertices[2].pos = { 0.5f, 0.5f };
+	vertices[2].color = { 0.0f, 0.0f, 1.0f, 1.0f };
+	vertices[2].uv = { 1.0f, 1.0f };
+	// ***Second Triangle***
+	// Bottom Left
+	vertices[3].pos = { -0.5f, -0.5f };
+	vertices[3].color = { 1.0f, 0.0f, 0.0f, 1.0f };
+	vertices[3].uv = { 0.0f, 0.0f };
+	// Bottom Right
+	vertices[4].pos = { 0.5f, -0.5f };
+	vertices[4].color = { 0.0f, 1.0f, 0.0f, 1.0f };
+	vertices[4].uv = { 1.0f, 0.0f };
+	// Top Right 
+	vertices[5].pos = { 0.5f, 0.5f };
+	vertices[5].color = { 0.0f, 0.0f, 1.0f, 1.0f };
+	vertices[5].uv = { 1.0f, 1.0f };
+	
+	GLuint vbo;
+	glGenBuffers(1, &vbo);
+	glBindBuffer(GL_ARRAY_BUFFER, vbo);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
-	GLuint vaoOne;
-	glGenVertexArrays(1, &vaoOne);
-	glBindVertexArray(vaoOne);
+#if 0
+	std::string vertex_Shader = 
+		"#version 330\n"
+		"layout(location = 0) in vec2 v_position;\n"
+		"layout(location = 1) in vec4 v_color;\n"
+		"out vec4 f_color;\n"
+		"void main()\n"
+		"{\n"
+		"    f_color = v_color;\n"
+		"    gl_Position = vec4(v_position, 0, 1);\n"
+		"}	\n";
 
-	GLuint vboOne;
-	glGenBuffers(1, &vboOne);
-	glBindBuffer(GL_ARRAY_BUFFER, vboOne);
+	std::string pixel_Shader =
+		"#version 330\n"
+		"out vec4 o_color;\n"
+		"in vec4 f_color;\n"
+		"void main()\n"
+		"{\n"
+		"	o_color = f_color;\n"
+		"};\n";
+#endif
 
-	Vertex verticesImage1[6];
+	const char* vertex_Shader_Source = 
+		"#version 330\n"
+		"layout(location = 0) in vec2 v_position;\n"
+		"layout(location = 1) in vec4 v_color;\n"
+		"layout(location = 2) in vec2 v_uv;\n"
+		"out vec4 f_color;\n"
+		"out vec2 f_uv;\n"
+		"void main()\n"
+		"{\n"
+		"    f_color = v_color;\n"
+		"    f_uv = v_uv;\n"
+		"    gl_Position = vec4(v_position, 0, 1);\n"
+		"}	\n";
 
-	// Center of the window
-	float centerX = 500;
-	float centerY = 500;
+	const char* fragment_Shader_Source =
+		"#version 330\n"
+		"out vec4 o_color;\n"
+		"in vec4 f_color;\n"
+		"in vec2 f_uv;\n"
+		"uniform sampler2D texDiffuse;\n"
+		"uniform sampler2D texDiffuse_2;\n"
+		"uniform float u_uv_Offset_X;\n"
+		"uniform float u_uv_Offset_Y;\n"
+		"void main()\n"
+		"{\n"
+		"	// o_color = vec4(f_uv, 0, 1);\n"
+		"	float alpha = texture(texDiffuse, f_uv).a;\n"
+		"	vec2 uv = f_uv;\n"
+		"	uv.x += u_uv_Offset_X;\n"
+		"	uv.y += u_uv_Offset_Y;\n"
+		"	o_color = vec4(texture(texDiffuse_2, uv).rgb, alpha);\n"
+		"};\n";
 
-	float halfSize = 200.0f;
+	GLuint shader_Program;
+	{
+		// *****Implementation done with Chris*****
+		// GLuint vertex_Shader_Handle = glCreateShader(GL_VERTEX_SHADER);
+		// const char* vertex_Ptr = vertex_Shader.c_str();
+		// GLint vertex_Length = (GLint)vertex_Shader.length();
+		// glShaderSource(vertex_Shader_Handle, 1, &vertex_Ptr, &vertex_Length);
+		// glCompileShader(vertex_Shader_Handle);
+		// ****************************************
+		GLuint vertex_Shader = glCreateShader(GL_VERTEX_SHADER);
+		glShaderSource(vertex_Shader, 1, &vertex_Shader_Source, NULL);
+		glCompileShader(vertex_Shader);
+		GLint success;
+		char info_Log[512];
+		glGetShaderiv(vertex_Shader, GL_COMPILE_STATUS, &success);
+		if (!success) {
+			glGetShaderInfoLog(vertex_Shader, 512, NULL, info_Log);
+			log("ERROR: Vertex shader compilation failed: %s", info_Log);
+			assert(false);
+		}
 
-	// Origin is the top left
+		// *****Implementation done with Chris*****
+		// GLuint pixel_Shader_Handle = glCreateShader(GL_FRAGMENT_SHADER);
+		// const char* pixel_Ptr = pixel_Shader.c_str();
+		// GLint pixel_Length = (GLint)pixel_Shader.length();
+		// glShaderSource(pixel_Shader_Handle, 1, &pixel_Ptr, &pixel_Length);
+		// glCompileShader(pixel_Shader_Handle);
+		// ****************************************
+		GLuint fragment_Shader = glCreateShader(GL_FRAGMENT_SHADER);
+		glShaderSource(fragment_Shader, 1, &fragment_Shader_Source, NULL);
+		glCompileShader(fragment_Shader);
+		glGetShaderiv(fragment_Shader, GL_COMPILE_STATUS, &success);
+		if (!success) {
+			glGetShaderInfoLog(fragment_Shader, 512, NULL, info_Log);
+			log("ERROR: Vertex shader compilation failed: %s", info_Log);
+			assert(false);
+		}
 
-	// First triangle
-	verticesImage1[0].position = { centerX - halfSize, centerY + halfSize };
-	verticesImage1[0].color = { 255, 0, 0, 255 };
-	verticesImage1[0].uv = { 0.0f, 0.0f };
-
-	verticesImage1[1].position = { centerX + halfSize, centerY - halfSize };
-	verticesImage1[1].color = { 0, 0, 255, 255 };
-	verticesImage1[1].uv = { 1.0f, 1.0f };
-
-	verticesImage1[2].position = { centerX - halfSize, centerY - halfSize };
-	verticesImage1[2].color = { 255, 0, 0, 255 };
-	verticesImage1[2].uv = { 0.0f, 1.0f };
-
-	// Second triangle
-	verticesImage1[3].position = { centerX - halfSize, centerY + halfSize };
-	verticesImage1[3].color = { 255, 0, 0, 255 };
-	verticesImage1[3].uv = { 0.0f, 0.0f };
-
-	verticesImage1[4].position = { centerX + halfSize, centerY - halfSize };
-	verticesImage1[4].color = { 0, 0, 255, 255 };
-	verticesImage1[4].uv = { 1.0f, 1.0f };
-
-	verticesImage1[5].position = { centerX + halfSize, centerY + halfSize };
-	verticesImage1[5].color = { 0, 0, 255, 255 };
-	verticesImage1[5].uv = { 1.0f, 0.0f };
-
-	glBufferData(GL_ARRAY_BUFFER, sizeof(verticesImage1), verticesImage1, GL_STATIC_DRAW);
-
-	GLuint vboTwo;
-	glGenBuffers(1, &vboTwo);
-	glBindBuffer(GL_ARRAY_BUFFER, vboTwo);
-
-	Vertex verticesImage2[6];
-
-	// First triangle
-	verticesImage2[0].position = { centerX - halfSize, centerY + halfSize };
-	verticesImage2[0].color = { 255, 0, 0, 255 };
-	verticesImage2[0].uv = { 0.0f, 0.0f };
-				 
-	verticesImage2[1].position = { centerX + halfSize, centerY - halfSize };
-	verticesImage2[1].color = { 0, 0, 255, 255 };
-	verticesImage2[1].uv = { 1.0f, 1.0f };
-				 
-	verticesImage2[2].position = { centerX - halfSize, centerY - halfSize };
-	verticesImage2[2].color = { 255, 0, 0, 255 };
-	verticesImage2[2].uv = { 0.0f, 1.0f };
-				 
-	// Second triangle
-	verticesImage2[3].position = { centerX - halfSize, centerY + halfSize };
-	verticesImage2[3].color = { 255, 0, 0, 255 };
-	verticesImage2[3].uv = { 0.0f, 0.0f };
-				 
-	verticesImage2[4].position = { centerX + halfSize, centerY - halfSize };
-	verticesImage2[4].color = { 0, 0, 255, 255 };
-	verticesImage2[4].uv = { 1.0f, 1.0f };
-				 
-	verticesImage2[5].position = { centerX + halfSize, centerY + halfSize };
-	verticesImage2[5].color = { 0, 0, 255, 255 };
-	verticesImage2[5].uv = { 1.0f, 0.0f };
-
-	float offsetX = halfSize * 2;
-
-	for (int i = 0; i < arraySize(verticesImage2); i++) {
-		verticesImage2[i].position.x += offsetX;
+		shader_Program = glCreateProgram();
+		glAttachShader(shader_Program, vertex_Shader);
+		glAttachShader(shader_Program, fragment_Shader);
+		glLinkProgram(shader_Program);
+		glGetProgramiv(shader_Program, GL_LINK_STATUS, &success);
+		if (!success) {
+			assert(false);
+		}
+		glUseProgram(shader_Program);
+		GLint tex_Diffuse_Location = glGetUniformLocation(shader_Program, "texDiffuse");
+		if (tex_Diffuse_Location != -1) {
+			glUniform1i(tex_Diffuse_Location, 0);
+		}
+		GLint tex_Diffuse_2_Location = glGetUniformLocation(shader_Program, "texDiffuse_2");
+		if (tex_Diffuse_2_Location != -1) {
+			glUniform1i(tex_Diffuse_2_Location, 1);
+		}
+		// No longer need the shaders after we link them
+		glDeleteShader(vertex_Shader);
+		glDeleteShader(fragment_Shader);
+#if 0
+		glDeleteProgram();
+		glGetProgramInfoLog();
+		glUseProgram();
+#endif
 	}
 
-	glBufferData(GL_ARRAY_BUFFER, sizeof(verticesImage2), verticesImage2, GL_STATIC_DRAW);
+	GLuint vao;
+	glGenVertexArrays(1, &vao);
+	glBindVertexArray(vao);
 
-	MSG msg = {};
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos));
+	glEnableVertexAttribArray(1);
+	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, color));
+	glEnableVertexAttribArray(2);
+	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
+
+	Texture temp = load_Texture_Data("assets\\azir.jpg");
+	Texture temp_2 = load_Texture_Data("assets\\smolder.jpg");
+
+	Texture castle_Infernal = load_Texture_Data("assets\\castle_Infernal.png");
+	Texture water_Sprite = load_Texture_Data("assets\\water_Sprite.jpg");
+
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
 	bool running = true;
-
-	GLuint textureAzir = loadTexture("assets/azir.jpg");
-	GLuint textureSmolder = loadTexture("assets/smolder.jpg");
-
 	while (running) {
-		while (PeekMessage(&msg, window, 0, 0, PM_REMOVE)) {
+		MSG msg;
+		while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
 			TranslateMessage(&msg);
 			DispatchMessage(&msg);
 
 			if (msg.message == WM_QUIT) {
 				running = false;
 			}
+			
 		}
+
+		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+		glClear(GL_COLOR_BUFFER_BIT);
+
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, castle_Infernal.handle);
+		glActiveTexture(GL_TEXTURE1);
+		glBindTexture(GL_TEXTURE_2D, water_Sprite.handle);
+
+		GLint offset_X_Location = glGetUniformLocation(shader_Program, "u_uv_Offset_X");
+		GLint offset_Y_Location = glGetUniformLocation(shader_Program, "u_uv_Offset_Y");
+		if (offset_X_Location != -1 && offset_Y_Location != -1) {
+			static float x = 0;
+			static float y = 0;
+			x += 0.01f;
+			y += 0.02f;
+			glUniform1f(offset_X_Location, x);
+			glUniform1f(offset_Y_Location, y);
+		}
+
+		glDrawArrays(GL_TRIANGLES, 0, 6);
+		SwapBuffers(hdc);
 
 		Sleep(1);
 
 		RECT rect = {};
 		GetClientRect(window, &rect);
-		glViewport(0, 0, rect.right, rect.bottom);
-
-		glClearColor(0, 0, 0, 0);
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
-
-		if (haveShadersChanged(vertexShaderFilePath, fragmentShaderFilePath, shaderProgramData)) {
-			const int maxAttempts = 5;
-			const int attemptDelay = 1000;
-			int currentAttempts = 0;
-
-			while (currentAttempts < maxAttempts) {
-				uint32_t newShaderProgram = loadShaderProgram(vertexShaderFilePath, fragmentShaderFilePath);
-
-				if (newShaderProgram == 0) {
-					log("ERROR: shaderProgram returned 0. Potential lock on file");
-					currentAttempts++;
-					Sleep(attemptDelay);
-					continue;
-				}
-				else {
-					if (shaderProgramData.shaderProgramID != 0) {
-						glDeleteProgram(shaderProgramData.shaderProgramID);
-					}
-					shaderProgramData.shaderProgramID = newShaderProgram;
-					glUseProgram(shaderProgramData.shaderProgramID);
-
-					screenWidthLocation = glGetUniformLocation(shaderProgramData.shaderProgramID, "screenWidth");
-					screenHeightLocation = glGetUniformLocation(shaderProgramData.shaderProgramID, "screenHeight");
-					break;
-				}
-			}
-
-			if (currentAttempts >= maxAttempts) {
-				log("Error: currentAttempts >= maxAttempts. Issue with hotloading.");
-				return 1;
-			}
-		}
-
-		if (screenWidthLocation >= 0) {
-			glUniform1f(screenWidthLocation, (GLfloat)rect.right);
-		}
-		if (screenHeightLocation >= 0) {
-			glUniform1f(screenHeightLocation, (GLfloat)rect.bottom);
-		}
-
-		if (lastMouseClick.clicked) {
-			log("Left mouse button was clicked at: { %f, %f }", 
-				lastMouseClick.position.x, lastMouseClick.position.y);
-
-			Command command = {};
-			command.position = lastMouseClick.position;
-			command.texture = &textureAzir;
-			command.size = { halfSize * 2.0f, halfSize * 2.0f };
-			
-			command.uvs[0] = { 0.0f, 0.0f };
-			command.uvs[1] = { 1.0f, 0.0f };
-			command.uvs[2] = { 0.0f, 1.0f };
-			command.uvs[3] = { 1.0f, 1.0f };
-			
-			command.shaderType = layerOne;
-			
-			commandQueue.push_back(command);
-
-			lastMouseClick.clicked = false;
-		}
-
-		glViewport(0, 0, rect.right, rect.bottom);
-
-		glBindBuffer(GL_ARRAY_BUFFER, vboOne);
-
-		glEnableVertexAttribArray(0);
-		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, position));
-
-		glEnableVertexAttribArray(1);
-		glVertexAttribPointer(1, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(Vertex), (void*)offsetof(Vertex, color));
-
-		glEnableVertexAttribArray(2);
-		glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
-
-		glBindTexture(GL_TEXTURE_2D, textureAzir);
-		glDrawArrays(GL_TRIANGLES, 0, arraySize(verticesImage1));
-
-		glBindBuffer(GL_ARRAY_BUFFER, vboTwo);
-
-		glEnableVertexAttribArray(0);
-		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, position));
-
-		glEnableVertexAttribArray(1);
-		glVertexAttribPointer(1, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(Vertex), (void*)offsetof(Vertex, color));
-
-		glEnableVertexAttribArray(2);
-		glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
-
-		glBindTexture(GL_TEXTURE_2D, textureSmolder);
-		glDrawArrays(GL_TRIANGLES, 0, arraySize(verticesImage2));
-
-		if (!SwapBuffers(hdc)) {
-			log("Error: SwapBuffers function returned false");
-			return 1;
-		}
 	}
-
-	glDeleteProgram(shaderProgramData.shaderProgramID);
-
 	return 0;
 }
