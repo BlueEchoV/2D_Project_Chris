@@ -10,6 +10,9 @@
 
 #include <errno.h>
 #include <string.h>
+#include <iostream>
+#include <fstream>
+#include <sstream>
 
 #define arraySize(arr) (sizeof(arr) / sizeof((arr)[0]))
 
@@ -273,6 +276,59 @@ Texture load_Texture_Data(const char* file_Name) {
 	return result;
 }
 
+struct Shader_Program {
+	GLuint vertex_shader;
+	GLuint fragment_shader;
+	GLuint program;
+};
+
+GLuint create_shader(const std::string shader_file_path, GLenum shader_type) {
+	std::ifstream file(shader_file_path);
+	if (!file.is_open()) {
+		log("ERROR: shader file did not open");
+		assert(false);
+	}
+	
+	std::stringstream shader_source;
+	shader_source << file.rdbuf();
+	file.close();
+
+	std::string shader_source_string = shader_source.str();
+	const char* shader_source_cstr = shader_source_string.c_str();
+
+	GLuint shader = glCreateShader(shader_type);
+	glShaderSource(shader, 1, &shader_source_cstr, NULL);
+	glCompileShader(shader);
+	GLint success;
+	char info_Log[512];
+	glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
+	if (!success) {
+		glGetShaderInfoLog(shader, 512, NULL, info_Log);
+		log("ERROR: Vertex shader compilation failed: %s", info_Log);
+		assert(false);
+	}
+
+	return shader;
+}
+
+Shader_Program create_shader_program(const char* vertex_shader_file_path, const char* fragment_shader_file_path) {
+	Shader_Program result;
+	result.program = glCreateProgram();
+	result.vertex_shader = create_shader(vertex_shader_file_path, GL_VERTEX_SHADER);
+	result.fragment_shader = create_shader(fragment_shader_file_path, GL_FRAGMENT_SHADER);
+
+	glAttachShader(result.program, result.vertex_shader);
+	glAttachShader(result.program, result.fragment_shader);
+	glLinkProgram(result.program);
+	GLint success;
+	glGetProgramiv(result.program, GL_LINK_STATUS, &success);
+	if (!success) {
+		assert(false);
+	}
+
+	return result;
+}
+
 int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd) {
 	OutputDebugString("Hello World!\n");
 
@@ -413,7 +469,6 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		"{\n"
 		"	o_color = f_color;\n"
 		"};\n";
-#endif
 
 	const char* vertex_Shader_Source = 
 		"#version 330\n"
@@ -447,70 +502,20 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		"	uv.y += u_uv_Offset_Y;\n"
 		"	o_color = vec4(texture(texDiffuse_2, uv).rgb, alpha);\n"
 		"};\n";
-
-	GLuint shader_Program;
-	{
-		// *****Implementation done with Chris*****
-		// GLuint vertex_Shader_Handle = glCreateShader(GL_VERTEX_SHADER);
-		// const char* vertex_Ptr = vertex_Shader.c_str();
-		// GLint vertex_Length = (GLint)vertex_Shader.length();
-		// glShaderSource(vertex_Shader_Handle, 1, &vertex_Ptr, &vertex_Length);
-		// glCompileShader(vertex_Shader_Handle);
-		// ****************************************
-		GLuint vertex_Shader = glCreateShader(GL_VERTEX_SHADER);
-		glShaderSource(vertex_Shader, 1, &vertex_Shader_Source, NULL);
-		glCompileShader(vertex_Shader);
-		GLint success;
-		char info_Log[512];
-		glGetShaderiv(vertex_Shader, GL_COMPILE_STATUS, &success);
-		if (!success) {
-			glGetShaderInfoLog(vertex_Shader, 512, NULL, info_Log);
-			log("ERROR: Vertex shader compilation failed: %s", info_Log);
-			assert(false);
-		}
-
-		// *****Implementation done with Chris*****
-		// GLuint pixel_Shader_Handle = glCreateShader(GL_FRAGMENT_SHADER);
-		// const char* pixel_Ptr = pixel_Shader.c_str();
-		// GLint pixel_Length = (GLint)pixel_Shader.length();
-		// glShaderSource(pixel_Shader_Handle, 1, &pixel_Ptr, &pixel_Length);
-		// glCompileShader(pixel_Shader_Handle);
-		// ****************************************
-		GLuint fragment_Shader = glCreateShader(GL_FRAGMENT_SHADER);
-		glShaderSource(fragment_Shader, 1, &fragment_Shader_Source, NULL);
-		glCompileShader(fragment_Shader);
-		glGetShaderiv(fragment_Shader, GL_COMPILE_STATUS, &success);
-		if (!success) {
-			glGetShaderInfoLog(fragment_Shader, 512, NULL, info_Log);
-			log("ERROR: Vertex shader compilation failed: %s", info_Log);
-			assert(false);
-		}
-
-		shader_Program = glCreateProgram();
-		glAttachShader(shader_Program, vertex_Shader);
-		glAttachShader(shader_Program, fragment_Shader);
-		glLinkProgram(shader_Program);
-		glGetProgramiv(shader_Program, GL_LINK_STATUS, &success);
-		if (!success) {
-			assert(false);
-		}
-		glUseProgram(shader_Program);
-		GLint tex_Diffuse_Location = glGetUniformLocation(shader_Program, "texDiffuse");
-		if (tex_Diffuse_Location != -1) {
-			glUniform1i(tex_Diffuse_Location, 0);
-		}
-		GLint tex_Diffuse_2_Location = glGetUniformLocation(shader_Program, "texDiffuse_2");
-		if (tex_Diffuse_2_Location != -1) {
-			glUniform1i(tex_Diffuse_2_Location, 1);
-		}
-		// No longer need the shaders after we link them
-		glDeleteShader(vertex_Shader);
-		glDeleteShader(fragment_Shader);
-#if 0
-		glDeleteProgram();
-		glGetProgramInfoLog();
-		glUseProgram();
 #endif
+
+	const char* vertex_shader_file_path = "Shaders\\vertex_shader.txt";
+	const char* fragment_shader_file_path = "Shaders\\fragment_shader.txt";
+	Shader_Program shader_program = create_shader_program(vertex_shader_file_path, fragment_shader_file_path);
+	
+	glUseProgram(shader_program.program);
+	GLint tex_Diffuse_Location = glGetUniformLocation(shader_program.program, "texDiffuse");
+	if (tex_Diffuse_Location != -1) {
+		glUniform1i(tex_Diffuse_Location, 0);
+	}
+	GLint tex_Diffuse_2_Location = glGetUniformLocation(shader_program.program, "texDiffuse_2");
+	if (tex_Diffuse_2_Location != -1) {
+		glUniform1i(tex_Diffuse_2_Location, 1);
 	}
 
 	GLuint vao;
@@ -554,8 +559,8 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		glActiveTexture(GL_TEXTURE1);
 		glBindTexture(GL_TEXTURE_2D, water_Sprite.handle);
 
-		GLint offset_X_Location = glGetUniformLocation(shader_Program, "u_uv_Offset_X");
-		GLint offset_Y_Location = glGetUniformLocation(shader_Program, "u_uv_Offset_Y");
+		GLint offset_X_Location = glGetUniformLocation(shader_program.program, "u_uv_Offset_X");
+		GLint offset_Y_Location = glGetUniformLocation(shader_program.program, "u_uv_Offset_Y");
 		if (offset_X_Location != -1 && offset_Y_Location != -1) {
 			static float x = 0;
 			static float y = 0;
@@ -573,5 +578,13 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		RECT rect = {};
 		GetClientRect(window, &rect);
 	}
+	// TODO: Clean up shaders
+	#if 0
+		glDeleteShader(vertex_shader);
+		glDeleteShader(fragment_shader);
+		glDeleteProgram();
+		glGetProgramInfoLog();
+		glUseProgram();
+	#endif
 	return 0;
 }
