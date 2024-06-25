@@ -212,7 +212,13 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		rect_two.w = 200;
 		rect_two.h = 200;
 
-		SDL_Rect rects[2] = { rect_one, rect_two };
+		SDL_Rect rect_three;
+		rect_three.x = 900;
+		rect_three.y = 700;
+		rect_three.w = 200;
+		rect_three.h = 200;
+
+		SDL_Rect rects[3] = { rect_one, rect_two , rect_three };
 
 		SDL_SetRenderDrawColor(renderer, 0, 0, 127, 255);
 		SDL_RenderFillRects(renderer, rects, ARRAYSIZE(rects));
