@@ -200,14 +200,22 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		SDL_SetRenderDrawColor(renderer, 127, 0, 127, 255);
 		SDL_RenderClear(renderer);
 
-		SDL_Rect rect;
-		rect.x = 500;
-		rect.y = 500;
-		rect.w = 200;
-		rect.h = 200;
+		SDL_Rect rect_one;
+		rect_one.x = 500;
+		rect_one.y = 300;
+		rect_one.w = 200;
+		rect_one.h = 200;
+
+		SDL_Rect rect_two;
+		rect_two.x = 700;
+		rect_two.y = 500;
+		rect_two.w = 200;
+		rect_two.h = 200;
+
+		SDL_Rect rects[2] = { rect_one, rect_two };
 
 		SDL_SetRenderDrawColor(renderer, 0, 0, 127, 255);
-		SDL_RenderFillRect(renderer, &rect);
+		SDL_RenderFillRects(renderer, rects, ARRAYSIZE(rects));
 
 		SDL_RenderPresent(renderer);
 #if 0

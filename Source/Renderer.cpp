@@ -495,22 +495,52 @@ V2 convert_to_ndc(SDL_Renderer* sdl_renderer, V2 pos) {
 	return ndc;
 }
 
+int SDL_RenderFillRect(SDL_Renderer* sdl_renderer, const SDL_Rect* rect) { 
+	if (sdl_renderer == nullptr) {
+		log("ERROR: sdl_renderer is nullptr");
+		return -1;
+	}
+	Renderer* renderer = (Renderer*)sdl_renderer;
+ 
+	Render_Command command;
+	command.type = CT_FILL_RECT;
+	// Null for the entire rendering context 
+	if (rect == NULL) {
+		int screen_w = 0;
+		int screen_h = 0;
+		get_window_size(renderer->window, screen_h, screen_h);
+		SDL_Rect temp;
+		temp.x = screen_w / 2;
+		temp.y = screen_h / 2;
+		temp.w = screen_w;
+		temp.h = screen_h;
+		command.rect = temp;
+	}
+	else {
+		command.rect = *rect;
+	}
+	renderer->command_queue.push_back(command);
+
+	// Returns 0 on success
+	return 0;
+}
+
 void execute_fill_rect_command(SDL_Renderer* sdl_renderer, Render_Command command) {
 	if (sdl_renderer == nullptr) {
 		log("ERROR: sdl_renderer is nullptr");
 		assert(false);
 	}
 	Renderer* renderer = (Renderer*)sdl_renderer;
-
+  
 	Color_f c = convert_color_8_to_floating_point(renderer->render_draw_color);
 
 	int half_w = command.rect.w / 2;
 	int half_h = command.rect.h / 2;
 	
-	V2 top_left =			{ (float)(command.rect.x - half_w) , (float)(command.rect.h + half_h) };
-	V2 top_right =			{ (float)(command.rect.x + half_w) , (float)(command.rect.h + half_h) };
-	V2 bottom_right =		{ (float)(command.rect.x + half_w) , (float)(command.rect.h - half_h) };
-	V2 bottom_left =		{ (float)(command.rect.x - half_w) , (float)(command.rect.h - half_h) };
+	V2 top_left =			{ (float)(command.rect.x - half_w) , (float)(command.rect.y + half_h) };
+	V2 top_right =			{ (float)(command.rect.x + half_w) , (float)(command.rect.y + half_h) };
+	V2 bottom_right =		{ (float)(command.rect.x + half_w) , (float)(command.rect.y - half_h) };
+	V2 bottom_left =		{ (float)(command.rect.x - half_w) , (float)(command.rect.y - half_h) };
 
 	V2 top_left_ndc =		convert_to_ndc(sdl_renderer, top_left);
 	V2 top_right_ndc =		convert_to_ndc(sdl_renderer, top_right);
@@ -563,8 +593,38 @@ void execute_fill_rect_command(SDL_Renderer* sdl_renderer, Render_Command comman
 	glUseProgram(shader_program);
 
 	glDrawArrays(GL_TRIANGLES, 0, 6);
-
 }
+
+int SDL_RenderFillRects(SDL_Renderer* sdl_renderer, const SDL_Rect* rects, int count) {
+	if (sdl_renderer == nullptr) {
+		log("ERROR: sdl_renderer is nullptr");
+		return -1;
+	}
+
+	for (int i = 0; i < count; i++) {
+		if (SDL_RenderFillRect(sdl_renderer, &rects[i]) != 0) {
+			return -1;
+		}
+	}
+
+	return 0;
+}
+
+// Put anything I want into the renderer struct. Don't change api
+// SDL draw functions don't necessarily emit a draw call immediately
+// The draw will happen EVENTUALLY
+#if 0
+
+SDL_RenderDrawLine
+SDL_RenderDrawLines
+SDL_RenderDrawPoint
+SDL_RenderDrawPoints
+SDL_RenderDrawRect
+SDL_RenderDrawRects
+
+SDL_CreateTexture
+SDL_RenderCopy
+#endif
 
 void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
 	if (sdl_renderer == nullptr) {
@@ -583,50 +643,3 @@ void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
 	}
 	SwapBuffers(renderer->hdc);
 }
-
-int SDL_RenderFillRect(SDL_Renderer* sdl_renderer, const SDL_Rect* rect) { 
-	if (sdl_renderer == nullptr) {
-		log("ERROR: sdl_renderer is nullptr");
-		return -1;
-	}
-	Renderer* renderer = (Renderer*)sdl_renderer;
-
-	Render_Command command;
-	command.type = CT_FILL_RECT;
-	// Null for the entire rendering context 
-	if (rect == NULL) {
-		int screen_w = 0;
-		int screen_h = 0;
-		get_window_size(renderer->window, screen_h, screen_h);
-		SDL_Rect temp;
-		temp.x = screen_w / 2;
-		temp.y = screen_h / 2;
-		temp.w = screen_w;
-		temp.h = screen_h;
-		command.rect = temp;
-	}
-	else {
-		command.rect = *rect;
-	}
-	renderer->command_queue.push_back(command);
-
-	// Returns 0 on success
-	return 0;
-}
-
-// Put anything I want into the renderer struct. Don't change api
-// SDL draw functions don't necessarily emit a draw call immediately
-// The draw will happen EVENTUALLY
-#if 0
-SDL_RenderFillRects
-
-SDL_RenderDrawLine
-SDL_RenderDrawLines
-SDL_RenderDrawPoint
-SDL_RenderDrawPoints
-SDL_RenderDrawRect
-SDL_RenderDrawRects
-
-SDL_CreateTexture
-SDL_RenderCopy
-#endif
