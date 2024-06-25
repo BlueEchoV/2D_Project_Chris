@@ -7,6 +7,7 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <vector>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -155,7 +156,6 @@ void loadGLFunctions() {
 
 	glActiveTexture = (glActiveTextureFunc)wglGetProcAddress("glActiveTexture");
 }
-
 
 struct V2 {
 	float x;
@@ -341,9 +341,22 @@ struct Color_8 {
 	uint8_t a;
 };
 
+
+enum Command_Type {
+	CT_FILL_RECT,
+	CT_TOTAL
+};
+
+struct Render_Command {
+	Command_Type type;
+	SDL_Rect rect;
+};
+
 struct Renderer {
+	HWND window;
 	HDC hdc;
 	Color_8 render_draw_color;
+	std::vector<Render_Command> command_queue;
 };
 
 #define REF(v) (void)v
@@ -354,6 +367,8 @@ SDL_Renderer* SDL_CreateRenderer(HWND window, int index, uint32_t flags) {
 	REF(flags);
 
 	Renderer* renderer = new Renderer();
+
+	renderer->window = window;
 
 	PIXELFORMATDESCRIPTOR pfd =
 	{
@@ -428,29 +443,181 @@ int SDL_SetRenderDrawColor(SDL_Renderer* sdl_renderer, uint8_t r, uint8_t g, uin
 	return 0;
 }
 
+Color_f convert_color_8_to_floating_point(Color_8 color) {
+	Color_f result;
+
+	result.r = (float)color.r / 255.0f;
+	result.g = (float)color.g / 255.0f;
+	result.b = (float)color.b / 255.0f;
+	result.a = (float)color.a / 255.0f;
+
+	return result;
+}
+
 int SDL_RenderClear(SDL_Renderer* sdl_renderer) {
 	if (sdl_renderer == nullptr) {
 		return -1;
 	}
 	Renderer* renderer = (Renderer*)sdl_renderer;
-	Color_8* c = &renderer->render_draw_color;
+	Color_f c = convert_color_8_to_floating_point(renderer->render_draw_color);
 
-	glClearColor(((float)c->r / 255.0f), ((float)c->g / 255.0f), ((float)c->b / 255.0f), ((float)c->a / 255.0f));
+	glClearColor(c.r, c.g, c.b, c.a);
 	glClear(GL_COLOR_BUFFER_BIT);
 
 	return 0;
 }
 
-void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
+void get_window_size(HWND window, int& w, int& h) {
+	RECT rect = {};
+	if (GetClientRect(window, &rect) != 0) {
+		w = rect.right - rect.left;
+		h = rect.bottom - rect.top;
+	} else {
+		w = 0;
+		h = 0;
+		log("Window width and height are 0");
+	}
+}
+
+V2 convert_to_ndc(SDL_Renderer* sdl_renderer, V2 pos) {
+	if (sdl_renderer == nullptr) {
+		log("ERROR: sdl_renderer is nullptr");
+		assert(false);
+	}
 	Renderer* renderer = (Renderer*)sdl_renderer;
+
+	int screen_w, screen_h;
+	get_window_size(renderer->window, screen_w, screen_h);
+
+	V2 ndc;
+	ndc.x = ((2.0f * pos.x) / screen_w) - 1.0f;
+	ndc.y = (1.0f - ((2.0f * pos.y) / screen_h));
+	return ndc;
+}
+
+void execute_fill_rect_command(SDL_Renderer* sdl_renderer, Render_Command command) {
+	if (sdl_renderer == nullptr) {
+		log("ERROR: sdl_renderer is nullptr");
+		assert(false);
+	}
+	Renderer* renderer = (Renderer*)sdl_renderer;
+
+	Color_f c = convert_color_8_to_floating_point(renderer->render_draw_color);
+
+	int half_w = command.rect.w / 2;
+	int half_h = command.rect.h / 2;
 	
+	V2 top_left =			{ (float)(command.rect.x - half_w) , (float)(command.rect.h + half_h) };
+	V2 top_right =			{ (float)(command.rect.x + half_w) , (float)(command.rect.h + half_h) };
+	V2 bottom_right =		{ (float)(command.rect.x + half_w) , (float)(command.rect.h - half_h) };
+	V2 bottom_left =		{ (float)(command.rect.x - half_w) , (float)(command.rect.h - half_h) };
+
+	V2 top_left_ndc =		convert_to_ndc(sdl_renderer, top_left);
+	V2 top_right_ndc =		convert_to_ndc(sdl_renderer, top_right);
+	V2 bottom_right_ndc =	convert_to_ndc(sdl_renderer, bottom_right);
+	V2 bottom_left_ndc =	convert_to_ndc(sdl_renderer, bottom_left);
+
+	Vertex vertices[6] = {};
+	// NOTE: Ignore the UV value. No texture.
+	// ***First Triangle***
+	// Bottom Left
+	vertices[0].pos = bottom_left_ndc;
+	vertices[0].color = c;
+	// Top Left
+	vertices[1].pos = top_left_ndc;
+	vertices[1].color = c;
+	// Top Right
+	vertices[2].pos = top_right_ndc;
+	vertices[2].color = c;
+
+	// ***Second Triangle***
+	// Bottom Left
+	vertices[3].pos = bottom_left_ndc;
+	vertices[3].color = c;
+	// Bottom Right
+	vertices[4].pos = bottom_right_ndc;
+	vertices[4].color = c;
+	// Top Right
+	vertices[5].pos = top_right_ndc;
+	vertices[5].color = c;
+
+	GLuint vbo, vao;
+	glGenVertexArrays(1, &vao);
+	glBindVertexArray(vao);
+
+	glGenBuffers(1, &vbo);
+	glBindBuffer(GL_ARRAY_BUFFER, vbo);
+	glBufferData(GL_ARRAY_BUFFER, 6 * sizeof(Vertex), vertices, GL_STATIC_DRAW);
+
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos));
+	glEnableVertexAttribArray(1);
+	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, color));
+	glEnableVertexAttribArray(2);
+	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
+	
+	const char* vertex_shader_file_path = "Shaders\\vertex_shader.txt";
+	const char* fragment_shader_file_path = "Shaders\\fragment_shader.txt";
+	GLuint shader_program = create_shader_program(vertex_shader_file_path, fragment_shader_file_path);
+	
+	glUseProgram(shader_program);
+
+	glDrawArrays(GL_TRIANGLES, 0, 6);
+
+}
+
+void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
+	if (sdl_renderer == nullptr) {
+		log("ERROR: sdl_renderer is nullptr");
+		assert(false);
+	}
+	Renderer* renderer = (Renderer*)sdl_renderer;
+
+	for (Render_Command command : renderer->command_queue) {
+		switch (command.type) {
+		case CT_FILL_RECT: {
+			execute_fill_rect_command(sdl_renderer, command);
+			break;
+		}
+		}
+	}
 	SwapBuffers(renderer->hdc);
+}
+
+int SDL_RenderFillRect(SDL_Renderer* sdl_renderer, const SDL_Rect* rect) { 
+	if (sdl_renderer == nullptr) {
+		log("ERROR: sdl_renderer is nullptr");
+		return -1;
+	}
+	Renderer* renderer = (Renderer*)sdl_renderer;
+
+	Render_Command command;
+	command.type = CT_FILL_RECT;
+	// Null for the entire rendering context 
+	if (rect == NULL) {
+		int screen_w = 0;
+		int screen_h = 0;
+		get_window_size(renderer->window, screen_h, screen_h);
+		SDL_Rect temp;
+		temp.x = screen_w / 2;
+		temp.y = screen_h / 2;
+		temp.w = screen_w;
+		temp.h = screen_h;
+		command.rect = temp;
+	}
+	else {
+		command.rect = *rect;
+	}
+	renderer->command_queue.push_back(command);
+
+	// Returns 0 on success
+	return 0;
 }
 
 // Put anything I want into the renderer struct. Don't change api
 // SDL draw functions don't necessarily emit a draw call immediately
 // The draw will happen EVENTUALLY
-SDL_RenderFillRect
+#if 0
 SDL_RenderFillRects
 
 SDL_RenderDrawLine
@@ -462,3 +629,4 @@ SDL_RenderDrawRects
 
 SDL_CreateTexture
 SDL_RenderCopy
+#endif

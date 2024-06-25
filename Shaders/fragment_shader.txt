@@ -4,17 +4,7 @@ out vec4 o_color;
 in vec4 f_color;
 in vec2 f_uv;
 
-uniform sampler2D texDiffuse;
-uniform sampler2D texDiffuse_2;
-uniform float u_uv_Offset_X;
-uniform float u_uv_Offset_Y;
-
 void main()
 {
-    // o_color = vec4(f_uv, 0, 1);
-    float alpha = texture(texDiffuse, f_uv).a;
-    vec2 uv = f_uv;
-    uv.x += u_uv_Offset_X;
-    uv.y += u_uv_Offset_Y;
-    o_color = vec4(texture(texDiffuse_2, uv).rgb, alpha);
+    o_color = f_color;
 }

@@ -194,10 +194,22 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 			
 		}
 
+		// RECT rect_temp = {};
+		// GetClientRect(window, &rect_temp);
+
 		SDL_SetRenderDrawColor(renderer, 127, 0, 127, 255);
 		SDL_RenderClear(renderer);
-		SDL_RenderPresent(renderer);
 
+		SDL_Rect rect;
+		rect.x = 500;
+		rect.y = 500;
+		rect.w = 200;
+		rect.h = 200;
+
+		SDL_SetRenderDrawColor(renderer, 0, 0, 127, 255);
+		SDL_RenderFillRect(renderer, &rect);
+
+		SDL_RenderPresent(renderer);
 #if 0
 		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT);
@@ -236,8 +248,6 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 
 		Sleep(1);
 
-		RECT rect = {};
-		GetClientRect(window, &rect);
 	}
 	// TODO: Clean up shaders
 	#if 0

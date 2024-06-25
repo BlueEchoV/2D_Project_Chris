@@ -2,11 +2,17 @@
 #include <stdint.h>
 #include <Windows.h>
 
+struct SDL_Rect {
+	int x, y;
+	int w, h;
+};
+
 struct SDL_Renderer;
 SDL_Renderer* SDL_CreateRenderer(HWND window, int index, uint32_t flags);
 int SDL_SetRenderDrawColor(SDL_Renderer* sdl_renderer, uint8_t r, uint8_t g, uint8_t b, uint8_t a);
 int SDL_RenderClear(SDL_Renderer* sdl_renderer);
 void SDL_RenderPresent(SDL_Renderer* sdl_renderer);
+int SDL_RenderFillRect(SDL_Renderer* sdl_renderer, const SDL_Rect* rect);
 
 #if 0
 SDL_CreateTexture
