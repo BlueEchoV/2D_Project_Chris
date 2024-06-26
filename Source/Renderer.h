@@ -13,6 +13,7 @@ int SDL_SetRenderDrawColor(SDL_Renderer* sdl_renderer, uint8_t r, uint8_t g, uin
 int SDL_RenderClear(SDL_Renderer* sdl_renderer);
 int SDL_RenderFillRect(SDL_Renderer* sdl_renderer, const SDL_Rect* rect);
 int SDL_RenderFillRects(SDL_Renderer* sdl_renderer, const SDL_Rect* rects, int count);
+int SDL_RenderDrawLine(SDL_Renderer* sdl_renderer, int x1, int y1, int x2, int y2);
 void SDL_RenderPresent(SDL_Renderer* sdl_renderer);
 
 #if 0

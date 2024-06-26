@@ -517,6 +517,10 @@ V2 convert_to_ndc(SDL_Renderer* sdl_renderer, V2 pos) {
 	return ndc;
 }
 
+V2 convert_to_ndc(SDL_Renderer* sdl_renderer, int x, int y) {
+	return convert_to_ndc(sdl_renderer, { (float)x, (float)y });
+}
+
 int SDL_RenderFillRect(SDL_Renderer* sdl_renderer, const SDL_Rect* rect) { 
 	if (sdl_renderer == nullptr) {
 		log("ERROR: sdl_renderer is nullptr");
@@ -630,9 +634,47 @@ int SDL_RenderFillRects(SDL_Renderer* sdl_renderer, const SDL_Rect* rects, int c
 	return 0;
 }
 
-// int SDL_RenderDrawLine(SDL_Renderer* renderer, int x1, int y1, int x2, int y2) {
-// 
-// }
+int SDL_RenderDrawLine(SDL_Renderer* sdl_renderer, int x1, int y1, int x2, int y2) {
+	if (sdl_renderer == nullptr) {
+		log("ERROR: sdl_renderer is nullptr");
+		return -1;
+	}
+	Renderer* renderer = (Renderer*)sdl_renderer;
+
+	Color_f c = convert_color_8_to_floating_point(renderer->render_draw_color);
+	
+	V2 point_one =		convert_to_ndc(sdl_renderer, x1, y1);
+	V2 point_two =		convert_to_ndc(sdl_renderer, x2, y2);
+	
+	Vertex vertices[2] = {};
+	// NOTE: Ignore the UV value. No texture.
+	// ***First Triangle***
+	// Bottom Left
+	vertices[0].pos = point_one;
+	vertices[0].color = c;
+	renderer->vertices.push_back(vertices[0]);
+	// Top Left
+	vertices[1].pos = point_two;
+	vertices[1].color = c;
+	renderer->vertices.push_back(vertices[1]);
+
+	Vertices_Info info;
+	info.draw_type = GL_LINES;
+	info.total = ARRAYSIZE(vertices);
+	// Store the number of vertices to be rendered for this group
+	renderer->vertices_info.push_back(info);
+	
+	glBindBuffer(GL_ARRAY_BUFFER, renderer->vbo);
+
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos));
+	glEnableVertexAttribArray(1);
+	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, color));
+	glEnableVertexAttribArray(2);
+	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
+
+	return 0;
+}
 
 // Put anything I want into the renderer struct. Don't change api
 // SDL draw functions don't necessarily emit a draw call immediately

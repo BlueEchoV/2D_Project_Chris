@@ -223,6 +223,12 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		SDL_SetRenderDrawColor(renderer, 0, 0, 127, 255);
 		SDL_RenderFillRects(renderer, rects, ARRAYSIZE(rects));
 
+		SDL_SetRenderDrawColor(renderer, 0, 127, 0, 255);
+		SDL_RenderDrawLine(renderer, 10, 10, 500, 10);
+		SDL_RenderDrawLine(renderer, 500, 10, 500, 500);
+		SDL_RenderDrawLine(renderer, 500, 500, 10, 500);
+		SDL_RenderDrawLine(renderer, 10, 500, 10, 10);
+
 		SDL_RenderPresent(renderer);
 #if 0
 		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
