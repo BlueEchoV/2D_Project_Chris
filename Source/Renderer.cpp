@@ -181,7 +181,6 @@ struct Texture {
 	GLuint handle;
 };
 
-
 Texture load_Texture_Data(const char* file_Name) {
 	Texture result;
 
@@ -643,7 +642,7 @@ int SDL_RenderDrawLine(SDL_Renderer* sdl_renderer, int x1, int y1, int x2, int y
 	}
 	Renderer* renderer = (Renderer*)sdl_renderer;
 
-	Color_f c = convert_color_8_to_floating_point(renderer->render_draw_color);
+	Color_f c =	convert_color_8_to_floating_point(renderer->render_draw_color);
 	
 	V2 point_one =		convert_to_ndc(sdl_renderer, x1, y1);
 	V2 point_two =		convert_to_ndc(sdl_renderer, x2, y2);
@@ -678,6 +677,24 @@ int SDL_RenderDrawLine(SDL_Renderer* sdl_renderer, int x1, int y1, int x2, int y
 	return 0;
 }
 
+int SDL_RenderDrawLines(SDL_Renderer* sdl_renderer, const SDL_Point* points, int count) { 
+	if (sdl_renderer == nullptr) {
+		log("ERROR: sdl_renderer is nullptr");
+		return -1;
+	}
+
+	if (count <= 0) {
+		log("SDL_RenderDrawLines count is <= 0");
+	}
+
+	for (int i = 0; i < count - 1; i++) {
+		SDL_Point p1 = points[i];
+		SDL_Point p2 = points[i + 1];
+		SDL_RenderDrawLine(sdl_renderer, p1.x, p1.y, p2.x, p2.y);
+	}
+
+	return 0;
+}
 // Put anything I want into the renderer struct. Don't change api
 // SDL draw functions don't necessarily emit a draw call immediately
 // The draw will happen EVENTUALLY

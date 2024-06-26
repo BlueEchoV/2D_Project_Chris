@@ -224,10 +224,24 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		SDL_RenderFillRects(renderer, rects, ARRAYSIZE(rects));
 
 		SDL_SetRenderDrawColor(renderer, 0, 255, 255, 255);
+
+#if 0
 		SDL_RenderDrawLine(renderer, 10, 10, 500, 10);
 		SDL_RenderDrawLine(renderer, 500, 10, 500, 500);
 		SDL_RenderDrawLine(renderer, 500, 500, 10, 500);
 		SDL_RenderDrawLine(renderer, 10, 500, 10, 10);
+#endif
+
+		SDL_Point p1 = { 10, 10 };
+		SDL_Point p2 = { 500, 10 };
+		SDL_Point p3 = { 500, 500 };
+		SDL_Point p4 = { 10, 500 };
+		SDL_Point p5 = { 10, 10 };
+
+		const int total_points = 5;
+		SDL_Point points[total_points] = { p1, p2, p3, p4, p5 };
+
+		SDL_RenderDrawLines(renderer, points, total_points);
 
 		SDL_RenderPresent(renderer);
 #if 0
