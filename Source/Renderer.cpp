@@ -354,6 +354,7 @@ enum Command_Type {
 struct Render_Command {
 	Command_Type type;
 	SDL_Rect rect;
+	Color_8 captured_render_draw_color;
 };
 
 struct Renderer {
@@ -530,6 +531,7 @@ int SDL_RenderFillRect(SDL_Renderer* sdl_renderer, const SDL_Rect* rect) {
  
 	Render_Command command;
 	command.type = CT_FILL_RECT;
+	command.captured_render_draw_color = renderer->render_draw_color;
 	// Null for the entire rendering context 
 	if (rect == NULL) {
 		int screen_w = 0;
@@ -558,7 +560,7 @@ void execute_fill_rect_command(SDL_Renderer* sdl_renderer, Render_Command comman
 	}
 	Renderer* renderer = (Renderer*)sdl_renderer;
   
-	Color_f c = convert_color_8_to_floating_point(renderer->render_draw_color);
+	Color_f c = convert_color_8_to_floating_point(command.captured_render_draw_color);
 
 	int half_w = command.rect.w / 2;
 	int half_h = command.rect.h / 2;
