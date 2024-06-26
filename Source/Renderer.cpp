@@ -341,6 +341,10 @@ struct Color_8 {
 	uint8_t a;
 };
 
+struct Vertices_Info {
+	int total;
+	int draw_type;
+};
 
 enum Command_Type {
 	CT_FILL_RECT,
@@ -360,7 +364,8 @@ struct Renderer {
 
 	GLuint vbo;
 	GLuint vao;
-	std::vector<Vertex> verticies;
+	std::vector<Vertex> vertices;
+	std::vector<Vertices_Info> vertices_info;
 };
 
 #define REF(v) (void)v
@@ -570,29 +575,35 @@ void execute_fill_rect_command(SDL_Renderer* sdl_renderer, Render_Command comman
 	// Bottom Left
 	vertices[0].pos = bottom_left_ndc;
 	vertices[0].color = c;
-	renderer->verticies.push_back(vertices[0]);
+	renderer->vertices.push_back(vertices[0]);
 	// Top Left
 	vertices[1].pos = top_left_ndc;
 	vertices[1].color = c;
-	renderer->verticies.push_back(vertices[1]);
+	renderer->vertices.push_back(vertices[1]);
 	// Top Right
 	vertices[2].pos = top_right_ndc;
 	vertices[2].color = c;
-	renderer->verticies.push_back(vertices[2]);
+	renderer->vertices.push_back(vertices[2]);
 
 	// ***Second Triangle***
 	// Bottom Left
 	vertices[3].pos = bottom_left_ndc;
 	vertices[3].color = c;
-	renderer->verticies.push_back(vertices[3]);
+	renderer->vertices.push_back(vertices[3]);
 	// Bottom Right
 	vertices[4].pos = bottom_right_ndc;
 	vertices[4].color = c;
-	renderer->verticies.push_back(vertices[4]);
+	renderer->vertices.push_back(vertices[4]);
 	// Top Right
 	vertices[5].pos = top_right_ndc;
 	vertices[5].color = c;
-	renderer->verticies.push_back(vertices[5]);
+	renderer->vertices.push_back(vertices[5]);
+
+	Vertices_Info info;
+	info.draw_type = GL_TRIANGLES;
+	info.total = ARRAYSIZE(vertices);
+	// Store the number of vertices to be rendered for this group
+	renderer->vertices_info.push_back(info);
 	
 	glBindBuffer(GL_ARRAY_BUFFER, renderer->vbo);
 
@@ -618,6 +629,10 @@ int SDL_RenderFillRects(SDL_Renderer* sdl_renderer, const SDL_Rect* rects, int c
 
 	return 0;
 }
+
+// int SDL_RenderDrawLine(SDL_Renderer* renderer, int x1, int y1, int x2, int y2) {
+// 
+// }
 
 // Put anything I want into the renderer struct. Don't change api
 // SDL draw functions don't necessarily emit a draw call immediately
@@ -652,16 +667,20 @@ void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
 	}
 
 	// Send all the info
-	glBufferData(GL_ARRAY_BUFFER, renderer->verticies.size() * sizeof(Vertex), renderer->verticies.data(), GL_STATIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, renderer->vertices.size() * sizeof(Vertex), renderer->vertices.data(), GL_STATIC_DRAW);
 
 	const char* vertex_shader_file_path = "Shaders\\vertex_shader.txt";
 	const char* fragment_shader_file_path = "Shaders\\fragment_shader.txt";
 	GLuint shader_program = create_shader_program(vertex_shader_file_path, fragment_shader_file_path);
 	glUseProgram(shader_program);
 
-	for (Vertex vertex : renderer->verticies) {
-		glDrawArrays(GL_TRIANGLES, 0, renderer->verticies.size() * 6);
+	int starting_index = 0;
+	// Add the points logic here. Store the GL_ state on the vertex?
+	for (Vertices_Info info : renderer->vertices_info) {
+		glDrawArrays(info.draw_type, starting_index, info.total);
+		starting_index += info.total;
 	}
 	
+
 	SwapBuffers(renderer->hdc);
 }
