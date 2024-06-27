@@ -697,12 +697,46 @@ int SDL_RenderDrawPoints(SDL_Renderer* sdl_renderer, const SDL_Point* points, in
 	return 0;
 }
 
+int SDL_RenderDrawRect(SDL_Renderer* sdl_renderer, const SDL_Rect* rect) {
+	if (sdl_renderer == nullptr) {
+		log("ERROR: sdl_renderer is nullptr");
+		return -1;
+	}
+	Renderer* renderer = (Renderer*)sdl_renderer;
+
+	SDL_Rect rect_result = *rect;
+	// Null for the entire rendering context 
+	if (rect == NULL) {
+		int screen_w = 0;
+		int screen_h = 0;
+		get_window_size(renderer->window, screen_h, screen_h);
+		rect_result.x = screen_w / 2;
+		rect_result.y = screen_h / 2;
+		rect_result.w = screen_w;
+		rect_result.h = screen_h;
+	}
+	int half_w = rect_result.w / 2;
+	int half_h = rect_result.h / 2;
+	
+	V2 top_left =			{ (float)(rect_result.x - half_w) , (float)(rect_result.y + half_h) };
+	V2 top_right =			{ (float)(rect_result.x + half_w) , (float)(rect_result.y + half_h) };
+	V2 bottom_right =		{ (float)(rect_result.x + half_w) , (float)(rect_result.y - half_h) };
+	V2 bottom_left =		{ (float)(rect_result.x - half_w) , (float)(rect_result.y - half_h) };
+
+	// Converted to ndc inside the draw line function
+	
+	SDL_RenderDrawLine(sdl_renderer, (int)top_left.x, (int)top_left.y, (int)top_right.x, (int)top_right.y);
+	SDL_RenderDrawLine(sdl_renderer, (int)top_right.x, (int)top_right.y, (int)bottom_right.x, (int)bottom_right.y);
+	SDL_RenderDrawLine(sdl_renderer, (int)bottom_right.x, (int)bottom_right.y, (int)bottom_left.x, (int)bottom_left.y);
+	SDL_RenderDrawLine(sdl_renderer, (int)bottom_left.x, (int)bottom_left.y, (int)top_left.x, (int)top_left.y);
+
+	// Returns 0 on success
+	return 0;
+} 
 // Put anything I want into the renderer struct. Don't change api
 // SDL draw functions don't necessarily emit a draw call immediately
 // The draw will happen EVENTUALLY
 #if 0
-SDL_RenderDrawPoint
-SDL_RenderDrawPoints
 SDL_RenderDrawRect
 SDL_RenderDrawRects
 
