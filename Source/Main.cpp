@@ -243,12 +243,12 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 
 		SDL_RenderDrawLines(renderer, points, total_points);
 
-		SDL_Rect draw_rect;
-		draw_rect.x = 300;
-		draw_rect.y = 300;
-		draw_rect.w = 50;
-		draw_rect.h = 50;
-		SDL_RenderDrawRect(renderer, &draw_rect);
+		//					   x    y    w   h
+		SDL_Rect draw_rect_1 = { 300, 300, 50, 50 };
+		SDL_Rect draw_rect_2 = { 400, 400, 50, 50 };
+		SDL_Rect draw_rect_3 = { 500, 500, 50, 50 };
+		SDL_Rect rects_two[3] = { draw_rect_1, draw_rect_2, draw_rect_3 };
+		SDL_RenderDrawRects(renderer, rects_two, ARRAYSIZE(rects_two));
 
 		for (int i = 0; i < total_points; i++) {
 			points[i].x += 1;

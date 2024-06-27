@@ -733,6 +733,25 @@ int SDL_RenderDrawRect(SDL_Renderer* sdl_renderer, const SDL_Rect* rect) {
 	// Returns 0 on success
 	return 0;
 } 
+
+int SDL_RenderDrawRects(SDL_Renderer* sdl_renderer, const SDL_Rect* rects, int count) {
+	if (sdl_renderer == nullptr) {
+		log("ERROR: sdl_renderer is nullptr");
+		return -1;
+	}
+
+	if (count <= 0) {
+		log("SDL_RenderDrawLines count is <= 0");
+	}
+
+	for (int i = 0; i < count; i++) {
+		SDL_Rect r = rects[i];
+		SDL_RenderDrawRect(sdl_renderer, &r);
+	}
+
+	return 0;
+}
+
 // Put anything I want into the renderer struct. Don't change api
 // SDL draw functions don't necessarily emit a draw call immediately
 // The draw will happen EVENTUALLY

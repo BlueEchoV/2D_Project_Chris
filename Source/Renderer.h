@@ -22,6 +22,7 @@ int SDL_RenderDrawLines(SDL_Renderer* sdl_renderer, const SDL_Point* points, int
 int SDL_RenderDrawPoint(SDL_Renderer* sdl_renderer, int x, int y);
 int SDL_RenderDrawPoints(SDL_Renderer* sdl_renderer, const SDL_Point* points, int count);
 int SDL_RenderDrawRect(SDL_Renderer* sdl_renderer, const SDL_Rect* rect);
+int SDL_RenderDrawRects(SDL_Renderer* sdl_renderer, const SDL_Rect* rects, int count);
 void SDL_RenderPresent(SDL_Renderer* sdl_renderer);
 
 #if 0
