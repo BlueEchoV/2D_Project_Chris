@@ -243,6 +243,11 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 
 		SDL_RenderDrawLines(renderer, points, total_points);
 
+		for (int i = 0; i < total_points; i++) {
+			points[i].x += 1;
+		}
+		SDL_RenderDrawPoints(renderer, points, total_points);
+
 		SDL_RenderPresent(renderer);
 #if 0
 		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);

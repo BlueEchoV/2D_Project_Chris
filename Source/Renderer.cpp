@@ -341,26 +341,15 @@ struct Color_8 {
 };
 
 struct Vertices_Info {
-	int total;
+	int total_vertices;
+	size_t starting_index;
 	int draw_type;
-};
-
-enum Command_Type {
-	CT_FILL_RECT,
-	CT_TOTAL
-};
-
-struct Render_Command {
-	Command_Type type;
-	SDL_Rect rect;
-	Color_8 captured_render_draw_color;
 };
 
 struct Renderer {
 	HWND window;
 	HDC hdc;
 	Color_8 render_draw_color;
-	std::vector<Render_Command> command_queue;
 
 	GLuint vbo;
 	GLuint vao;
@@ -391,7 +380,7 @@ SDL_Renderer* SDL_CreateRenderer(HWND window, int index, uint32_t flags) {
 		0,
 		0,
 		0, 0, 0, 0,
-		24,                   // Number of bits for the depthbuffer
+		24,                   // Number of bits for the depthbGuffer
 		8,                    // Number of bits for the stencilbuffer
 		0,                    // Number of Aux buffers in the framebuffer.
 		PFD_MAIN_PLANE,
@@ -527,47 +516,26 @@ int SDL_RenderFillRect(SDL_Renderer* sdl_renderer, const SDL_Rect* rect) {
 		return -1;
 	}
 	Renderer* renderer = (Renderer*)sdl_renderer;
- 
-	Render_Command command;
-	command.type = CT_FILL_RECT;
-	command.captured_render_draw_color = renderer->render_draw_color;
+
+	Color_f c = convert_color_8_to_floating_point(renderer->render_draw_color);
+	SDL_Rect rect_result = *rect;
 	// Null for the entire rendering context 
 	if (rect == NULL) {
 		int screen_w = 0;
 		int screen_h = 0;
 		get_window_size(renderer->window, screen_h, screen_h);
-		SDL_Rect temp;
-		temp.x = screen_w / 2;
-		temp.y = screen_h / 2;
-		temp.w = screen_w;
-		temp.h = screen_h;
-		command.rect = temp;
+		rect_result.x = screen_w / 2;
+		rect_result.y = screen_h / 2;
+		rect_result.w = screen_w;
+		rect_result.h = screen_h;
 	}
-	else {
-		command.rect = *rect;
-	}
-	renderer->command_queue.push_back(command);
-
-	// Returns 0 on success
-	return 0;
-}
-
-void execute_fill_rect_command(SDL_Renderer* sdl_renderer, Render_Command command) {
-	if (sdl_renderer == nullptr) {
-		log("ERROR: sdl_renderer is nullptr");
-		assert(false);
-	}
-	Renderer* renderer = (Renderer*)sdl_renderer;
-  
-	Color_f c = convert_color_8_to_floating_point(command.captured_render_draw_color);
-
-	int half_w = command.rect.w / 2;
-	int half_h = command.rect.h / 2;
+	int half_w = rect_result.w / 2;
+	int half_h = rect_result.h / 2;
 	
-	V2 top_left =			{ (float)(command.rect.x - half_w) , (float)(command.rect.y + half_h) };
-	V2 top_right =			{ (float)(command.rect.x + half_w) , (float)(command.rect.y + half_h) };
-	V2 bottom_right =		{ (float)(command.rect.x + half_w) , (float)(command.rect.y - half_h) };
-	V2 bottom_left =		{ (float)(command.rect.x - half_w) , (float)(command.rect.y - half_h) };
+	V2 top_left =			{ (float)(rect_result.x - half_w) , (float)(rect_result.y + half_h) };
+	V2 top_right =			{ (float)(rect_result.x + half_w) , (float)(rect_result.y + half_h) };
+	V2 bottom_right =		{ (float)(rect_result.x + half_w) , (float)(rect_result.y - half_h) };
+	V2 bottom_left =		{ (float)(rect_result.x - half_w) , (float)(rect_result.y - half_h) };
 
 	V2 top_left_ndc =		convert_to_ndc(sdl_renderer, top_left);
 	V2 top_right_ndc =		convert_to_ndc(sdl_renderer, top_right);
@@ -604,20 +572,16 @@ void execute_fill_rect_command(SDL_Renderer* sdl_renderer, Render_Command comman
 	vertices[5].color = c;
 	renderer->vertices.push_back(vertices[5]);
 
+	// Store the number of vertices to be rendered for this group
 	Vertices_Info info;
 	info.draw_type = GL_TRIANGLES;
-	info.total = ARRAYSIZE(vertices);
+	info.total_vertices = ARRAYSIZE(vertices);
+	info.starting_index = renderer->vertices.size() - info.total_vertices;
 	// Store the number of vertices to be rendered for this group
 	renderer->vertices_info.push_back(info);
-	
-	glBindBuffer(GL_ARRAY_BUFFER, renderer->vbo);
 
-	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos));
-	glEnableVertexAttribArray(1);
-	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, color));
-	glEnableVertexAttribArray(2);
-	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
+	// Returns 0 on success
+	return 0;
 }
 
 int SDL_RenderFillRects(SDL_Renderer* sdl_renderer, const SDL_Rect* rects, int count) {
@@ -648,32 +612,21 @@ int SDL_RenderDrawLine(SDL_Renderer* sdl_renderer, int x1, int y1, int x2, int y
 	V2 point_two =		convert_to_ndc(sdl_renderer, x2, y2);
 	
 	Vertex vertices[2] = {};
-	// NOTE: Ignore the UV value. No texture.
-	// ***First Triangle***
-	// Bottom Left
 	vertices[0].pos = point_one;
 	vertices[0].color = c;
 	renderer->vertices.push_back(vertices[0]);
-	// Top Left
 	vertices[1].pos = point_two;
 	vertices[1].color = c;
 	renderer->vertices.push_back(vertices[1]);
 
 	Vertices_Info info;
 	info.draw_type = GL_LINES;
-	info.total = ARRAYSIZE(vertices);
+	info.total_vertices = ARRAYSIZE(vertices);
+	// Subtract the already added vertices to get the starting index
+	info.starting_index = renderer->vertices.size() - info.total_vertices;
 	// Store the number of vertices to be rendered for this group
 	renderer->vertices_info.push_back(info);
 	
-	glBindBuffer(GL_ARRAY_BUFFER, renderer->vbo);
-
-	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos));
-	glEnableVertexAttribArray(1);
-	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, color));
-	glEnableVertexAttribArray(2);
-	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
-
 	return 0;
 }
 
@@ -695,20 +648,68 @@ int SDL_RenderDrawLines(SDL_Renderer* sdl_renderer, const SDL_Point* points, int
 
 	return 0;
 }
+
+// Just call renderDrawRect
+#define GL_PROGRAM_POINT_SIZE             0x8642
+int SDL_RenderDrawPoint(SDL_Renderer* sdl_renderer, int x, int y) {
+	if (sdl_renderer == nullptr) {
+		log("ERROR: sdl_renderer is nullptr");
+		return -1;
+	}
+	glEnable(GL_PROGRAM_POINT_SIZE);
+	glPointSize(50);
+	Renderer* renderer = (Renderer*)sdl_renderer;
+
+	Color_f c =	convert_color_8_to_floating_point(renderer->render_draw_color);
+	
+	V2 point = convert_to_ndc(sdl_renderer, x, y);
+	
+	Vertex vertex = {};
+	vertex.pos = point;
+	vertex.color = c;
+	renderer->vertices.push_back(vertex);
+
+	Vertices_Info info; info.draw_type = GL_LINES;
+	info.total_vertices = 1; 
+	// Subtract the already added vertices to get the starting index
+	info.starting_index = renderer->vertices.size() - info.total_vertices;
+	// Store the number of vertices to be rendered for this group
+	renderer->vertices_info.push_back(info);
+
+	return 0;
+}
+
+int SDL_RenderDrawPoints(SDL_Renderer* sdl_renderer, const SDL_Point* points, int count) {
+	if (sdl_renderer == nullptr) {
+		log("ERROR: sdl_renderer is nullptr");
+		return -1;
+	}
+
+	if (count <= 0) {
+		log("SDL_RenderDrawLines count is <= 0");
+	}
+
+	for (int i = 0; i < count; i++) {
+		SDL_Point p1 = points[i];
+		SDL_RenderDrawPoint(sdl_renderer, p1.x, p1.y);
+	}
+
+	return 0;
+}
+
 // Put anything I want into the renderer struct. Don't change api
 // SDL draw functions don't necessarily emit a draw call immediately
 // The draw will happen EVENTUALLY
 #if 0
-
-SDL_RenderDrawLine
-SDL_RenderDrawLines
 SDL_RenderDrawPoint
 SDL_RenderDrawPoints
 SDL_RenderDrawRect
 SDL_RenderDrawRects
 
 SDL_CreateTexture
+SDL_DestroyTexture
 SDL_RenderCopy
+SDL_DestroyRenderer
 #endif
 
 void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
@@ -718,30 +719,24 @@ void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
 	}
 	Renderer* renderer = (Renderer*)sdl_renderer;
 
-	for (Render_Command command : renderer->command_queue) {
-		switch (command.type) {
-		case CT_FILL_RECT: {
-			execute_fill_rect_command(sdl_renderer, command);
-			break;
-		}
-		}
-	}
-
-	// Send all the info
+	glBindBuffer(GL_ARRAY_BUFFER, renderer->vbo);
 	glBufferData(GL_ARRAY_BUFFER, renderer->vertices.size() * sizeof(Vertex), renderer->vertices.data(), GL_STATIC_DRAW);
+
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos));
+	glEnableVertexAttribArray(1);
+	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, color));
+	glEnableVertexAttribArray(2);
+	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
 
 	const char* vertex_shader_file_path = "Shaders\\vertex_shader.txt";
 	const char* fragment_shader_file_path = "Shaders\\fragment_shader.txt";
 	GLuint shader_program = create_shader_program(vertex_shader_file_path, fragment_shader_file_path);
 	glUseProgram(shader_program);
 
-	int starting_index = 0;
-	// Add the points logic here. Store the GL_ state on the vertex?
 	for (Vertices_Info info : renderer->vertices_info) {
-		glDrawArrays(info.draw_type, starting_index, info.total);
-		starting_index += info.total;
+		glDrawArrays(info.draw_type, info.starting_index, info.total_vertices);
 	}
 	
-
 	SwapBuffers(renderer->hdc);
 }
