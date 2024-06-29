@@ -181,6 +181,8 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 	
 	SDL_Renderer* renderer = SDL_CreateRenderer(window, 0, 0);
 
+	Image image = create_Image(renderer, "");
+
 	bool running = true;
 	while (running) {
 		MSG msg;
