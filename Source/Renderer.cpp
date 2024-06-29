@@ -1079,6 +1079,31 @@ const char* fragment_Shader_Source =
 "	uv.y += u_uv_Offset_Y;\n"
 "	o_color = vec4(texture(texDiffuse_2, uv).rgb, alpha);\n"
 "};\n";
+
+#version 330
+layout(location = 0) in vec2 v_position;
+layout(location = 1) in vec4 v_color;
+layout(location = 2) in vec2 v_uv;
+
+out vec4 f_color;
+out vec2 f_uv;
+
+void main()
+{
+    f_color = v_color;
+    f_uv = v_uv;
+    gl_Position = vec4(v_position, 0.0, 1.0);
+}
+
+#version 330
+out vec4 o_color;
+in vec4 f_color;
+in vec2 f_uv;
+
+void main()
+{
+    o_color = f_color;
+}
 #endif
 
 struct GL_Texture {
@@ -1200,7 +1225,7 @@ int SDL_LockTexture(SDL_Texture* texture, const SDL_Rect* rect, void **pixels, i
         return -1;
     }
 
-    if (texture->pixels == NULL) {
+    if (texture->pixels != NULL) {
         log("ERROR: Texture is already locked");
         return -1;
     }
@@ -1287,12 +1312,13 @@ int SDL_RenderCopy(SDL_Renderer* sdl_renderer, SDL_Texture* texture, const SDL_R
         return -1;
     }
 
-
 	// Null for entire texture
-	SDL_Rect srcrect_final = *srcrect;
+	SDL_Rect srcrect_final;
 	if (srcrect == NULL) {
 		srcrect_final = { 0, 0, texture->w, texture->h };
 		texture->portion = NULL;
+	} else {
+		SDL_Rect srcrect_final = *srcrect;
 	} 
 
 	int half_w_src = texture->w / 2;
@@ -1377,6 +1403,9 @@ int SDL_RenderCopy(SDL_Renderer* sdl_renderer, SDL_Texture* texture, const SDL_R
 	info.total_vertices = ARRAYSIZE(vertices); 
 	info.starting_index = renderer->vertices.size() - info.total_vertices;
 	renderer->vertices_info.push_back(info);
+
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, texture->handle);
 
 	return 0;
 }

@@ -181,7 +181,7 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 	
 	SDL_Renderer* renderer = SDL_CreateRenderer(window, 0, 0);
 
-	Image image = create_Image(renderer, "");
+	Image castle_Infernal_Image = create_Image(renderer, "assets\\castle_Infernal.png");
 
 	bool running = true;
 	while (running) {
@@ -256,6 +256,9 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 			points[i].x += 1;
 		}
 		SDL_RenderDrawPoints(renderer, points, total_points);
+		
+		SDL_Rect castle_rect = { 500,500,300,300 };
+		SDL_RenderCopy(renderer, castle_Infernal_Image.texture, NULL, &castle_rect);
 
 		SDL_RenderPresent(renderer);
 #if 0

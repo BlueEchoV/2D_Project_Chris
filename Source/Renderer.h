@@ -58,6 +58,7 @@ struct SDL_Texture;
 int SDL_SetTextureBlendMode(SDL_Texture* texture, SDL_BlendMode blend_mode);
 int SDL_LockTexture(SDL_Texture * texture, const SDL_Rect * rect, void **pixels, int *pitch);
 SDL_Texture* SDL_CreateTexture(SDL_Renderer* sdl_renderer, uint32_t format, int access, int w, int h);
+int SDL_RenderCopy(SDL_Renderer* sdl_renderer, SDL_Texture* texture, const SDL_Rect* srcrect, const SDL_Rect* dstrect);
 void SDL_RenderPresent(SDL_Renderer* sdl_renderer);
 
 Image create_Image(SDL_Renderer* sdl_renderer, const char* file_Path);
