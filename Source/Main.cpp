@@ -202,6 +202,7 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		SDL_SetRenderDrawColor(renderer, 127, 0, 127, 255);
 		SDL_RenderClear(renderer);
 
+#if 0
 		SDL_Rect rect_one;
 		rect_one.x = 500;
 		rect_one.y = 300;
@@ -257,7 +258,8 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		}
 		SDL_RenderDrawPoints(renderer, points, total_points);
 		
-		SDL_Rect castle_rect = { 500,500,300,300 };
+#endif
+		SDL_Rect castle_rect = { 350,350,300,300 };
 		SDL_RenderCopy(renderer, castle_Infernal_Image.texture, NULL, &castle_rect);
 
 		SDL_RenderPresent(renderer);

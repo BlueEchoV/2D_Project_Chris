@@ -1220,36 +1220,48 @@ int SDL_SetTextureBlendMode(SDL_Texture* texture, SDL_BlendMode blend_mode) {
 
 // NOTE: For changing the texture on the CPU's side
 int SDL_LockTexture(SDL_Texture* texture, const SDL_Rect* rect, void **pixels, int *pitch) {
-    if (texture == NULL){
-        log("ERROR: Invalid texture");
-        return -1;
-    }
-
-    if (texture->pixels != NULL) {
-        log("ERROR: Texture is already locked");
-        return -1;
-    }
-
-    SDL_Rect full_rect = { 0, 0, texture->w, texture->h };
-    if (rect == NULL) {
-        rect = &full_rect;
-		texture->portion = NULL;
-    } else {
-		// Store the portion of the texture
-		texture->portion = new SDL_Rect();
-		*texture->portion = *rect;
+	if (texture == NULL) {
+		log("ERROR: Invalid texture");
+		return -1;
 	}
 
-    if (rect->x < 0 || rect->y < 0 || rect->x + rect->w > texture->w || rect->y + rect->h > texture->h) {
-        log("ERROR: Lock area out of bounds");
-        return -1;
-    }
+	if (texture->pixels != NULL) {
+		log("ERROR: Texture is already locked");
+		return -1;
+	}
 
-	int buffer_size = rect->w * rect->h * SDL_BYTESPERPIXEL(texture->format);
-	*pixels = new Uint8[buffer_size];
-	*pitch = rect->w * SDL_BYTESPERPIXEL(texture->format);
+	SDL_Rect full_rect = { 0, 0, texture->w, texture->h };
+	if (rect == NULL) {
+		SDL_Rect* temp = new SDL_Rect();
+		*temp = full_rect;
+		texture->portion = temp;
+	}
+	else {
+		SDL_Rect* temp = new SDL_Rect();
+		*temp = *rect;
+		texture->portion = temp;
+	}
 
-    return 0;
+	if (texture->portion->x < 0 || 
+		texture->portion->y < 0 || 
+		texture->portion->x + texture->portion->w > texture->w || 
+		texture->portion->y + texture->portion->h > texture->h) {
+		log("ERROR: Lock area out of bounds");
+		return -1;
+	}
+
+	int buffer_size = texture->portion->w * texture->portion->h * SDL_BYTESPERPIXEL(texture->format);
+	Uint8* buffer = new Uint8[buffer_size];
+	if (buffer == NULL) {
+		log("ERROR: Memory allocation failed");
+		return -1;
+	}
+
+	*pixels = buffer;
+	*pitch = texture->portion->w * SDL_BYTESPERPIXEL(texture->format);
+	texture->pixels = *pixels;
+
+	return 0;
 }
 
 #if 0
@@ -1262,8 +1274,12 @@ int SDL_LockTexture(SDL_Texture* texture, const SDL_Rect* rect, void **pixels, i
 
 // Uploading the texture to the GPU
 void SDL_UnlockTexture(SDL_Texture* texture) {
+	// Temporary code for learning.
+	glActiveTexture(GL_TEXTURE0);
 	// Bind the handle
 	glBindTexture(GL_TEXTURE_2D, texture->handle);
+
+	glEnable(GL_BLEND);
 
 	// Set the texture wrapping/filtering options (on the currently bound texture object)
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
@@ -1325,10 +1341,10 @@ int SDL_RenderCopy(SDL_Renderer* sdl_renderer, SDL_Texture* texture, const SDL_R
 	int half_h_src = texture->h / 2;
 	
 	// Calculate the UV coordinates 
-	V2 top_left_src =			{ (float)(srcrect_final.x - half_w_src) , (float)(srcrect_final.y + half_h_src) };
-	V2 top_right_src =			{ (float)(srcrect_final.x + half_w_src) , (float)(srcrect_final.y + half_h_src) };
-	V2 bottom_right_src =		{ (float)(srcrect_final.x + half_w_src) , (float)(srcrect_final.y - half_h_src) };
-	V2 bottom_left_src =		{ (float)(srcrect_final.x - half_w_src) , (float)(srcrect_final.y - half_h_src) };
+	V2 top_left_src =			{  0.0f , (float)(texture->h) };
+	V2 top_right_src =			{ (float)(texture->w) , (float)(texture->h) };
+	V2 bottom_right_src =		{ (float)(texture->w) , 0.0f };
+	V2 bottom_left_src =		{ 0.0f , 0.0f };
 
 	V2 top_left_uv =			convert_to_uv_coordinates(top_left_src, texture->w, texture->h);
 	V2 top_right_uv =			convert_to_uv_coordinates(top_right_src, texture->w, texture->h);
@@ -1403,9 +1419,6 @@ int SDL_RenderCopy(SDL_Renderer* sdl_renderer, SDL_Texture* texture, const SDL_R
 	info.total_vertices = ARRAYSIZE(vertices); 
 	info.starting_index = renderer->vertices.size() - info.total_vertices;
 	renderer->vertices_info.push_back(info);
-
-	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_2D, texture->handle);
 
 	return 0;
 }
@@ -1489,6 +1502,7 @@ void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
 	glUseProgram(shader_program);
 
 	for (Vertices_Info info : renderer->vertices_info) {
+		glActiveTexture(GL_TEXTURE0);
 		glDrawArrays(info.draw_type, info.starting_index, info.total_vertices);
 	}
 	
