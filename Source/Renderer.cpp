@@ -557,6 +557,7 @@ struct Vertices_Info {
 	size_t starting_index;
 	int draw_type;
 	Shader_Type type;
+	GLuint texture_handle;
 };
 
 struct Renderer {
@@ -1035,6 +1036,14 @@ SDL_Texture* SDL_CreateTexture(SDL_Renderer* sdl_renderer, uint32_t format, int 
 	return result;
 }
 
+void my_Memory_Copy(void* dest, const void* src, size_t count) {
+	unsigned char* destination = (unsigned char*)dest;
+	unsigned char* source = (unsigned char*)src;
+	for (int i = 0; i < count; i++) {
+		destination[i] = source[i];
+	}
+}
+
 bool is_valid_sdl_blend_mode(int mode) {
 	switch (mode) {
 	case SDL_BLENDMODE_NONE:
@@ -1115,23 +1124,16 @@ int SDL_LockTexture(SDL_Texture* texture, const SDL_Rect* rect, void **pixels, i
 	return 0;
 }
 
-#if 0
-if (texture->access == SDL_TEXTUREACCESS_STREAMING) {
-	texture->pixels = new Uint8();
-}
-else {
-	texture->pixels = NULL;
-}
-#endif
-
 // Uploading the texture to the GPU
-void SDL_UnlockTexture(SDL_Texture * texture) {
+void SDL_UnlockTexture(SDL_Texture* texture) {
 	// Temporary code for learning.
-	glActiveTexture(GL_TEXTURE0);
+	// glActiveTexture(GL_TEXTURE0);
 	// Bind the handle
 	glBindTexture(GL_TEXTURE_2D, texture->handle);
 
-	glEnable(GL_BLEND);
+	if (texture->blend_mode == SDL_BLENDMODE_BLEND) {
+		glEnable(GL_BLEND);
+	}
 
 	// Set the texture wrapping/filtering options (on the currently bound texture object)
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
@@ -1159,12 +1161,36 @@ void SDL_UnlockTexture(SDL_Texture * texture) {
 	}
 }
 
-void my_Memory_Copy(void* dest, const void* src, size_t count) {
-	unsigned char* destination = (unsigned char*)dest;
-	unsigned char* source = (unsigned char*)src;
-	for (int i = 0; i < count; i++) {
-		destination[i] = source[i];
+int SDL_UpdateTexture(SDL_Texture* texture, const SDL_Rect* rect, const void *pixels, int pitch) {
+	if (texture == NULL || pixels == NULL) {
+		log("ERROR: Invalid texture or pixels");
+		return -1;
 	}
+
+	void* pixels_temp = NULL;
+	int locked_pitch = 0;
+
+	// Lock the texture to get access to the pixel buffer
+	if (SDL_LockTexture(texture, rect, &pixels_temp, &locked_pitch) != 0) {
+		log("ERROR: Failed to lock texture");
+		return -1;
+	}
+
+	// Calculate the width and height to be updated
+	int width = rect ? rect->w : texture->w;
+	int height = rect ? rect->h : texture->h;
+
+	// Update the texture's pixel data
+	Uint8* dest = (Uint8*)pixels_temp;
+	const Uint8* src = (const Uint8*)pixels;
+
+	for (int y = 0; y < height; y++) {
+		my_Memory_Copy(dest + y * locked_pitch, src + y * pitch, width * SDL_BYTESPERPIXEL(texture->format));
+	}
+
+	SDL_UnlockTexture(texture);
+
+	return 0;
 }
 
 int SDL_RenderCopy(SDL_Renderer * sdl_renderer, SDL_Texture * texture, const SDL_Rect * srcrect, const SDL_Rect * dstrect) {
@@ -1270,12 +1296,13 @@ int SDL_RenderCopy(SDL_Renderer * sdl_renderer, SDL_Texture * texture, const SDL
 	info.total_vertices = ARRAYSIZE(vertices);
 	info.starting_index = renderer->vertices.size() - info.total_vertices;
 	info.type = ST_TEXTURE;
+	info.texture_handle = texture->handle;
 	renderer->vertices_info.push_back(info);
 
 	return 0;
 }
 
-Image create_Image(SDL_Renderer * sdl_renderer, const char* file_Path) {
+Image create_Image(SDL_Renderer* sdl_renderer, const char* file_Path) {
 	Image result = {};
 	result.file_Path = file_Path;
 
@@ -1358,8 +1385,10 @@ void SDL_RenderPresent(SDL_Renderer * sdl_renderer) {
 	GLuint current_shader_program;
 	for (Vertices_Info info : renderer->vertices_info) {
 		if (info.type == ST_TEXTURE) {
+			glBindTexture(GL_TEXTURE_2D, info.texture_handle);
 			glUseProgram(texture_shader);
-			glActiveTexture(GL_TEXTURE0);
+			// Experimental code
+			// glActiveTexture(GL_TEXTURE0);
 		}
 		else {
 			glUseProgram(color_shader);

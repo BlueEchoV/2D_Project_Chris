@@ -67,7 +67,47 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 	);
 
 	ShowWindow(window, SW_SHOW);
+	
+	SDL_Renderer* renderer = SDL_CreateRenderer(window, 0, 0);
 
+	Image castle_Infernal_Image = create_Image(renderer, "assets\\castle_Infernal.png");
+	Image azir_image = create_Image(renderer, "assets\\azir.jpg");
+
+	bool running = true;
+	while (running) {
+		MSG msg;
+		while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
+			TranslateMessage(&msg);
+			DispatchMessage(&msg);
+
+			if (msg.message == WM_QUIT) {
+				running = false;
+			}
+			
+		}
+
+		// RECT rect_temp = {};
+		// GetClientRect(window, &rect_temp);
+
+		SDL_SetRenderDrawColor(renderer, 127, 0, 127, 255);
+		SDL_RenderClear(renderer);
+		
+		SDL_Rect castle_rect = { 350,350,300,300 };
+		SDL_RenderCopy(renderer, castle_Infernal_Image.texture, NULL, &castle_rect);
+
+		SDL_Rect azir_rect = { 800,350,300,300 };
+		SDL_RenderCopy(renderer, azir_image.texture, NULL, &azir_rect);
+
+		SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
+		SDL_RenderDrawPoint(renderer, 700, 500);
+
+		SDL_RenderPresent(renderer);
+	return 0;
+}
+
+// Archived for now
+
+// Before while loop
 #if 0
 	Vertex vertices[6];
 	// ***First Square - Left side***
@@ -179,93 +219,7 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 #endif
 	
-	SDL_Renderer* renderer = SDL_CreateRenderer(window, 0, 0);
-
-	Image castle_Infernal_Image = create_Image(renderer, "assets\\castle_Infernal.png");
-
-	bool running = true;
-	while (running) {
-		MSG msg;
-		while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
-			TranslateMessage(&msg);
-			DispatchMessage(&msg);
-
-			if (msg.message == WM_QUIT) {
-				running = false;
-			}
-			
-		}
-
-		// RECT rect_temp = {};
-		// GetClientRect(window, &rect_temp);
-
-		SDL_SetRenderDrawColor(renderer, 127, 0, 127, 255);
-		SDL_RenderClear(renderer);
-
-#if 0
-		SDL_Rect rect_one;
-		rect_one.x = 500;
-		rect_one.y = 300;
-		rect_one.w = 200;
-		rect_one.h = 200;
-
-		SDL_Rect rect_two;
-		rect_two.x = 700;
-		rect_two.y = 500;
-		rect_two.w = 200;
-		rect_two.h = 200;
-
-		SDL_Rect rect_three;
-		rect_three.x = 900;
-		rect_three.y = 700;
-		rect_three.w = 200;
-		rect_three.h = 200;
-
-		SDL_Rect rects[3] = { rect_one, rect_two , rect_three };
-
-		SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255);
-		SDL_RenderFillRects(renderer, rects, ARRAYSIZE(rects));
-
-		SDL_SetRenderDrawColor(renderer, 0, 255, 255, 255);
-
-#if 0
-		SDL_RenderDrawLine(renderer, 10, 10, 500, 10);
-		SDL_RenderDrawLine(renderer, 500, 10, 500, 500);
-		SDL_RenderDrawLine(renderer, 500, 500, 10, 500);
-		SDL_RenderDrawLine(renderer, 10, 500, 10, 10);
-#endif
-
-		SDL_Point p1 = { 10, 10 };
-		SDL_Point p2 = { 500, 10 };
-		SDL_Point p3 = { 500, 500 };
-		SDL_Point p4 = { 10, 500 };
-		SDL_Point p5 = { 10, 10 };
-
-		const int total_points = 5;
-		SDL_Point points[total_points] = { p1, p2, p3, p4, p5 };
-
-		SDL_RenderDrawLines(renderer, points, total_points);
-
-		//					   x    y    w   h
-		SDL_Rect draw_rect_1 = { 300, 300, 50, 50 };
-		SDL_Rect draw_rect_2 = { 400, 400, 50, 50 };
-		SDL_Rect draw_rect_3 = { 500, 500, 50, 50 };
-		SDL_Rect rects_two[3] = { draw_rect_1, draw_rect_2, draw_rect_3 };
-		SDL_RenderDrawRects(renderer, rects_two, ARRAYSIZE(rects_two));
-
-		for (int i = 0; i < total_points; i++) {
-			points[i].x += 1;
-		}
-		SDL_RenderDrawPoints(renderer, points, total_points);
-		
-#endif
-		SDL_Rect castle_rect = { 350,350,300,300 };
-		SDL_RenderCopy(renderer, castle_Infernal_Image.texture, NULL, &castle_rect);
-
-		SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
-		SDL_RenderDrawPoint(renderer, 700, 500);
-
-		SDL_RenderPresent(renderer);
+// In main loop
 #if 0
 		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT);
@@ -313,5 +267,3 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		glGetProgramInfoLog();
 		glUseProgram();
 	#endif
-	return 0;
-}
