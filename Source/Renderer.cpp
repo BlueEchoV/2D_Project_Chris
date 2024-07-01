@@ -1337,9 +1337,6 @@ int SDL_RenderCopy(SDL_Renderer* sdl_renderer, SDL_Texture* texture, const SDL_R
 		SDL_Rect srcrect_final = *srcrect;
 	} 
 
-	int half_w_src = texture->w / 2;
-	int half_h_src = texture->h / 2;
-	
 	// Calculate the UV coordinates 
 	V2 top_left_src =			{  0.0f , (float)(texture->h) };
 	V2 top_right_src =			{ (float)(texture->w) , (float)(texture->h) };
