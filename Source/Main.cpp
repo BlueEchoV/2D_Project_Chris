@@ -262,6 +262,9 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		SDL_Rect castle_rect = { 350,350,300,300 };
 		SDL_RenderCopy(renderer, castle_Infernal_Image.texture, NULL, &castle_rect);
 
+		SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
+		SDL_RenderDrawPoint(renderer, 700, 500);
+
 		SDL_RenderPresent(renderer);
 #if 0
 		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);

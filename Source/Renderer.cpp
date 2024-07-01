@@ -157,6 +157,304 @@ void loadGLFunctions() {
 	glActiveTexture = (glActiveTextureFunc)wglGetProcAddress("glActiveTexture");
 }
 
+// *********************SDL Information*********************
+/**
+ *  \name Transparency definitions
+ *
+ *  These define alpha as the opacity of a surface.
+ */
+/* @{ */
+#define SDL_ALPHA_OPAQUE 255
+#define SDL_ALPHA_TRANSPARENT 0
+/* @} */
+
+/**
+ * \brief A signed 8-bit integer type.
+ */
+#define SDL_MAX_SINT8   ((Sint8)0x7F)           /* 127 */
+#define SDL_MIN_SINT8   ((Sint8)(~0x7F))        /* -128 */
+typedef int8_t Sint8;
+/**
+ * \brief An unsigned 8-bit integer type.
+ */
+#define SDL_MAX_UINT8   ((Uint8)0xFF)           /* 255 */
+#define SDL_MIN_UINT8   ((Uint8)0x00)           /* 0 */
+typedef uint8_t Uint8;
+/**
+ * \brief A signed 16-bit integer type.
+ */
+#define SDL_MAX_SINT16  ((Sint16)0x7FFF)        /* 32767 */
+#define SDL_MIN_SINT16  ((Sint16)(~0x7FFF))     /* -32768 */
+typedef int16_t Sint16;
+/**
+ * \brief An unsigned 16-bit integer type.
+ */
+#define SDL_MAX_UINT16  ((Uint16)0xFFFF)        /* 65535 */
+#define SDL_MIN_UINT16  ((Uint16)0x0000)        /* 0 */
+typedef uint16_t Uint16;
+/**
+ * \brief A signed 32-bit integer type.
+ */
+#define SDL_MAX_SINT32  ((Sint32)0x7FFFFFFF)    /* 2147483647 */
+#define SDL_MIN_SINT32  ((Sint32)(~0x7FFFFFFF)) /* -2147483648 */
+typedef int32_t Sint32;
+/**
+ * \brief An unsigned 32-bit integer type.
+ */
+#define SDL_MAX_UINT32  ((Uint32)0xFFFFFFFFu)   /* 4294967295 */
+#define SDL_MIN_UINT32  ((Uint32)0x00000000)    /* 0 */
+typedef uint32_t Uint32;
+
+/**
+ * \brief A signed 64-bit integer type.
+ */
+#define SDL_MAX_SINT64  ((Sint64)0x7FFFFFFFFFFFFFFFll)      /* 9223372036854775807 */
+#define SDL_MIN_SINT64  ((Sint64)(~0x7FFFFFFFFFFFFFFFll))   /* -9223372036854775808 */
+typedef int64_t Sint64;
+/**
+ * \brief An unsigned 64-bit integer type.
+ */
+#define SDL_MAX_UINT64  ((Uint64)0xFFFFFFFFFFFFFFFFull)     /* 18446744073709551615 */
+#define SDL_MIN_UINT64  ((Uint64)(0x0000000000000000ull))   /* 0 */
+typedef uint64_t Uint64;
+
+/**
+ *  \name Cast operators
+ *
+ *  Use proper C++ casts when compiled as C++ to be compatible with the option
+ *  -Wold-style-cast of GCC (and -Werror=old-style-cast in GCC 4.2 and above).
+ */
+/* @{ */
+#ifdef __cplusplus
+#define SDL_reinterpret_cast(type, expression) reinterpret_cast<type>(expression)
+#define SDL_static_cast(type, expression) static_cast<type>(expression)
+#define SDL_const_cast(type, expression) const_cast<type>(expression)
+#else
+#define SDL_reinterpret_cast(type, expression) ((type)(expression))
+#define SDL_static_cast(type, expression) ((type)(expression))
+#define SDL_const_cast(type, expression) ((type)(expression))
+#endif
+/* @} *//* Cast operators */
+
+/* Define a four character code as a Uint32 */
+#define SDL_FOURCC(A, B, C, D) \
+    ((SDL_static_cast(Uint32, SDL_static_cast(Uint8, (A))) << 0) | \
+     (SDL_static_cast(Uint32, SDL_static_cast(Uint8, (B))) << 8) | \
+     (SDL_static_cast(Uint32, SDL_static_cast(Uint8, (C))) << 16) | \
+     (SDL_static_cast(Uint32, SDL_static_cast(Uint8, (D))) << 24))
+
+/** Pixel type. */
+typedef enum
+{
+    SDL_PIXELTYPE_UNKNOWN,
+    SDL_PIXELTYPE_INDEX1,
+    SDL_PIXELTYPE_INDEX4,
+    SDL_PIXELTYPE_INDEX8,
+    SDL_PIXELTYPE_PACKED8,
+    SDL_PIXELTYPE_PACKED16,
+    SDL_PIXELTYPE_PACKED32,
+    SDL_PIXELTYPE_ARRAYU8,
+    SDL_PIXELTYPE_ARRAYU16,
+    SDL_PIXELTYPE_ARRAYU32,
+    SDL_PIXELTYPE_ARRAYF16,
+    SDL_PIXELTYPE_ARRAYF32,
+
+    /* This must be at the end of the list to avoid breaking the existing ABI */
+    SDL_PIXELTYPE_INDEX2
+} SDL_PixelType;
+
+/** Bitmap pixel order, high bit -> low bit. */
+typedef enum
+{
+    SDL_BITMAPORDER_NONE,
+    SDL_BITMAPORDER_4321,
+    SDL_BITMAPORDER_1234
+} SDL_BitmapOrder;
+
+/** Packed component order, high bit -> low bit. */
+typedef enum
+{
+    SDL_PACKEDORDER_RGBA,
+} SDL_PackedOrder;
+
+/** Array component order, low byte -> high byte. */
+/* !!! FIXME: in 2.1, make these not overlap differently with
+   !!! FIXME:  SDL_PACKEDORDER_*, so we can simplify SDL_ISPIXELFORMAT_ALPHA */
+typedef enum
+{
+    SDL_ARRAYORDER_RGBA,
+} SDL_ArrayOrder;
+
+/** Packed component layout. */
+typedef enum
+{
+    SDL_PACKEDLAYOUT_NONE,
+    SDL_PACKEDLAYOUT_8888,
+
+} SDL_PackedLayout;
+
+#define SDL_DEFINE_PIXELFOURCC(A, B, C, D) SDL_FOURCC(A, B, C, D)
+
+#define SDL_DEFINE_PIXELFORMAT(type, order, layout, bits, bytes) \
+    ((1 << 28) | ((type) << 24) | ((order) << 20) | ((layout) << 16) | \
+     ((bits) << 8) | ((bytes) << 0))
+
+#define SDL_PIXELFLAG(X)    (((X) >> 28) & 0x0F)
+#define SDL_PIXELTYPE(X)    (((X) >> 24) & 0x0F)
+#define SDL_PIXELORDER(X)   (((X) >> 20) & 0x0F)
+#define SDL_PIXELLAYOUT(X)  (((X) >> 16) & 0x0F)
+#define SDL_BITSPERPIXEL(X) (((X) >> 8) & 0xFF)
+#define SDL_BYTESPERPIXEL(X) \
+    (SDL_ISPIXELFORMAT_FOURCC(X) ? \
+        ((((X) == SDL_PIXELFORMAT_YUY2) || \
+          ((X) == SDL_PIXELFORMAT_UYVY) || \
+          ((X) == SDL_PIXELFORMAT_YVYU)) ? 2 : 1) : (((X) >> 0) & 0xFF))
+
+#define SDL_ISPIXELFORMAT_INDEXED(format)   \
+    (!SDL_ISPIXELFORMAT_FOURCC(format) && \
+     ((SDL_PIXELTYPE(format) == SDL_PIXELTYPE_INDEX1) || \
+      (SDL_PIXELTYPE(format) == SDL_PIXELTYPE_INDEX2) || \
+      (SDL_PIXELTYPE(format) == SDL_PIXELTYPE_INDEX4) || \
+      (SDL_PIXELTYPE(format) == SDL_PIXELTYPE_INDEX8)))
+
+#define SDL_ISPIXELFORMAT_PACKED(format) \
+    (!SDL_ISPIXELFORMAT_FOURCC(format) && \
+     ((SDL_PIXELTYPE(format) == SDL_PIXELTYPE_PACKED8) || \
+      (SDL_PIXELTYPE(format) == SDL_PIXELTYPE_PACKED16) || \
+      (SDL_PIXELTYPE(format) == SDL_PIXELTYPE_PACKED32)))
+
+#define SDL_ISPIXELFORMAT_ARRAY(format) \
+    (!SDL_ISPIXELFORMAT_FOURCC(format) && \
+     ((SDL_PIXELTYPE(format) == SDL_PIXELTYPE_ARRAYU8) || \
+      (SDL_PIXELTYPE(format) == SDL_PIXELTYPE_ARRAYU16) || \
+      (SDL_PIXELTYPE(format) == SDL_PIXELTYPE_ARRAYU32) || \
+      (SDL_PIXELTYPE(format) == SDL_PIXELTYPE_ARRAYF16) || \
+      (SDL_PIXELTYPE(format) == SDL_PIXELTYPE_ARRAYF32)))
+
+#define SDL_ISPIXELFORMAT_ALPHA(format)   \
+    ((SDL_ISPIXELFORMAT_PACKED(format) && \
+     ((SDL_PIXELORDER(format) == SDL_PACKEDORDER_RGBA))) || \
+    (SDL_ISPIXELFORMAT_ARRAY(format) && \
+     ((SDL_PIXELORDER(format) == SDL_ARRAYORDER_RGBA))))
+
+/* The flag is set to 1 because 0x1? is not in the printable ASCII range */
+#define SDL_ISPIXELFORMAT_FOURCC(format)    \
+    ((format) && (SDL_PIXELFLAG(format) != 1))
+
+/* Note: If you modify this list, update SDL_GetPixelFormatName() */
+typedef enum
+{
+    SDL_PIXELFORMAT_UNKNOWN,
+    SDL_PIXELFORMAT_RGBA8888 =
+        SDL_DEFINE_PIXELFORMAT(SDL_PIXELTYPE_PACKED32, SDL_PACKEDORDER_RGBA,
+                               SDL_PACKEDLAYOUT_8888, 32, 4),
+    /* Aliases for RGBA byte arrays of color data, for the current platform */
+#if SDL_BYTEORDER == SDL_BIG_ENDIAN
+	// We use this one. Don't try to support all of them. Only support what I use.
+    SDL_PIXELFORMAT_RGBA32 = SDL_PIXELFORMAT_RGBA8888,
+#else
+    SDL_PIXELFORMAT_ABGR32 = SDL_PIXELFORMAT_RGBA8888,
+#endif
+    SDL_PIXELFORMAT_YV12 =      /**< Planar mode: Y + V + U  (3 planes) */
+        SDL_DEFINE_PIXELFOURCC('Y', 'V', '1', '2'),
+    SDL_PIXELFORMAT_IYUV =      /**< Planar mode: Y + U + V  (3 planes) */
+        SDL_DEFINE_PIXELFOURCC('I', 'Y', 'U', 'V'),
+    SDL_PIXELFORMAT_YUY2 =      /**< Packed mode: Y0+U0+Y1+V0 (1 plane) */
+        SDL_DEFINE_PIXELFOURCC('Y', 'U', 'Y', '2'),
+    SDL_PIXELFORMAT_UYVY =      /**< Packed mode: U0+Y0+V0+Y1 (1 plane) */
+        SDL_DEFINE_PIXELFOURCC('U', 'Y', 'V', 'Y'),
+    SDL_PIXELFORMAT_YVYU =      /**< Packed mode: Y0+V0+Y1+U0 (1 plane) */
+        SDL_DEFINE_PIXELFOURCC('Y', 'V', 'Y', 'U'),
+    SDL_PIXELFORMAT_NV12 =      /**< Planar mode: Y + U/V interleaved  (2 planes) */
+        SDL_DEFINE_PIXELFOURCC('N', 'V', '1', '2'),
+    SDL_PIXELFORMAT_NV21 =      /**< Planar mode: Y + V/U interleaved  (2 planes) */
+        SDL_DEFINE_PIXELFOURCC('N', 'V', '2', '1'),
+    SDL_PIXELFORMAT_EXTERNAL_OES =      /**< Android video texture format */
+        SDL_DEFINE_PIXELFOURCC('O', 'E', 'S', ' ')
+} SDL_PixelFormatEnum;
+
+#if 0
+std::string vertex_Shader =
+"#version 330\n"
+"layout(location = 0) in vec2 v_position;\n"
+"layout(location = 1) in vec4 v_color;\n"
+"out vec4 f_color;\n"
+"void main()\n"
+"{\n"
+"    f_color = v_color;\n"
+"    gl_Position = vec4(v_position, 0, 1);\n"
+"}	\n";
+
+std::string pixel_Shader =
+"#version 330\n"
+"out vec4 o_color;\n"
+"in vec4 f_color;\n"
+"void main()\n"
+"{\n"
+"	o_color = f_color;\n"
+"};\n";
+
+const char* vertex_Shader_Source =
+"#version 330\n"
+"layout(location = 0) in vec2 v_position;\n"
+"layout(location = 1) in vec4 v_color;\n"
+"layout(location = 2) in vec2 v_uv;\n"
+"out vec4 f_color;\n"
+"out vec2 f_uv;\n"
+"void main()\n"
+"{\n"
+"    f_color = v_color;\n"
+"    f_uv = v_uv;\n"
+"    gl_Position = vec4(v_position, 0, 1);\n"
+"}	\n";
+
+const char* fragment_Shader_Source =
+"#version 330\n"
+"out vec4 o_color;\n"
+"in vec4 f_color;\n"
+"in vec2 f_uv;\n"
+"uniform sampler2D texDiffuse;\n"
+"uniform sampler2D texDiffuse_2;\n"
+"uniform float u_uv_Offset_X;\n"
+"uniform float u_uv_Offset_Y;\n"
+"void main()\n"
+"{\n"
+
+"	// o_color = vec4(f_uv, 0, 1);\n"
+"	float alpha = texture(texDiffuse, f_uv).a;\n"
+"	vec2 uv = f_uv;\n"
+"	uv.x += u_uv_Offset_X;\n"
+"	uv.y += u_uv_Offset_Y;\n"
+"	o_color = vec4(texture(texDiffuse_2, uv).rgb, alpha);\n"
+"};\n";
+
+#version 330
+layout(location = 0) in vec2 v_position;
+layout(location = 1) in vec4 v_color;
+layout(location = 2) in vec2 v_uv;
+
+out vec4 f_color;
+out vec2 f_uv;
+
+void main()
+{
+    f_color = v_color;
+    f_uv = v_uv;
+    gl_Position = vec4(v_position, 0.0, 1.0);
+}
+
+#version 330
+out vec4 o_color;
+in vec4 f_color;
+in vec2 f_uv;
+
+void main()
+{
+    o_color = f_color;
+}
+#endif
+// *********************************************************
+
 struct V2 {
 	float x;
 	float y;
@@ -173,6 +471,12 @@ struct Vertex {
 	V2 pos;
 	Color_f color;
 	V2 uv;
+};
+
+enum Shader_Type {
+	ST_COLOR,
+	ST_TEXTURE,
+	ST_TOTAL
 };
 
 GLuint create_shader(const std::string shader_file_path, GLenum shader_type) {
@@ -252,6 +556,7 @@ struct Vertices_Info {
 	int total_vertices;
 	size_t starting_index;
 	int draw_type;
+	Shader_Type type;
 };
 
 struct Renderer {
@@ -571,27 +876,8 @@ int SDL_RenderDrawPoint(SDL_Renderer* sdl_renderer, int x, int y) {
 		log("ERROR: sdl_renderer is nullptr");
 		return -1;
 	}
-	glEnable(GL_PROGRAM_POINT_SIZE);
-	glPointSize(50);
-	Renderer* renderer = (Renderer*)sdl_renderer;
-
-	Color_f c =	convert_color_8_to_floating_point(renderer->render_draw_color);
-	
-	V2 point = convert_to_ndc(sdl_renderer, x, y);
-	
-	Vertex vertex = {};
-	vertex.pos = point;
-	vertex.color = c;
-	renderer->vertices.push_back(vertex);
-
-	Vertices_Info info; info.draw_type = GL_LINES;
-	info.total_vertices = 1; 
-	// Subtract the already added vertices to get the starting index
-	info.starting_index = renderer->vertices.size() - info.total_vertices;
-	// Store the number of vertices to be rendered for this group
-	renderer->vertices_info.push_back(info);
-
-	return 0;
+	SDL_Rect rect = { x, y, 5, 5 };
+	SDL_RenderFillRect(sdl_renderer, &rect);
 }
 
 int SDL_RenderDrawPoints(SDL_Renderer* sdl_renderer, const SDL_Point* points, int count) {
@@ -666,309 +952,6 @@ int SDL_RenderDrawRects(SDL_Renderer* sdl_renderer, const SDL_Rect* rects, int c
 
 	return 0;
 }
-
-/**
- *  \name Transparency definitions
- *
- *  These define alpha as the opacity of a surface.
- */
-/* @{ */
-#define SDL_ALPHA_OPAQUE 255
-#define SDL_ALPHA_TRANSPARENT 0
-/* @} */
-
-/**
- * \brief A signed 8-bit integer type.
- */
-#define SDL_MAX_SINT8   ((Sint8)0x7F)           /* 127 */
-#define SDL_MIN_SINT8   ((Sint8)(~0x7F))        /* -128 */
-typedef int8_t Sint8;
-/**
- * \brief An unsigned 8-bit integer type.
- */
-#define SDL_MAX_UINT8   ((Uint8)0xFF)           /* 255 */
-#define SDL_MIN_UINT8   ((Uint8)0x00)           /* 0 */
-typedef uint8_t Uint8;
-/**
- * \brief A signed 16-bit integer type.
- */
-#define SDL_MAX_SINT16  ((Sint16)0x7FFF)        /* 32767 */
-#define SDL_MIN_SINT16  ((Sint16)(~0x7FFF))     /* -32768 */
-typedef int16_t Sint16;
-/**
- * \brief An unsigned 16-bit integer type.
- */
-#define SDL_MAX_UINT16  ((Uint16)0xFFFF)        /* 65535 */
-#define SDL_MIN_UINT16  ((Uint16)0x0000)        /* 0 */
-typedef uint16_t Uint16;
-/**
- * \brief A signed 32-bit integer type.
- */
-#define SDL_MAX_SINT32  ((Sint32)0x7FFFFFFF)    /* 2147483647 */
-#define SDL_MIN_SINT32  ((Sint32)(~0x7FFFFFFF)) /* -2147483648 */
-typedef int32_t Sint32;
-/**
- * \brief An unsigned 32-bit integer type.
- */
-#define SDL_MAX_UINT32  ((Uint32)0xFFFFFFFFu)   /* 4294967295 */
-#define SDL_MIN_UINT32  ((Uint32)0x00000000)    /* 0 */
-typedef uint32_t Uint32;
-
-/**
- * \brief A signed 64-bit integer type.
- */
-#define SDL_MAX_SINT64  ((Sint64)0x7FFFFFFFFFFFFFFFll)      /* 9223372036854775807 */
-#define SDL_MIN_SINT64  ((Sint64)(~0x7FFFFFFFFFFFFFFFll))   /* -9223372036854775808 */
-typedef int64_t Sint64;
-/**
- * \brief An unsigned 64-bit integer type.
- */
-#define SDL_MAX_UINT64  ((Uint64)0xFFFFFFFFFFFFFFFFull)     /* 18446744073709551615 */
-#define SDL_MIN_UINT64  ((Uint64)(0x0000000000000000ull))   /* 0 */
-typedef uint64_t Uint64;
-
-/**
- *  \name Cast operators
- *
- *  Use proper C++ casts when compiled as C++ to be compatible with the option
- *  -Wold-style-cast of GCC (and -Werror=old-style-cast in GCC 4.2 and above).
- */
-/* @{ */
-#ifdef __cplusplus
-#define SDL_reinterpret_cast(type, expression) reinterpret_cast<type>(expression)
-#define SDL_static_cast(type, expression) static_cast<type>(expression)
-#define SDL_const_cast(type, expression) const_cast<type>(expression)
-#else
-#define SDL_reinterpret_cast(type, expression) ((type)(expression))
-#define SDL_static_cast(type, expression) ((type)(expression))
-#define SDL_const_cast(type, expression) ((type)(expression))
-#endif
-/* @} *//* Cast operators */
-
-/* Define a four character code as a Uint32 */
-#define SDL_FOURCC(A, B, C, D) \
-    ((SDL_static_cast(Uint32, SDL_static_cast(Uint8, (A))) << 0) | \
-     (SDL_static_cast(Uint32, SDL_static_cast(Uint8, (B))) << 8) | \
-     (SDL_static_cast(Uint32, SDL_static_cast(Uint8, (C))) << 16) | \
-     (SDL_static_cast(Uint32, SDL_static_cast(Uint8, (D))) << 24))
-
-/** Pixel type. */
-typedef enum
-{
-    SDL_PIXELTYPE_UNKNOWN,
-    SDL_PIXELTYPE_INDEX1,
-    SDL_PIXELTYPE_INDEX4,
-    SDL_PIXELTYPE_INDEX8,
-    SDL_PIXELTYPE_PACKED8,
-    SDL_PIXELTYPE_PACKED16,
-    SDL_PIXELTYPE_PACKED32,
-    SDL_PIXELTYPE_ARRAYU8,
-    SDL_PIXELTYPE_ARRAYU16,
-    SDL_PIXELTYPE_ARRAYU32,
-    SDL_PIXELTYPE_ARRAYF16,
-    SDL_PIXELTYPE_ARRAYF32,
-
-    /* This must be at the end of the list to avoid breaking the existing ABI */
-    SDL_PIXELTYPE_INDEX2
-} SDL_PixelType;
-
-/** Bitmap pixel order, high bit -> low bit. */
-typedef enum
-{
-    SDL_BITMAPORDER_NONE,
-    SDL_BITMAPORDER_4321,
-    SDL_BITMAPORDER_1234
-} SDL_BitmapOrder;
-
-/** Packed component order, high bit -> low bit. */
-typedef enum
-{
-    SDL_PACKEDORDER_RGBA,
-} SDL_PackedOrder;
-
-/** Array component order, low byte -> high byte. */
-/* !!! FIXME: in 2.1, make these not overlap differently with
-   !!! FIXME:  SDL_PACKEDORDER_*, so we can simplify SDL_ISPIXELFORMAT_ALPHA */
-typedef enum
-{
-    SDL_ARRAYORDER_RGBA,
-} SDL_ArrayOrder;
-
-/** Packed component layout. */
-typedef enum
-{
-    SDL_PACKEDLAYOUT_NONE,
-    SDL_PACKEDLAYOUT_332,
-    SDL_PACKEDLAYOUT_4444,
-    SDL_PACKEDLAYOUT_1555,
-    SDL_PACKEDLAYOUT_5551,
-    SDL_PACKEDLAYOUT_565,
-    SDL_PACKEDLAYOUT_8888,
-    SDL_PACKEDLAYOUT_2101010,
-    SDL_PACKEDLAYOUT_1010102
-
-} SDL_PackedLayout;
-
-#define SDL_DEFINE_PIXELFOURCC(A, B, C, D) SDL_FOURCC(A, B, C, D)
-
-#define SDL_DEFINE_PIXELFORMAT(type, order, layout, bits, bytes) \
-    ((1 << 28) | ((type) << 24) | ((order) << 20) | ((layout) << 16) | \
-     ((bits) << 8) | ((bytes) << 0))
-
-#define SDL_PIXELFLAG(X)    (((X) >> 28) & 0x0F)
-#define SDL_PIXELTYPE(X)    (((X) >> 24) & 0x0F)
-#define SDL_PIXELORDER(X)   (((X) >> 20) & 0x0F)
-#define SDL_PIXELLAYOUT(X)  (((X) >> 16) & 0x0F)
-#define SDL_BITSPERPIXEL(X) (((X) >> 8) & 0xFF)
-#define SDL_BYTESPERPIXEL(X) \
-    (SDL_ISPIXELFORMAT_FOURCC(X) ? \
-        ((((X) == SDL_PIXELFORMAT_YUY2) || \
-          ((X) == SDL_PIXELFORMAT_UYVY) || \
-          ((X) == SDL_PIXELFORMAT_YVYU)) ? 2 : 1) : (((X) >> 0) & 0xFF))
-
-#define SDL_ISPIXELFORMAT_INDEXED(format)   \
-    (!SDL_ISPIXELFORMAT_FOURCC(format) && \
-     ((SDL_PIXELTYPE(format) == SDL_PIXELTYPE_INDEX1) || \
-      (SDL_PIXELTYPE(format) == SDL_PIXELTYPE_INDEX2) || \
-      (SDL_PIXELTYPE(format) == SDL_PIXELTYPE_INDEX4) || \
-      (SDL_PIXELTYPE(format) == SDL_PIXELTYPE_INDEX8)))
-
-#define SDL_ISPIXELFORMAT_PACKED(format) \
-    (!SDL_ISPIXELFORMAT_FOURCC(format) && \
-     ((SDL_PIXELTYPE(format) == SDL_PIXELTYPE_PACKED8) || \
-      (SDL_PIXELTYPE(format) == SDL_PIXELTYPE_PACKED16) || \
-      (SDL_PIXELTYPE(format) == SDL_PIXELTYPE_PACKED32)))
-
-#define SDL_ISPIXELFORMAT_ARRAY(format) \
-    (!SDL_ISPIXELFORMAT_FOURCC(format) && \
-     ((SDL_PIXELTYPE(format) == SDL_PIXELTYPE_ARRAYU8) || \
-      (SDL_PIXELTYPE(format) == SDL_PIXELTYPE_ARRAYU16) || \
-      (SDL_PIXELTYPE(format) == SDL_PIXELTYPE_ARRAYU32) || \
-      (SDL_PIXELTYPE(format) == SDL_PIXELTYPE_ARRAYF16) || \
-      (SDL_PIXELTYPE(format) == SDL_PIXELTYPE_ARRAYF32)))
-
-#define SDL_ISPIXELFORMAT_ALPHA(format)   \
-    ((SDL_ISPIXELFORMAT_PACKED(format) && \
-     ((SDL_PIXELORDER(format) == SDL_PACKEDORDER_RGBA))) || \
-    (SDL_ISPIXELFORMAT_ARRAY(format) && \
-     ((SDL_PIXELORDER(format) == SDL_ARRAYORDER_RGBA))))
-
-/* The flag is set to 1 because 0x1? is not in the printable ASCII range */
-#define SDL_ISPIXELFORMAT_FOURCC(format)    \
-    ((format) && (SDL_PIXELFLAG(format) != 1))
-
-/* Note: If you modify this list, update SDL_GetPixelFormatName() */
-typedef enum
-{
-    SDL_PIXELFORMAT_UNKNOWN,
-    SDL_PIXELFORMAT_RGBA8888 =
-        SDL_DEFINE_PIXELFORMAT(SDL_PIXELTYPE_PACKED32, SDL_PACKEDORDER_RGBA,
-                               SDL_PACKEDLAYOUT_8888, 32, 4),
-    /* Aliases for RGBA byte arrays of color data, for the current platform */
-#if SDL_BYTEORDER == SDL_BIG_ENDIAN
-	// We use this one. Don't try to support all of them. Only support what I use.
-    SDL_PIXELFORMAT_RGBA32 = SDL_PIXELFORMAT_RGBA8888,
-#else
-    SDL_PIXELFORMAT_ABGR32 = SDL_PIXELFORMAT_RGBA8888,
-#endif
-    SDL_PIXELFORMAT_YV12 =      /**< Planar mode: Y + V + U  (3 planes) */
-        SDL_DEFINE_PIXELFOURCC('Y', 'V', '1', '2'),
-    SDL_PIXELFORMAT_IYUV =      /**< Planar mode: Y + U + V  (3 planes) */
-        SDL_DEFINE_PIXELFOURCC('I', 'Y', 'U', 'V'),
-    SDL_PIXELFORMAT_YUY2 =      /**< Packed mode: Y0+U0+Y1+V0 (1 plane) */
-        SDL_DEFINE_PIXELFOURCC('Y', 'U', 'Y', '2'),
-    SDL_PIXELFORMAT_UYVY =      /**< Packed mode: U0+Y0+V0+Y1 (1 plane) */
-        SDL_DEFINE_PIXELFOURCC('U', 'Y', 'V', 'Y'),
-    SDL_PIXELFORMAT_YVYU =      /**< Packed mode: Y0+V0+Y1+U0 (1 plane) */
-        SDL_DEFINE_PIXELFOURCC('Y', 'V', 'Y', 'U'),
-    SDL_PIXELFORMAT_NV12 =      /**< Planar mode: Y + U/V interleaved  (2 planes) */
-        SDL_DEFINE_PIXELFOURCC('N', 'V', '1', '2'),
-    SDL_PIXELFORMAT_NV21 =      /**< Planar mode: Y + V/U interleaved  (2 planes) */
-        SDL_DEFINE_PIXELFOURCC('N', 'V', '2', '1'),
-    SDL_PIXELFORMAT_EXTERNAL_OES =      /**< Android video texture format */
-        SDL_DEFINE_PIXELFOURCC('O', 'E', 'S', ' ')
-} SDL_PixelFormatEnum;
-
-#if 0
-std::string vertex_Shader =
-"#version 330\n"
-"layout(location = 0) in vec2 v_position;\n"
-"layout(location = 1) in vec4 v_color;\n"
-"out vec4 f_color;\n"
-"void main()\n"
-"{\n"
-"    f_color = v_color;\n"
-"    gl_Position = vec4(v_position, 0, 1);\n"
-"}	\n";
-
-std::string pixel_Shader =
-"#version 330\n"
-"out vec4 o_color;\n"
-"in vec4 f_color;\n"
-"void main()\n"
-"{\n"
-"	o_color = f_color;\n"
-"};\n";
-
-const char* vertex_Shader_Source =
-"#version 330\n"
-"layout(location = 0) in vec2 v_position;\n"
-"layout(location = 1) in vec4 v_color;\n"
-"layout(location = 2) in vec2 v_uv;\n"
-"out vec4 f_color;\n"
-"out vec2 f_uv;\n"
-"void main()\n"
-"{\n"
-"    f_color = v_color;\n"
-"    f_uv = v_uv;\n"
-"    gl_Position = vec4(v_position, 0, 1);\n"
-"}	\n";
-
-const char* fragment_Shader_Source =
-"#version 330\n"
-"out vec4 o_color;\n"
-"in vec4 f_color;\n"
-"in vec2 f_uv;\n"
-"uniform sampler2D texDiffuse;\n"
-"uniform sampler2D texDiffuse_2;\n"
-"uniform float u_uv_Offset_X;\n"
-"uniform float u_uv_Offset_Y;\n"
-"void main()\n"
-"{\n"
-
-"	// o_color = vec4(f_uv, 0, 1);\n"
-"	float alpha = texture(texDiffuse, f_uv).a;\n"
-"	vec2 uv = f_uv;\n"
-"	uv.x += u_uv_Offset_X;\n"
-"	uv.y += u_uv_Offset_Y;\n"
-"	o_color = vec4(texture(texDiffuse_2, uv).rgb, alpha);\n"
-"};\n";
-
-#version 330
-layout(location = 0) in vec2 v_position;
-layout(location = 1) in vec4 v_color;
-layout(location = 2) in vec2 v_uv;
-
-out vec4 f_color;
-out vec2 f_uv;
-
-void main()
-{
-    f_color = v_color;
-    f_uv = v_uv;
-    gl_Position = vec4(v_position, 0.0, 1.0);
-}
-
-#version 330
-out vec4 o_color;
-in vec4 f_color;
-in vec2 f_uv;
-
-void main()
-{
-    o_color = f_color;
-}
-#endif
 
 struct GL_Texture {
 	int w;
@@ -1133,15 +1116,16 @@ int SDL_LockTexture(SDL_Texture* texture, const SDL_Rect* rect, void **pixels, i
 }
 
 #if 0
-    if (texture->access == SDL_TEXTUREACCESS_STREAMING) {
-        texture->pixels = new Uint8();
-    } else {
-        texture->pixels = NULL;
-    }
+if (texture->access == SDL_TEXTUREACCESS_STREAMING) {
+	texture->pixels = new Uint8();
+}
+else {
+	texture->pixels = NULL;
+}
 #endif
 
 // Uploading the texture to the GPU
-void SDL_UnlockTexture(SDL_Texture* texture) {
+void SDL_UnlockTexture(SDL_Texture * texture) {
 	// Temporary code for learning.
 	glActiveTexture(GL_TEXTURE0);
 	// Bind the handle
@@ -1170,9 +1154,9 @@ void SDL_UnlockTexture(SDL_Texture* texture) {
 			texture->pixels
 		);
 	}
-    if (texture->pixels != NULL) {
+	if (texture->pixels != NULL) {
 		delete texture->pixels;
-    }
+	}
 }
 
 void my_Memory_Copy(void* dest, const void* src, size_t count) {
@@ -1183,7 +1167,7 @@ void my_Memory_Copy(void* dest, const void* src, size_t count) {
 	}
 }
 
-int SDL_RenderCopy(SDL_Renderer* sdl_renderer, SDL_Texture* texture, const SDL_Rect* srcrect, const SDL_Rect* dstrect) {
+int SDL_RenderCopy(SDL_Renderer * sdl_renderer, SDL_Texture * texture, const SDL_Rect * srcrect, const SDL_Rect * dstrect) {
 	if (sdl_renderer == nullptr) {
 		log("ERROR: sdl_renderer is nullptr");
 		assert(false);
@@ -1191,30 +1175,31 @@ int SDL_RenderCopy(SDL_Renderer* sdl_renderer, SDL_Texture* texture, const SDL_R
 	}
 	Renderer* renderer = (Renderer*)sdl_renderer;
 
-    if (texture == NULL){
-        log("ERROR: Invalid texture");
-        return -1;
-    }
+	if (texture == NULL) {
+		log("ERROR: Invalid texture");
+		return -1;
+	}
 
 	// Null for entire texture
 	SDL_Rect srcrect_final;
 	if (srcrect == NULL) {
 		srcrect_final = { 0, 0, texture->w, texture->h };
 		texture->portion = NULL;
-	} else {
-		SDL_Rect srcrect_final = *srcrect;
-	} 
+	}
+	else {
+		srcrect_final = *srcrect;
+	}
 
 	// Calculate the UV coordinates 
-	V2 top_left_src =			{  0.0f , (float)(texture->h) };
-	V2 top_right_src =			{ (float)(texture->w) , (float)(texture->h) };
-	V2 bottom_right_src =		{ (float)(texture->w) , 0.0f };
-	V2 bottom_left_src =		{ 0.0f , 0.0f };
+	V2 top_left_src = { 0.0f , (float)(texture->h) };
+	V2 top_right_src = { (float)(texture->w) , (float)(texture->h) };
+	V2 bottom_right_src = { (float)(texture->w) , 0.0f };
+	V2 bottom_left_src = { 0.0f , 0.0f };
 
-	V2 top_left_uv =			convert_to_uv_coordinates(top_left_src, texture->w, texture->h);
-	V2 top_right_uv =			convert_to_uv_coordinates(top_right_src, texture->w, texture->h);
-	V2 bottom_right_uv =		convert_to_uv_coordinates(bottom_right_src, texture->w, texture->h);
-	V2 bottom_left_uv =			convert_to_uv_coordinates(bottom_left_src, texture->w, texture->h);
+	V2 top_left_uv = convert_to_uv_coordinates(top_left_src, texture->w, texture->h);
+	V2 top_right_uv = convert_to_uv_coordinates(top_right_src, texture->w, texture->h);
+	V2 bottom_right_uv = convert_to_uv_coordinates(bottom_right_src, texture->w, texture->h);
+	V2 bottom_left_uv = convert_to_uv_coordinates(bottom_left_src, texture->w, texture->h);
 
 	// Null for entire rendering target
 	SDL_Rect dstrect_final = *dstrect;
@@ -1230,20 +1215,20 @@ int SDL_RenderCopy(SDL_Renderer* sdl_renderer, SDL_Texture* texture, const SDL_R
 
 	// Calculate the vertices positions
 	Color_f c = convert_color_8_to_floating_point(renderer->render_draw_color);
-	
+
 	int half_w_dst = dstrect_final.w / 2;
 	int half_h_dst = dstrect_final.h / 2;
-	
-	V2 top_left =			{ (float)(dstrect_final.x - half_w_dst) , (float)(dstrect_final.y + half_h_dst) };
-	V2 top_right =			{ (float)(dstrect_final.x + half_w_dst) , (float)(dstrect_final.y + half_h_dst) };
-	V2 bottom_right =		{ (float)(dstrect_final.x + half_w_dst) , (float)(dstrect_final.y - half_h_dst) };
-	V2 bottom_left =		{ (float)(dstrect_final.x - half_w_dst) , (float)(dstrect_final.y - half_h_dst) };
 
-	V2 top_left_ndc =		convert_to_ndc(sdl_renderer, top_left);
-	V2 top_right_ndc =		convert_to_ndc(sdl_renderer, top_right);
-	V2 bottom_right_ndc =	convert_to_ndc(sdl_renderer, bottom_right);
-	V2 bottom_left_ndc =	convert_to_ndc(sdl_renderer, bottom_left);
-	
+	V2 top_left = { (float)(dstrect_final.x - half_w_dst) , (float)(dstrect_final.y + half_h_dst) };
+	V2 top_right = { (float)(dstrect_final.x + half_w_dst) , (float)(dstrect_final.y + half_h_dst) };
+	V2 bottom_right = { (float)(dstrect_final.x + half_w_dst) , (float)(dstrect_final.y - half_h_dst) };
+	V2 bottom_left = { (float)(dstrect_final.x - half_w_dst) , (float)(dstrect_final.y - half_h_dst) };
+
+	V2 top_left_ndc = convert_to_ndc(sdl_renderer, top_left);
+	V2 top_right_ndc = convert_to_ndc(sdl_renderer, top_right);
+	V2 bottom_right_ndc = convert_to_ndc(sdl_renderer, bottom_right);
+	V2 bottom_left_ndc = convert_to_ndc(sdl_renderer, bottom_left);
+
 	Vertex vertices[6] = {};
 	// NOTE: Ignore the UV value. No texture.
 	// ***First Triangle***
@@ -1280,15 +1265,17 @@ int SDL_RenderCopy(SDL_Renderer* sdl_renderer, SDL_Texture* texture, const SDL_R
 	vertices[5].uv = top_right_uv;
 	renderer->vertices.push_back(vertices[5]);
 
-	Vertices_Info info; info.draw_type = GL_TRIANGLES;
-	info.total_vertices = ARRAYSIZE(vertices); 
+	Vertices_Info info; 
+	info.draw_type = GL_TRIANGLES;
+	info.total_vertices = ARRAYSIZE(vertices);
 	info.starting_index = renderer->vertices.size() - info.total_vertices;
+	info.type = ST_TEXTURE;
 	renderer->vertices_info.push_back(info);
 
 	return 0;
 }
 
-Image create_Image(SDL_Renderer* sdl_renderer, const char* file_Path) {
+Image create_Image(SDL_Renderer * sdl_renderer, const char* file_Path) {
 	Image result = {};
 	result.file_Path = file_Path;
 
@@ -1342,7 +1329,7 @@ SDL_RenderCopy
 SDL_DestroyRenderer
 #endif
 
-void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
+void SDL_RenderPresent(SDL_Renderer * sdl_renderer) {
 	if (sdl_renderer == nullptr) {
 		log("ERROR: sdl_renderer is nullptr");
 		assert(false);
@@ -1359,15 +1346,25 @@ void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
 	glEnableVertexAttribArray(2);
 	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
 
-	const char* vertex_shader_file_path = "Shaders\\vertex_shader.txt";
-	const char* fragment_shader_file_path = "Shaders\\fragment_shader.txt";
-	GLuint shader_program = create_shader_program(vertex_shader_file_path, fragment_shader_file_path);
-	glUseProgram(shader_program);
+	const char* color_vertex_shader_file_path = "Shaders\\vertex_shader_color.txt";
+	const char* color_fragment_shader_file_path = "Shaders\\fragment_shader_color.txt";
+	GLuint color_shader = create_shader_program(color_vertex_shader_file_path, color_fragment_shader_file_path);
 
+	const char* texture_vertex_shader_file_path = "Shaders\\vertex_shader_texture.txt";
+	const char* texture_fragment_shader_file_path = "Shaders\\fragment_shader_texture.txt";
+	GLuint texture_shader = create_shader_program(texture_vertex_shader_file_path, texture_fragment_shader_file_path);
+
+	// NOTE: Should I have two separate ques for verticies or add a new variable to the vertices
+	GLuint current_shader_program;
 	for (Vertices_Info info : renderer->vertices_info) {
-		glActiveTexture(GL_TEXTURE0);
-		glDrawArrays(info.draw_type, info.starting_index, info.total_vertices);
+		if (info.type == ST_TEXTURE) {
+			glUseProgram(texture_shader);
+			glActiveTexture(GL_TEXTURE0);
+		}
+		else {
+			glUseProgram(color_shader);
+		}
+		glDrawArrays(info.draw_type, (GLuint)info.starting_index, info.total_vertices);
 	}
-	
 	SwapBuffers(renderer->hdc);
 }
