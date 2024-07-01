@@ -458,6 +458,29 @@ SDL_Renderer* SDL_CreateRenderer(HWND window, int index, uint32_t flags) {
 	return (SDL_Renderer*)renderer;
 }
 
+void get_window_size(HWND window, int& w, int& h) {
+	RECT rect = {};
+	if (GetClientRect(window, &rect) != 0) {
+		w = rect.right - rect.left;
+		h = rect.bottom - rect.top;
+	} else {
+		w = 0;
+		h = 0;
+		log("Window width and height are 0");
+	}
+}
+
+int SDL_GetRendererOutputSize(SDL_Renderer* sdl_renderer, int* w, int* h) {
+	if (sdl_renderer == nullptr) {
+		return -1;
+	}
+	Renderer* renderer = (Renderer*)sdl_renderer;
+
+	get_window_size(renderer->window, *w, *h);
+
+	return 0;
+}
+
 int SDL_SetRenderDrawColor(SDL_Renderer* sdl_renderer, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
 	if (sdl_renderer == nullptr) {
 		return -1;
@@ -504,18 +527,6 @@ int SDL_RenderClear(SDL_Renderer* sdl_renderer) {
 	glClear(GL_COLOR_BUFFER_BIT);
 
 	return 0;
-}
-
-void get_window_size(HWND window, int& w, int& h) {
-	RECT rect = {};
-	if (GetClientRect(window, &rect) != 0) {
-		w = rect.right - rect.left;
-		h = rect.bottom - rect.top;
-	} else {
-		w = 0;
-		h = 0;
-		log("Window width and height are 0");
-	}
 }
 
 V2 convert_to_ndc(SDL_Renderer* sdl_renderer, V2 pos) {
@@ -835,9 +846,7 @@ SDL_Texture* SDL_CreateTexture(SDL_Renderer* sdl_renderer, uint32_t format, int 
 		assert(false);
 		return NULL;
 	}
-	Renderer* renderer = (Renderer*)sdl_renderer;
-	// Default values
-	renderer->blend_mode = SDL_BLENDMODE_BLEND;
+	SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
 
 	SDL_Texture* result = new SDL_Texture();
 	// One texture with one name
@@ -847,7 +856,7 @@ SDL_Texture* SDL_CreateTexture(SDL_Renderer* sdl_renderer, uint32_t format, int 
 	result->w = w;
 	result->h = h;
 
-	result->blend_mode = SDL_BLENDMODE_BLEND;
+	SDL_SetTextureBlendMode(result, SDL_BLENDMODE_BLEND);
 
 	// If the pixels variable is null
 	result->pitch = 0;
@@ -894,6 +903,19 @@ int SDL_SetTextureBlendMode(SDL_Texture* texture, SDL_BlendMode blend_mode) {
 		texture->blend_mode = SDL_BLENDMODE_BLEND;
 		return -1;
 	}
+
+	return 0;
+}
+
+int SDL_SetRenderDrawBlendMode(SDL_Renderer* sdl_renderer, SDL_BlendMode blendMode) {
+	if (sdl_renderer == nullptr) {
+		log("ERROR: sdl_renderer is nullptr");
+		assert(false);
+		return -1;
+	}
+	Renderer* renderer = (Renderer*)sdl_renderer;
+
+	renderer->blend_mode = blendMode;
 
 	return 0;
 }
