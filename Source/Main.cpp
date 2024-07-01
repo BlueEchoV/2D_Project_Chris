@@ -96,6 +96,7 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		SDL_RenderCopy(renderer, castle_Infernal_Image.texture, NULL, &castle_rect);
 
 		SDL_Rect azir_rect = { 800,350,300,300 };
+		SDL_SetTextureAlphaMod(azir_image.texture, 0);
 		SDL_RenderCopy(renderer, azir_image.texture, NULL, &azir_rect);
 
 		SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);

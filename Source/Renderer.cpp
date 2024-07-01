@@ -342,6 +342,7 @@ struct Vertices_Info {
 	int draw_type;
 	Shader_Program_Type type;
 	GLuint texture_handle;
+	bool destroyed = false;;
 };
 
 struct Renderer {
@@ -834,6 +835,8 @@ struct SDL_Texture {
 
 	SDL_BlendMode blend_mode;
 
+	Uint8 alpha_mod;
+
 	int pitch;
 	// Locked if null
 	void* pixels;
@@ -861,6 +864,9 @@ SDL_Texture* SDL_CreateTexture(SDL_Renderer* sdl_renderer, uint32_t format, int 
 	// If the pixels variable is null
 	result->pitch = 0;
 	result->pixels = NULL;
+
+	// Default alpha mod
+	SDL_SetTextureAlphaMod(result, 255);
 
 	return result;
 }
@@ -1052,7 +1058,34 @@ int SDL_UpdateTexture(SDL_Texture* texture, const SDL_Rect* rect, const void *pi
 	return 0;
 }
 
-int SDL_RenderCopy(SDL_Renderer * sdl_renderer, SDL_Texture * texture, const SDL_Rect * srcrect, const SDL_Rect * dstrect) {
+int SDL_SetTextureAlphaMod(SDL_Texture* texture, Uint8 alpha) {
+	if (texture == NULL) {
+		log("ERROR: Invalid texture or pixels");
+		return -1;
+	}
+
+	if (alpha < 0 || alpha > 255) {
+		log("ERROR: Invalid alpha mod");
+		return -1;
+	}
+
+	texture->alpha_mod = alpha;
+
+	return 0;
+}
+
+int SDL_GetTextureAlphaMod(SDL_Texture* texture, Uint8* alpha) {
+	if (texture == NULL) {
+		log("ERROR: Invalid texture or pixels");
+		return -1;
+	}
+
+	*alpha = texture->alpha_mod; 
+	
+	return 0;
+}
+
+int SDL_RenderCopy(SDL_Renderer* sdl_renderer, SDL_Texture* texture, const SDL_Rect* srcrect, const SDL_Rect* dstrect) {
 	if (sdl_renderer == nullptr) {
 		log("ERROR: sdl_renderer is nullptr");
 		assert(false);
@@ -1120,16 +1153,20 @@ int SDL_RenderCopy(SDL_Renderer * sdl_renderer, SDL_Texture * texture, const SDL
 	// Bottom Left
 	vertices[0].pos = bottom_left_ndc;
 	vertices[0].color = c;
+	// Modify the alpha mod
+	vertices[0].color.a *= (texture->alpha_mod / 255);
 	vertices[0].uv = bottom_left_uv;
 	renderer->vertices.push_back(vertices[0]);
 	// Top Left
 	vertices[1].pos = top_left_ndc;
 	vertices[1].color = c;
+	vertices[1].color.a *= (texture->alpha_mod / 255);
 	vertices[1].uv = top_left_uv;
 	renderer->vertices.push_back(vertices[1]);
 	// Top Right
 	vertices[2].pos = top_right_ndc;
 	vertices[2].color = c;
+	vertices[2].color.a *= (texture->alpha_mod / 255);
 	vertices[2].uv = top_right_uv;
 	renderer->vertices.push_back(vertices[2]);
 
@@ -1137,16 +1174,19 @@ int SDL_RenderCopy(SDL_Renderer * sdl_renderer, SDL_Texture * texture, const SDL
 	// Bottom Left
 	vertices[3].pos = bottom_left_ndc;
 	vertices[3].color = c;
+	vertices[3].color.a *= (texture->alpha_mod / 255);
 	vertices[3].uv = bottom_left_uv;
 	renderer->vertices.push_back(vertices[3]);
 	// Bottom Right
 	vertices[4].pos = bottom_right_ndc;
 	vertices[4].color = c;
+	vertices[4].color.a *= (texture->alpha_mod / 255);
 	vertices[4].uv = bottom_right_uv;
 	renderer->vertices.push_back(vertices[4]);
 	// Top Right
 	vertices[5].pos = top_right_ndc;
 	vertices[5].color = c;
+	vertices[5].color.a *= (texture->alpha_mod / 255);
 	vertices[5].uv = top_right_uv;
 	renderer->vertices.push_back(vertices[5]);
 
@@ -1222,6 +1262,9 @@ void SDL_DestroyRenderer(SDL_Renderer* sdl_renderer) {
 	
 	delete sdl_renderer;
 }
+#include <algorithm>
+#include <vector>
+#include <iostream>
 
 void SDL_RenderPresent(SDL_Renderer * sdl_renderer) {
 	if (sdl_renderer == nullptr) {
@@ -1233,15 +1276,8 @@ void SDL_RenderPresent(SDL_Renderer * sdl_renderer) {
 	glBindBuffer(GL_ARRAY_BUFFER, renderer->vbo);
 	glBufferData(GL_ARRAY_BUFFER, renderer->vertices.size() * sizeof(Vertex), renderer->vertices.data(), GL_STATIC_DRAW);
 
-	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos));
-	glEnableVertexAttribArray(1);
-	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, color));
-	glEnableVertexAttribArray(2);
-	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
 	
-	// NOTE: Should I have two separate ques for verticies or add a new variable to the vertices
-	for (Vertices_Info info : renderer->vertices_info) {
+	for (Vertices_Info& info : renderer->vertices_info) {
 		glBindTexture(GL_TEXTURE_2D, info.texture_handle);
 		GLuint shader_program = shader_program_types[info.type];
 		if (!shader_program) {
@@ -1252,6 +1288,12 @@ void SDL_RenderPresent(SDL_Renderer * sdl_renderer) {
 		// Experimental code
 		// glActiveTexture(GL_TEXTURE0);
 		glDrawArrays(info.draw_type, (GLuint)info.starting_index, info.total_vertices);
+		info.destroyed = true;
 	}
+
+    std::erase_if(renderer->vertices_info, [](const Vertices_Info& info) {
+		return info.destroyed;
+    });
+
 	SwapBuffers(renderer->hdc);
 }

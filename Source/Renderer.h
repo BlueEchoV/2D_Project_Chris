@@ -280,14 +280,15 @@ void SDL_UnlockTexture(SDL_Texture* texture);
 int SDL_LockTexture(SDL_Texture* texture, const SDL_Rect* rect, void **pixels, int *pitch);
 SDL_Texture* SDL_CreateTexture(SDL_Renderer* sdl_renderer, uint32_t format, int access, int w, int h);
 int SDL_UpdateTexture(SDL_Texture* texture, const SDL_Rect* rect, const void *pixels, int pitch);
+int SDL_SetTextureAlphaMod(SDL_Texture* texture, Uint8 alpha);
+int SDL_GetTextureAlphaMod(SDL_Texture* texture, Uint8* alpha);
 void SDL_DestroyTexture(SDL_Texture* texture);
 int SDL_RenderCopy(SDL_Renderer* sdl_renderer, SDL_Texture* texture, const SDL_Rect* srcrect, const SDL_Rect* dstrect);
 void SDL_RenderPresent(SDL_Renderer* sdl_renderer);
+
 Image create_Image(SDL_Renderer* sdl_renderer, const char* file_Path);
 
 #if 0
-SDL_GetRendererOutputSize
-SDL_GetTextureAlphaMod
 SDL_GetTextureBlendMode
 SDL_GetTextureColorMod
 SDL_GetTextureUserData
@@ -301,7 +302,6 @@ SDL_RenderSetClipRect
 SDL_RenderSetViewport
 SDL_RenderSetVSync
 SDL_SetRenderDrawBlendMode
-SDL_SetTextureAlphaMod
 SDL_SetTextureBlendMode
 SDL_SetTextureColorMod
 SDL_SetTextureScaleMode
