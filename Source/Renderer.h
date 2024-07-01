@@ -44,6 +44,7 @@ typedef enum SDL_BlendMode
 
 struct SDL_Renderer;
 SDL_Renderer* SDL_CreateRenderer(HWND window, int index, uint32_t flags);
+void SDL_DestroyRenderer(SDL_Renderer * renderer);
 int SDL_SetRenderDrawColor(SDL_Renderer* sdl_renderer, uint8_t r, uint8_t g, uint8_t b, uint8_t a);
 int SDL_RenderClear(SDL_Renderer* sdl_renderer);
 int SDL_RenderFillRect(SDL_Renderer* sdl_renderer, const SDL_Rect* rect);

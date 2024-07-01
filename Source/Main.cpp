@@ -102,6 +102,19 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		SDL_RenderDrawPoint(renderer, 700, 500);
 
 		SDL_RenderPresent(renderer);
+
+		Sleep(1);
+
+	}
+	// TODO: Clean up shaders
+	#if 0
+		glDeleteShader(vertex_shader);
+		glDeleteShader(fragment_shader);
+		glDeleteProgram();
+		glGetProgramInfoLog();
+		glUseProgram();
+	#endif
+	SDL_DestroyRenderer(renderer);
 	return 0;
 }
 
@@ -255,15 +268,3 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 
 		SwapBuffers(hdc);
 #endif
-
-		Sleep(1);
-
-	}
-	// TODO: Clean up shaders
-	#if 0
-		glDeleteShader(vertex_shader);
-		glDeleteShader(fragment_shader);
-		glDeleteProgram();
-		glGetProgramInfoLog();
-		glUseProgram();
-	#endif

@@ -473,12 +473,6 @@ struct Vertex {
 	V2 uv;
 };
 
-enum Shader_Type {
-	ST_COLOR,
-	ST_TEXTURE,
-	ST_TOTAL
-};
-
 GLuint create_shader(const std::string shader_file_path, GLenum shader_type) {
 	std::ifstream file(shader_file_path);
 	if (!file.is_open()) {
@@ -552,11 +546,17 @@ struct Color_8 {
 	uint8_t a;
 };
 
+ enum Shader_Program_Type {
+	SPT_COLOR,
+	SPT_TEXTURE,
+	SPT_TOTAL
+};
+ 
 struct Vertices_Info {
 	int total_vertices;
 	size_t starting_index;
 	int draw_type;
-	Shader_Type type;
+	Shader_Program_Type type;
 	GLuint texture_handle;
 };
 
@@ -571,8 +571,21 @@ struct Renderer {
 	std::vector<Vertices_Info> vertices_info;
 };
 
-#define REF(v) (void)v
+// Set initialization list to 0
+static GLuint shader_program_types[SPT_TOTAL] = { 0 };
+void load_shaders() {
+	const char* color_vertex_shader_file_path = "Shaders\\vertex_shader_color.txt";
+	const char* color_fragment_shader_file_path = "Shaders\\fragment_shader_color.txt";
+	GLuint color_shader = create_shader_program(color_vertex_shader_file_path, color_fragment_shader_file_path);
+	shader_program_types[SPT_COLOR] = color_shader;
 
+	const char* texture_vertex_shader_file_path = "Shaders\\vertex_shader_texture.txt";
+	const char* texture_fragment_shader_file_path = "Shaders\\fragment_shader_texture.txt";
+	GLuint texture_shader = create_shader_program(texture_vertex_shader_file_path, texture_fragment_shader_file_path);
+	shader_program_types[SPT_TEXTURE] = texture_shader;
+}
+
+#define REF(v) (void)v
 // Changing back to a SDL_Window when we transfer it back to other project
 SDL_Renderer* SDL_CreateRenderer(HWND window, int index, uint32_t flags) {
 	REF(index);
@@ -654,6 +667,8 @@ SDL_Renderer* SDL_CreateRenderer(HWND window, int index, uint32_t flags) {
 	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, color));
 	glEnableVertexAttribArray(2);
 	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
+
+	load_shaders();
 
 	return (SDL_Renderer*)renderer;
 }
@@ -798,6 +813,7 @@ int SDL_RenderFillRect(SDL_Renderer* sdl_renderer, const SDL_Rect* rect) {
 	info.draw_type = GL_TRIANGLES;
 	info.total_vertices = ARRAYSIZE(vertices);
 	info.starting_index = renderer->vertices.size() - info.total_vertices;
+	info.type = SPT_COLOR;
 	// Store the number of vertices to be rendered for this group
 	renderer->vertices_info.push_back(info);
 
@@ -845,6 +861,8 @@ int SDL_RenderDrawLine(SDL_Renderer* sdl_renderer, int x1, int y1, int x2, int y
 	info.total_vertices = ARRAYSIZE(vertices);
 	// Subtract the already added vertices to get the starting index
 	info.starting_index = renderer->vertices.size() - info.total_vertices;
+	info.type = SPT_COLOR;
+
 	// Store the number of vertices to be rendered for this group
 	renderer->vertices_info.push_back(info);
 	
@@ -1295,7 +1313,7 @@ int SDL_RenderCopy(SDL_Renderer * sdl_renderer, SDL_Texture * texture, const SDL
 	info.draw_type = GL_TRIANGLES;
 	info.total_vertices = ARRAYSIZE(vertices);
 	info.starting_index = renderer->vertices.size() - info.total_vertices;
-	info.type = ST_TEXTURE;
+	info.type = SPT_TEXTURE;
 	info.texture_handle = texture->handle;
 	renderer->vertices_info.push_back(info);
 
@@ -1348,13 +1366,21 @@ Image create_Image(SDL_Renderer* sdl_renderer, const char* file_Path) {
 	return result;
 }
 
-// Put anything I want into the renderer struct. Don't change api
-// SDL draw functions don't necessarily emit a draw call immediately
-// The draw will happen EVENTUALLY
-#if 0
-SDL_RenderCopy
-SDL_DestroyRenderer
-#endif
+void SDL_DestroyRenderer(SDL_Renderer* sdl_renderer) {
+	if (sdl_renderer == nullptr) {
+		log("ERROR: sdl_renderer is nullptr");
+		assert(false);
+	}
+	// Renderer* renderer = (Renderer*)sdl_renderer;
+
+	// Delete shader programs
+	for (int i = 0; i < SPT_TOTAL; i++) {
+		GLuint program = shader_program_types[0];
+		glDeleteProgram(program);
+	}
+	
+	delete sdl_renderer;
+}
 
 void SDL_RenderPresent(SDL_Renderer * sdl_renderer) {
 	if (sdl_renderer == nullptr) {
@@ -1372,27 +1398,18 @@ void SDL_RenderPresent(SDL_Renderer * sdl_renderer) {
 	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, color));
 	glEnableVertexAttribArray(2);
 	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
-
-	const char* color_vertex_shader_file_path = "Shaders\\vertex_shader_color.txt";
-	const char* color_fragment_shader_file_path = "Shaders\\fragment_shader_color.txt";
-	GLuint color_shader = create_shader_program(color_vertex_shader_file_path, color_fragment_shader_file_path);
-
-	const char* texture_vertex_shader_file_path = "Shaders\\vertex_shader_texture.txt";
-	const char* texture_fragment_shader_file_path = "Shaders\\fragment_shader_texture.txt";
-	GLuint texture_shader = create_shader_program(texture_vertex_shader_file_path, texture_fragment_shader_file_path);
-
+	
 	// NOTE: Should I have two separate ques for verticies or add a new variable to the vertices
-	GLuint current_shader_program;
 	for (Vertices_Info info : renderer->vertices_info) {
-		if (info.type == ST_TEXTURE) {
-			glBindTexture(GL_TEXTURE_2D, info.texture_handle);
-			glUseProgram(texture_shader);
-			// Experimental code
-			// glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, info.texture_handle);
+		GLuint shader_program = shader_program_types[info.type];
+		if (!shader_program) {
+			log("ERROR: Shader program not specified");
+			assert(false);
 		}
-		else {
-			glUseProgram(color_shader);
-		}
+		glUseProgram(shader_program);
+		// Experimental code
+		// glActiveTexture(GL_TEXTURE0);
 		glDrawArrays(info.draw_type, (GLuint)info.starting_index, info.total_vertices);
 	}
 	SwapBuffers(renderer->hdc);
