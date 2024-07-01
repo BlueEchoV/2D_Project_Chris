@@ -55,12 +55,12 @@ int SDL_RenderDrawPoint(SDL_Renderer* sdl_renderer, int x, int y);
 int SDL_RenderDrawPoints(SDL_Renderer* sdl_renderer, const SDL_Point* points, int count);
 int SDL_RenderDrawRect(SDL_Renderer* sdl_renderer, const SDL_Rect* rect);
 int SDL_RenderDrawRects(SDL_Renderer* sdl_renderer, const SDL_Rect* rects, int count);
-struct SDL_Texture;
 int SDL_SetTextureBlendMode(SDL_Texture* texture, SDL_BlendMode blend_mode);
-int SDL_LockTexture(SDL_Texture * texture, const SDL_Rect * rect, void **pixels, int *pitch);
+void SDL_UnlockTexture(SDL_Texture* texture);
+int SDL_LockTexture(SDL_Texture* texture, const SDL_Rect* rect, void **pixels, int *pitch);
 SDL_Texture* SDL_CreateTexture(SDL_Renderer* sdl_renderer, uint32_t format, int access, int w, int h);
-int SDL_UpdateTexture(SDL_Texture * texture, const SDL_Rect * rect, const void *pixels, int pitch);
-void SDL_DestroyTexture(SDL_Texture * texture);
+int SDL_UpdateTexture(SDL_Texture* texture, const SDL_Rect* rect, const void *pixels, int pitch);
+void SDL_DestroyTexture(SDL_Texture* texture);
 int SDL_RenderCopy(SDL_Renderer* sdl_renderer, SDL_Texture* texture, const SDL_Rect* srcrect, const SDL_Rect* dstrect);
 void SDL_RenderPresent(SDL_Renderer* sdl_renderer);
 
@@ -75,7 +75,6 @@ SDL_GetTextureColorMod
 SDL_GetTextureUserData
 SDL_LockTexture
 SDL_QueryTexture
-SDL_RenderCopy
 SDL_RenderCopyEx
 SDL_RenderGetClipRect
 SDL_RenderGetViewport
