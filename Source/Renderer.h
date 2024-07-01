@@ -46,6 +46,7 @@ struct SDL_Renderer;
 SDL_Renderer* SDL_CreateRenderer(HWND window, int index, uint32_t flags);
 void SDL_DestroyRenderer(SDL_Renderer * renderer);
 int SDL_SetRenderDrawColor(SDL_Renderer* sdl_renderer, uint8_t r, uint8_t g, uint8_t b, uint8_t a);
+int SDL_GetRenderDrawColor(SDL_Renderer* sdl_renderer, Uint8* r, Uint8* g, Uint8* b, Uint8* a);
 int SDL_RenderClear(SDL_Renderer* sdl_renderer);
 int SDL_RenderFillRect(SDL_Renderer* sdl_renderer, const SDL_Rect* rect);
 int SDL_RenderFillRects(SDL_Renderer* sdl_renderer, const SDL_Rect* rects, int count);
@@ -56,6 +57,7 @@ int SDL_RenderDrawPoints(SDL_Renderer* sdl_renderer, const SDL_Point* points, in
 int SDL_RenderDrawRect(SDL_Renderer* sdl_renderer, const SDL_Rect* rect);
 int SDL_RenderDrawRects(SDL_Renderer* sdl_renderer, const SDL_Rect* rects, int count);
 int SDL_SetTextureBlendMode(SDL_Texture* texture, SDL_BlendMode blend_mode);
+int SDL_GetRenderDrawBlendMode(SDL_Renderer* sdl_renderer, SDL_BlendMode *blendMode);
 void SDL_UnlockTexture(SDL_Texture* texture);
 int SDL_LockTexture(SDL_Texture* texture, const SDL_Rect* rect, void **pixels, int *pitch);
 SDL_Texture* SDL_CreateTexture(SDL_Renderer* sdl_renderer, uint32_t format, int access, int w, int h);
@@ -66,7 +68,6 @@ void SDL_RenderPresent(SDL_Renderer* sdl_renderer);
 
 Image create_Image(SDL_Renderer* sdl_renderer, const char* file_Path);
 #if 0
-SDL_GetRenderDrawBlendMode
 SDL_GetRenderDrawColor
 SDL_GetRendererOutputSize
 SDL_GetTextureAlphaMod

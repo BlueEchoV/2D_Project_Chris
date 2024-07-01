@@ -564,6 +564,7 @@ struct Renderer {
 	HWND window;
 	HDC hdc;
 	Color_8 render_draw_color;
+	SDL_BlendMode blend_mode;
 
 	GLuint vbo;
 	GLuint vao;
@@ -679,6 +680,20 @@ int SDL_SetRenderDrawColor(SDL_Renderer* sdl_renderer, uint8_t r, uint8_t g, uin
 	}
 	Renderer* renderer = (Renderer*)sdl_renderer;
 	renderer->render_draw_color = { r, g, b, a };
+
+	return 0;
+}
+
+int SDL_GetRenderDrawColor(SDL_Renderer* sdl_renderer, Uint8* r, Uint8* g, Uint8* b, Uint8* a) {
+	if (sdl_renderer == nullptr) {
+		return -1;
+	}
+	Renderer* renderer = (Renderer*)sdl_renderer;
+
+	*r = renderer->render_draw_color.r;
+	*g = renderer->render_draw_color.g;
+	*b = renderer->render_draw_color.b;
+	*a = renderer->render_draw_color.a;
 
 	return 0;
 }
@@ -1036,6 +1051,9 @@ SDL_Texture* SDL_CreateTexture(SDL_Renderer* sdl_renderer, uint32_t format, int 
 		assert(false);
 		return NULL;
 	}
+	Renderer* renderer = (Renderer*)sdl_renderer;
+	// Default values
+	renderer->blend_mode = SDL_BLENDMODE_BLEND;
 
 	SDL_Texture* result = new SDL_Texture();
 	// One texture with one name
@@ -1045,8 +1063,8 @@ SDL_Texture* SDL_CreateTexture(SDL_Renderer* sdl_renderer, uint32_t format, int 
 	result->w = w;
 	result->h = h;
 
-	// Default values
 	result->blend_mode = SDL_BLENDMODE_BLEND;
+
 	// If the pixels variable is null
 	result->pitch = 0;
 	result->pixels = NULL;
@@ -1090,6 +1108,23 @@ int SDL_SetTextureBlendMode(SDL_Texture* texture, SDL_BlendMode blend_mode) {
 	} else {
 		log("Invalid blend mode set");
 		texture->blend_mode = SDL_BLENDMODE_BLEND;
+		return -1;
+	}
+
+	return 0;
+}
+
+int SDL_GetRenderDrawBlendMode(SDL_Renderer* sdl_renderer, SDL_BlendMode* blendMode) {
+	if (sdl_renderer == nullptr) {
+		log("ERROR: sdl_renderer is nullptr");
+		assert(false);
+		return -1;
+	}
+	Renderer* renderer = (Renderer*)sdl_renderer;
+
+	*blendMode = renderer->blend_mode;
+	if (blendMode == NULL) {
+		log("ERROR: blend mode is not set on the renderer");
 		return -1;
 	}
 
