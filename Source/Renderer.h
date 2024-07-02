@@ -286,6 +286,7 @@ void SDL_DestroyTexture(SDL_Texture* texture);
 int SDL_RenderCopy(SDL_Renderer* sdl_renderer, SDL_Texture* texture, const SDL_Rect* srcrect, const SDL_Rect* dstrect);
 void SDL_RenderPresent(SDL_Renderer* sdl_renderer);
 int SDL_RenderSetClipRect(SDL_Renderer* sdl_renderer, const SDL_Rect* rect);
+int SDL_RenderSetViewport(SDL_Renderer* sdl_renderer, const SDL_Rect* rect);
 
 void draw_debug_images(SDL_Renderer* sdl_renderer);
 

@@ -1318,6 +1318,34 @@ int SDL_RenderSetClipRect(SDL_Renderer* sdl_renderer, const SDL_Rect* rect) {
     return 0;
 }
 
+int SDL_RenderSetViewport(SDL_Renderer* sdl_renderer, const SDL_Rect* rect) {
+    if (sdl_renderer == nullptr) {
+        log("ERROR: sdl_renderer is nullptr");
+        assert(false);
+        return -1;
+    }
+    Renderer* renderer = (Renderer*)sdl_renderer;
+
+    int window_width = 0;
+    int window_height = 0;
+    get_window_size(renderer->window, window_width, window_height);
+
+    if (rect == NULL) {
+        // If rect is NULL, use the entire window as the viewport
+        glViewport(0, 0, window_width, window_height);
+    } else {
+        // Convert SDL rect coordinates to OpenGL coordinates
+        int viewport_x = rect->x;
+        int viewport_y = window_height - rect->y - rect->h;
+        int viewport_width = rect->w;
+        int viewport_height = rect->h;
+
+        glViewport(viewport_x, viewport_y, viewport_width, viewport_height);
+    }
+
+    return 0;
+}
+
 void SDL_RenderPresent(SDL_Renderer * sdl_renderer) {
 	if (sdl_renderer == nullptr) {
 		log("ERROR: sdl_renderer is nullptr");
