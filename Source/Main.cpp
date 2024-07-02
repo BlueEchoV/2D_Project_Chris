@@ -89,18 +89,22 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		// RECT rect_temp = {};
 		// GetClientRect(window, &rect_temp);
 
-		SDL_SetRenderDrawColor(renderer, 127, 0, 127, 255);
+		SDL_SetRenderDrawColor(renderer, 100, 100, 100, 255);
 		SDL_RenderClear(renderer);
+
+		SDL_Rect clip_rect = { 100, 10, 500, 500 };
+		SDL_SetRenderDrawColor(renderer, 0, 100, 100, 255);
+		SDL_RenderFillRect(renderer, &clip_rect);
+		SDL_RenderSetClipRect(renderer, &clip_rect);
 		
-		SDL_Rect castle_rect = { 350,350,300,300 };
+		draw_debug_images(renderer);
+
+		SDL_Rect castle_rect = { 100,400,100,100 };
 		SDL_RenderCopy(renderer, castle_Infernal_Image.texture, NULL, &castle_rect);
 
-		SDL_Rect azir_rect = { 800,350,300,300 };
+		SDL_Rect azir_rect = { 250,400,100,100 };
 		SDL_SetTextureAlphaMod(azir_image.texture, 0);
 		SDL_RenderCopy(renderer, azir_image.texture, NULL, &azir_rect);
-
-		SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
-		SDL_RenderDrawPoint(renderer, 700, 500);
 
 		SDL_RenderPresent(renderer);
 

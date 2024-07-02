@@ -342,7 +342,6 @@ struct Vertices_Info {
 	int draw_type;
 	Shader_Program_Type type;
 	GLuint texture_handle;
-	bool destroyed = false;;
 };
 
 struct Renderer {
@@ -355,6 +354,9 @@ struct Renderer {
 	GLuint vao;
 	std::vector<Vertex> vertices;
 	std::vector<Vertices_Info> vertices_info;
+
+	bool clip_rect_enabled; 
+	SDL_Rect clip_rect;     
 };
 
 // Set initialization list to 0
@@ -456,6 +458,8 @@ SDL_Renderer* SDL_CreateRenderer(HWND window, int index, uint32_t flags) {
 
 	load_shaders();
 
+	glEnable(GL_BLEND);
+	
 	return (SDL_Renderer*)renderer;
 }
 
@@ -558,36 +562,29 @@ V2 convert_to_uv_coordinates(V2 pos, int w, int h) {
 }
 
 int SDL_RenderFillRect(SDL_Renderer* sdl_renderer, const SDL_Rect* rect) { 
-	if (sdl_renderer == nullptr) {
-		log("ERROR: sdl_renderer is nullptr");
-		return -1;
-	}
-	Renderer* renderer = (Renderer*)sdl_renderer;
+    if (sdl_renderer == nullptr) {
+        log("ERROR: sdl_renderer is nullptr");
+        return -1;
+    }
+    if (rect == nullptr) {
+        log("ERROR: rect is nullptr");
+        return -1;
+    }
+    Renderer* renderer = (Renderer*)sdl_renderer;
 
-	Color_f c = convert_color_8_to_floating_point(renderer->render_draw_color);
-	SDL_Rect rect_result = *rect;
-	// Null for the entire rendering context 
-	if (rect == NULL) {
-		int screen_w = 0;
-		int screen_h = 0;
-		get_window_size(renderer->window, screen_h, screen_h);
-		rect_result.x = screen_w / 2;
-		rect_result.y = screen_h / 2;
-		rect_result.w = screen_w;
-		rect_result.h = screen_h;
-	}
-	int half_w = rect_result.w / 2;
-	int half_h = rect_result.h / 2;
-	
-	V2 top_left =			{ (float)(rect_result.x - half_w) , (float)(rect_result.y + half_h) };
-	V2 top_right =			{ (float)(rect_result.x + half_w) , (float)(rect_result.y + half_h) };
-	V2 bottom_right =		{ (float)(rect_result.x + half_w) , (float)(rect_result.y - half_h) };
-	V2 bottom_left =		{ (float)(rect_result.x - half_w) , (float)(rect_result.y - half_h) };
+    Color_f c = convert_color_8_to_floating_point(renderer->render_draw_color);
+    SDL_Rect rect_result = *rect;
 
-	V2 top_left_ndc =		convert_to_ndc(sdl_renderer, top_left);
-	V2 top_right_ndc =		convert_to_ndc(sdl_renderer, top_right);
-	V2 bottom_right_ndc =	convert_to_ndc(sdl_renderer, bottom_right);
-	V2 bottom_left_ndc =	convert_to_ndc(sdl_renderer, bottom_left);
+    // Calculate the vertices based on the top-left corner
+    V2 top_left = { (float)rect_result.x, (float)rect_result.y };
+    V2 top_right = { (float)(rect_result.x + rect_result.w), (float)rect_result.y };
+    V2 bottom_right = { (float)(rect_result.x + rect_result.w), (float)(rect_result.y + rect_result.h) };
+    V2 bottom_left = { (float)rect_result.x, (float)(rect_result.y + rect_result.h) };
+
+    V2 top_left_ndc = convert_to_ndc(sdl_renderer, top_left);
+    V2 top_right_ndc = convert_to_ndc(sdl_renderer, top_right);
+    V2 bottom_right_ndc = convert_to_ndc(sdl_renderer, bottom_right);
+    V2 bottom_left_ndc = convert_to_ndc(sdl_renderer, bottom_left);
 	
 	Vertex vertices[6] = {};
 	// NOTE: Ignore the UV value. No texture.
@@ -706,8 +703,11 @@ int SDL_RenderDrawPoint(SDL_Renderer* sdl_renderer, int x, int y) {
 		log("ERROR: sdl_renderer is nullptr");
 		return -1;
 	}
+
 	SDL_Rect rect = { x, y, 5, 5 };
 	SDL_RenderFillRect(sdl_renderer, &rect);
+
+	return 0;
 }
 
 int SDL_RenderDrawPoints(SDL_Renderer* sdl_renderer, const SDL_Point* points, int count) {
@@ -729,41 +729,34 @@ int SDL_RenderDrawPoints(SDL_Renderer* sdl_renderer, const SDL_Point* points, in
 }
 
 int SDL_RenderDrawRect(SDL_Renderer* sdl_renderer, const SDL_Rect* rect) {
-	if (sdl_renderer == nullptr) {
-		log("ERROR: sdl_renderer is nullptr");
-		return -1;
-	}
-	Renderer* renderer = (Renderer*)sdl_renderer;
+    if (sdl_renderer == nullptr) {
+        log("ERROR: sdl_renderer is nullptr");
+        return -1;
+    }
+    if (rect == nullptr) {
+        log("ERROR: rect is nullptr");
+        return -1;
+    }
+    // Renderer* renderer = (Renderer*)sdl_renderer;
 
-	SDL_Rect rect_result = *rect;
-	// Null for the entire rendering context 
-	if (rect == NULL) {
-		int screen_w = 0;
-		int screen_h = 0;
-		get_window_size(renderer->window, screen_h, screen_h);
-		rect_result.x = screen_w / 2;
-		rect_result.y = screen_h / 2;
-		rect_result.w = screen_w;
-		rect_result.h = screen_h;
-	}
-	int half_w = rect_result.w / 2;
-	int half_h = rect_result.h / 2;
-	
-	V2 top_left =			{ (float)(rect_result.x - half_w) , (float)(rect_result.y + half_h) };
-	V2 top_right =			{ (float)(rect_result.x + half_w) , (float)(rect_result.y + half_h) };
-	V2 bottom_right =		{ (float)(rect_result.x + half_w) , (float)(rect_result.y - half_h) };
-	V2 bottom_left =		{ (float)(rect_result.x - half_w) , (float)(rect_result.y - half_h) };
+    // Use the provided rectangle directly
+    SDL_Rect rect_result = *rect;
 
-	// Converted to ndc inside the draw line function
-	
-	SDL_RenderDrawLine(sdl_renderer, (int)top_left.x, (int)top_left.y, (int)top_right.x, (int)top_right.y);
-	SDL_RenderDrawLine(sdl_renderer, (int)top_right.x, (int)top_right.y, (int)bottom_right.x, (int)bottom_right.y);
-	SDL_RenderDrawLine(sdl_renderer, (int)bottom_right.x, (int)bottom_right.y, (int)bottom_left.x, (int)bottom_left.y);
-	SDL_RenderDrawLine(sdl_renderer, (int)bottom_left.x, (int)bottom_left.y, (int)top_left.x, (int)top_left.y);
+    // Calculate the vertices based on the top-left corner
+    V2 top_left = { (float)rect_result.x, (float)rect_result.y };
+    V2 top_right = { (float)(rect_result.x + rect_result.w), (float)rect_result.y };
+    V2 bottom_right = { (float)(rect_result.x + rect_result.w), (float)(rect_result.y + rect_result.h) };
+    V2 bottom_left = { (float)rect_result.x, (float)(rect_result.y + rect_result.h) };
 
-	// Returns 0 on success
-	return 0;
-} 
+    // Draw the rectangle's edges
+    SDL_RenderDrawLine(sdl_renderer, (int)top_left.x, (int)top_left.y, (int)top_right.x, (int)top_right.y);
+    SDL_RenderDrawLine(sdl_renderer, (int)top_right.x, (int)top_right.y, (int)bottom_right.x, (int)bottom_right.y);
+    SDL_RenderDrawLine(sdl_renderer, (int)bottom_right.x, (int)bottom_right.y, (int)bottom_left.x, (int)bottom_left.y);
+    SDL_RenderDrawLine(sdl_renderer, (int)bottom_left.x, (int)bottom_left.y, (int)top_left.x, (int)top_left.y);
+
+    // Return 0 on success
+    return 0;
+}
 
 int SDL_RenderDrawRects(SDL_Renderer* sdl_renderer, const SDL_Rect* rects, int count) {
 	if (sdl_renderer == nullptr) {
@@ -840,7 +833,7 @@ struct SDL_Texture {
 	int pitch;
 	// Locked if null
 	void* pixels;
-	SDL_Rect* portion;
+	SDL_Rect portion;
 }; 
 
 SDL_Texture* SDL_CreateTexture(SDL_Renderer* sdl_renderer, uint32_t format, int access, int w, int h) {
@@ -849,7 +842,6 @@ SDL_Texture* SDL_CreateTexture(SDL_Renderer* sdl_renderer, uint32_t format, int 
 		assert(false);
 		return NULL;
 	}
-	SDL_SetRenderDrawBlendMode(sdl_renderer, SDL_BLENDMODE_BLEND);
 
 	SDL_Texture* result = new SDL_Texture();
 	// One texture with one name
@@ -859,6 +851,7 @@ SDL_Texture* SDL_CreateTexture(SDL_Renderer* sdl_renderer, uint32_t format, int 
 	result->w = w;
 	result->h = h;
 
+	// For textures
 	SDL_SetTextureBlendMode(result, SDL_BLENDMODE_BLEND);
 
 	// If the pixels variable is null
@@ -867,6 +860,17 @@ SDL_Texture* SDL_CreateTexture(SDL_Renderer* sdl_renderer, uint32_t format, int 
 
 	// Default alpha mod
 	SDL_SetTextureAlphaMod(result, 255);
+
+	glBindTexture(GL_TEXTURE_2D, result->handle);
+	// Set the texture wrapping/filtering options (on the currently bound texture object)
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+	// Generate the texture
+	// Just allocate the memory and give it data later
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, result->w, result->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 
 	return result;
 }
@@ -897,7 +901,11 @@ bool is_valid_sdl_blend_mode(int mode) {
 }
 
 void SDL_DestroyTexture(SDL_Texture* texture) {
-	delete texture;
+	if (texture != NULL) {
+		delete texture->pixels;
+		glDeleteTextures(1, &texture->handle);
+		delete texture;
+	}
 }
 
 int SDL_SetTextureBlendMode(SDL_Texture* texture, SDL_BlendMode blend_mode) {
@@ -957,25 +965,21 @@ int SDL_LockTexture(SDL_Texture* texture, const SDL_Rect* rect, void **pixels, i
 
 	SDL_Rect full_rect = { 0, 0, texture->w, texture->h };
 	if (rect == NULL) {
-		SDL_Rect* temp = new SDL_Rect();
-		*temp = full_rect;
-		texture->portion = temp;
+		texture->portion = full_rect;
 	}
 	else {
-		SDL_Rect* temp = new SDL_Rect();
-		*temp = *rect;
-		texture->portion = temp;
+		texture->portion = *rect;
 	}
 
-	if (texture->portion->x < 0 || 
-		texture->portion->y < 0 || 
-		texture->portion->x + texture->portion->w > texture->w || 
-		texture->portion->y + texture->portion->h > texture->h) {
+	if (texture->portion.x < 0 || 
+		texture->portion.y < 0 || 
+		texture->portion.x + texture->portion.w > texture->w || 
+		texture->portion.y + texture->portion.h > texture->h) {
 		log("ERROR: Lock area out of bounds");
 		return -1;
 	}
 
-	int buffer_size = texture->portion->w * texture->portion->h * SDL_BYTESPERPIXEL(texture->format);
+	int buffer_size = texture->portion.w * texture->portion.h * SDL_BYTESPERPIXEL(texture->format);
 	Uint8* buffer = new Uint8[buffer_size];
 	if (buffer == NULL) {
 		log("ERROR: Memory allocation failed");
@@ -983,47 +987,37 @@ int SDL_LockTexture(SDL_Texture* texture, const SDL_Rect* rect, void **pixels, i
 	}
 
 	*pixels = buffer;
-	*pitch = texture->portion->w * SDL_BYTESPERPIXEL(texture->format);
+	*pitch = texture->portion.w * SDL_BYTESPERPIXEL(texture->format);
 	texture->pixels = *pixels;
 
 	return 0;
 }
 
 // Uploading the texture to the GPU
+// Just changing the pixels
 void SDL_UnlockTexture(SDL_Texture* texture) {
-	// Temporary code for learning.
-	// glActiveTexture(GL_TEXTURE0);
-	// Bind the handle
 	glBindTexture(GL_TEXTURE_2D, texture->handle);
 
-	if (texture->blend_mode == SDL_BLENDMODE_BLEND) {
-		glEnable(GL_BLEND);
-	}
+	if (texture->pixels == NULL) {
+		log("ERROR: Pixels == NULL");
+		assert(false);
+		return;
+	} 
 
-	// Set the texture wrapping/filtering options (on the currently bound texture object)
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexSubImage2D(
+		GL_TEXTURE_2D,
+		0,
+		texture->portion.x,
+		texture->portion.y,
+		texture->portion.w,
+		texture->portion.h,
+		GL_RGBA,
+		GL_UNSIGNED_BYTE,
+		texture->pixels
+	);
 
-	// Generate the texture
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texture->w, texture->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, texture->pixels);
-	if (texture->portion != NULL) {
-		glTexSubImage2D(
-			GL_TEXTURE_2D,
-			0,
-			texture->portion->x,
-			texture->portion->y,
-			texture->portion->w,
-			texture->portion->y,
-			GL_RGBA,
-			GL_UNSIGNED_BYTE,
-			texture->pixels
-		);
-	}
-	if (texture->pixels != NULL) {
-		delete texture->pixels;
-	}
+	delete texture->pixels;
+	texture->pixels = nullptr;
 }
 
 int SDL_UpdateTexture(SDL_Texture* texture, const SDL_Rect* rect, const void *pixels, int pitch) {
@@ -1085,6 +1079,45 @@ int SDL_GetTextureAlphaMod(SDL_Texture* texture, Uint8* alpha) {
 	return 0;
 }
 
+// Calculate the intersection of two rectangles.
+bool SDL_IntersectRect(const SDL_Rect* A, const SDL_Rect* B, SDL_Rect* result) {
+    if (!A || !B || !result) {
+        return false;
+    }
+
+    int A_x_min = A->x;
+    int A_x_max = A->x + A->w;
+    int A_y_min = A->y;
+    int A_y_max = A->y + A->h;
+
+    int B_x_min = B->x;
+    int B_x_max = B->x + B->w;
+    int B_y_min = B->y;
+    int B_y_max = B->y + B->h;
+
+    // Calculate the intersecting rectangle
+    int x_min = A_x_min > B_x_min ? A_x_min : B_x_min;
+    int x_max = A_x_max < B_x_max ? A_x_max : B_x_max;
+    int y_min = A_y_min > B_y_min ? A_y_min : B_y_min;
+    int y_max = A_y_max < B_y_max ? A_y_max : B_y_max;
+
+    // Check if there is an intersection
+    if (x_min < x_max && y_min < y_max) {
+        result->x = x_min;
+        result->y = y_min;
+        result->w = x_max - x_min;
+        result->h = y_max - y_min;
+        return true;
+    } else {
+        // No intersection
+        result->x = 0;
+        result->y = 0;
+        result->w = 0;
+        result->h = 0;
+        return false;
+    }
+}
+
 int SDL_RenderCopy(SDL_Renderer* sdl_renderer, SDL_Texture* texture, const SDL_Rect* srcrect, const SDL_Rect* dstrect) {
 	if (sdl_renderer == nullptr) {
 		log("ERROR: sdl_renderer is nullptr");
@@ -1102,50 +1135,49 @@ int SDL_RenderCopy(SDL_Renderer* sdl_renderer, SDL_Texture* texture, const SDL_R
 	SDL_Rect srcrect_final;
 	if (srcrect == NULL) {
 		srcrect_final = { 0, 0, texture->w, texture->h };
-		texture->portion = NULL;
 	}
 	else {
 		srcrect_final = *srcrect;
 	}
 
-	// Calculate the UV coordinates 
-	V2 top_left_src = { 0.0f , (float)(texture->h) };
-	V2 top_right_src = { (float)(texture->w) , (float)(texture->h) };
-	V2 bottom_right_src = { (float)(texture->w) , 0.0f };
-	V2 bottom_left_src = { 0.0f , 0.0f };
-
-	V2 top_left_uv = convert_to_uv_coordinates(top_left_src, texture->w, texture->h);
-	V2 top_right_uv = convert_to_uv_coordinates(top_right_src, texture->w, texture->h);
-	V2 bottom_right_uv = convert_to_uv_coordinates(bottom_right_src, texture->w, texture->h);
-	V2 bottom_left_uv = convert_to_uv_coordinates(bottom_left_src, texture->w, texture->h);
-
 	// Null for entire rendering target
-	SDL_Rect dstrect_final = *dstrect;
-	if (dstrect == NULL) {
-		int screen_w = 0;
-		int screen_h = 0;
-		get_window_size(renderer->window, screen_h, screen_h);
-		dstrect_final.x = screen_w / 2;
-		dstrect_final.y = screen_h / 2;
-		dstrect_final.w = screen_w;
-		dstrect_final.h = screen_h;
-	}
+    SDL_Rect dstrect_final;
+    if (dstrect == NULL) {
+        int screen_w = 0;
+        int screen_h = 0;
+        get_window_size(renderer->window, screen_w, screen_h);
+        dstrect_final.x = 0;
+        dstrect_final.y = 0;
+        dstrect_final.w = screen_w;
+        dstrect_final.h = screen_h;
+    } else {
+        dstrect_final = *dstrect;
+    }
+
+	// Calculate the UV coordinates based on the source rectangle
+    V2 bottom_left_src = { (float)srcrect_final.x, (float)srcrect_final.y + srcrect_final.h };
+    V2 bottom_right_src = { (float)(srcrect_final.x + srcrect_final.w), (float)(srcrect_final.y + srcrect_final.h) };
+    V2 top_right_src = { (float)(srcrect_final.x + srcrect_final.w), (float)srcrect_final.y };
+    V2 top_left_src = { (float)srcrect_final.x, (float)srcrect_final.y };
+
+    V2 bottom_left_uv = convert_to_uv_coordinates(bottom_left_src, texture->w, texture->h);
+    V2 bottom_right_uv = convert_to_uv_coordinates(bottom_right_src, texture->w, texture->h);
+    V2 top_right_uv = convert_to_uv_coordinates(top_right_src, texture->w, texture->h);
+    V2 top_left_uv = convert_to_uv_coordinates(top_left_src, texture->w, texture->h);
 
 	// Calculate the vertices positions
 	Color_f c = convert_color_8_to_floating_point(renderer->render_draw_color);
 
-	int half_w_dst = dstrect_final.w / 2;
-	int half_h_dst = dstrect_final.h / 2;
+	// Calculate the destination vertices based on the top-left corner
+    V2 top_left_dst = { (float)dstrect_final.x, (float)dstrect_final.y };
+    V2 top_right_dst = { (float)(dstrect_final.x + dstrect_final.w), (float)dstrect_final.y };
+    V2 bottom_right_dst = { (float)(dstrect_final.x + dstrect_final.w), (float)(dstrect_final.y + dstrect_final.h) };
+    V2 bottom_left_dst = { (float)dstrect_final.x, (float)(dstrect_final.y + dstrect_final.h) };
 
-	V2 top_left = { (float)(dstrect_final.x - half_w_dst) , (float)(dstrect_final.y + half_h_dst) };
-	V2 top_right = { (float)(dstrect_final.x + half_w_dst) , (float)(dstrect_final.y + half_h_dst) };
-	V2 bottom_right = { (float)(dstrect_final.x + half_w_dst) , (float)(dstrect_final.y - half_h_dst) };
-	V2 bottom_left = { (float)(dstrect_final.x - half_w_dst) , (float)(dstrect_final.y - half_h_dst) };
-
-	V2 top_left_ndc = convert_to_ndc(sdl_renderer, top_left);
-	V2 top_right_ndc = convert_to_ndc(sdl_renderer, top_right);
-	V2 bottom_right_ndc = convert_to_ndc(sdl_renderer, bottom_right);
-	V2 bottom_left_ndc = convert_to_ndc(sdl_renderer, bottom_left);
+    V2 top_left_ndc = convert_to_ndc(sdl_renderer, top_left_dst);
+    V2 top_right_ndc = convert_to_ndc(sdl_renderer, top_right_dst);
+    V2 bottom_right_ndc = convert_to_ndc(sdl_renderer, bottom_right_dst);
+    V2 bottom_left_ndc = convert_to_ndc(sdl_renderer, bottom_left_dst);
 
 	Vertex vertices[6] = {};
 	// NOTE: Ignore the UV value. No texture.
@@ -1190,7 +1222,7 @@ int SDL_RenderCopy(SDL_Renderer* sdl_renderer, SDL_Texture* texture, const SDL_R
 	vertices[5].uv = top_right_uv;
 	renderer->vertices.push_back(vertices[5]);
 
-	Vertices_Info info; 
+	Vertices_Info info = {};
 	info.draw_type = GL_TRIANGLES;
 	info.total_vertices = ARRAYSIZE(vertices);
 	info.starting_index = renderer->vertices.size() - info.total_vertices;
@@ -1252,7 +1284,7 @@ void SDL_DestroyRenderer(SDL_Renderer* sdl_renderer) {
 		log("ERROR: sdl_renderer is nullptr");
 		assert(false);
 	}
-	// Renderer* renderer = (Renderer*)sdl_renderer;
+	Renderer* renderer = (Renderer*)sdl_renderer;
 
 	// Delete shader programs
 	for (int i = 0; i < SPT_TOTAL; i++) {
@@ -1260,11 +1292,31 @@ void SDL_DestroyRenderer(SDL_Renderer* sdl_renderer) {
 		glDeleteProgram(program);
 	}
 	
-	delete sdl_renderer;
+	delete renderer;
 }
-#include <algorithm>
-#include <vector>
-#include <iostream>
+
+int SDL_RenderSetClipRect(SDL_Renderer* sdl_renderer, const SDL_Rect* rect) {
+    if (sdl_renderer == nullptr) {
+        log("ERROR: sdl_renderer is nullptr");
+        assert(false);
+        return -1;
+    }
+    Renderer* renderer = (Renderer*)sdl_renderer;
+
+    if (rect == nullptr) {
+        // Disable clipping
+        glDisable(GL_SCISSOR_TEST);
+        renderer->clip_rect_enabled = false;
+    } else {
+        // Enable and set the scissor rectangle
+        glEnable(GL_SCISSOR_TEST);
+        // glScissor(rect->x, rect->y, rect->w, rect->h);
+        renderer->clip_rect_enabled = true;
+        renderer->clip_rect = *rect;
+    }
+
+    return 0;
+}
 
 void SDL_RenderPresent(SDL_Renderer * sdl_renderer) {
 	if (sdl_renderer == nullptr) {
@@ -1273,10 +1325,14 @@ void SDL_RenderPresent(SDL_Renderer * sdl_renderer) {
 	}
 	Renderer* renderer = (Renderer*)sdl_renderer;
 
+	// This rebind may be pointless if I am only going with one vbo
 	glBindBuffer(GL_ARRAY_BUFFER, renderer->vbo);
 	glBufferData(GL_ARRAY_BUFFER, renderer->vertices.size() * sizeof(Vertex), renderer->vertices.data(), GL_STATIC_DRAW);
 
-	
+    int window_width = 0;
+    int window_height = 0;
+    get_window_size(renderer->window, window_width, window_height);
+
 	for (Vertices_Info& info : renderer->vertices_info) {
 		glBindTexture(GL_TEXTURE_2D, info.texture_handle);
 		GLuint shader_program = shader_program_types[info.type];
@@ -1285,15 +1341,102 @@ void SDL_RenderPresent(SDL_Renderer * sdl_renderer) {
 			assert(false);
 		}
 		glUseProgram(shader_program);
-		// Experimental code
-		// glActiveTexture(GL_TEXTURE0);
+		
+        // Enable the scissor test if clipping is enabled
+        if (renderer->clip_rect_enabled) {
+			// Convert because SDL coordinates are inverted
+            int scissor_x = renderer->clip_rect.x;
+            int scissor_y = window_height - renderer->clip_rect.y - renderer->clip_rect.h;
+            int scissor_width = renderer->clip_rect.w;
+            int scissor_height = renderer->clip_rect.h;
+            glEnable(GL_SCISSOR_TEST);
+            glScissor(scissor_x, scissor_y, scissor_width, scissor_height);
+        } else {
+            glDisable(GL_SCISSOR_TEST);
+        }
+
 		glDrawArrays(info.draw_type, (GLuint)info.starting_index, info.total_vertices);
-		info.destroyed = true;
 	}
 
-    std::erase_if(renderer->vertices_info, [](const Vertices_Info& info) {
-		return info.destroyed;
-    });
+	// If I don't clear this, it remains active across frames and causes unintended clipping and flickering
+	// Clearing it at the end of the frame ensures the next frames starts without any clipping restrictions
+	SDL_RenderSetClipRect(sdl_renderer, NULL);
+	renderer->vertices_info.clear();
 
 	SwapBuffers(renderer->hdc);
+}
+
+void draw_debug_images(SDL_Renderer* sdl_renderer) {
+    if (sdl_renderer == nullptr) {
+        log("ERROR: sdl_renderer is nullptr");
+        assert(false);
+        return;
+    }
+    // Renderer* renderer = (Renderer*)sdl_renderer;
+	int x = 100;
+	int x_off = 150;
+	int y = 100;
+	int y_off = 150;
+
+	// ROW 1
+	SDL_SetRenderDrawColor(sdl_renderer, 155, 0, 0, 255);
+	SDL_Rect rect_one_a = { x, y, 100, 100 };
+	x += x_off;
+	SDL_RenderDrawRect(sdl_renderer, &rect_one_a);
+	
+	SDL_SetRenderDrawColor(sdl_renderer, 255, 0, 0, 255);
+	SDL_Rect rect_one_b = { x, y, 100, 100 };
+	x += x_off;
+	SDL_Rect rect_two_b = { x, y, 100, 100 };
+	x += x_off;
+	SDL_Rect rect_three_b = { x, y, 100, 100 };
+	x += x_off;
+	SDL_Rect rects_group_b[3] = { rect_one_b, rect_two_b, rect_three_b };
+	SDL_RenderDrawRects(sdl_renderer, rects_group_b, ARRAYSIZE(rects_group_b));
+
+	SDL_SetRenderDrawColor(sdl_renderer, 0, 155, 0, 255);
+	SDL_Rect rect_one_c = { x, y, 100, 100 };
+	x += x_off;
+	SDL_RenderFillRect(sdl_renderer, &rect_one_c);
+
+	SDL_SetRenderDrawColor(sdl_renderer, 0, 255, 0, 255);
+	SDL_Rect rect_one_d = { x, y, 100, 100 };
+	x += x_off;
+	SDL_Rect rect_two_d = { x, y, 100, 100 };
+	x += x_off;
+	SDL_Rect rect_three_d = { x, y, 100, 100 };
+	x += x_off;
+	SDL_Rect rects_group_d[3] = { rect_one_d, rect_two_d, rect_three_d };
+	SDL_RenderFillRects(sdl_renderer, rects_group_d, ARRAYSIZE(rects_group_d));
+
+	// ROW 2
+	SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 155, 255);
+	y += y_off;
+	x = 100;
+	SDL_Point p1_a = { x, y };
+	SDL_Point p2_a = { x, y + 100 };
+	SDL_RenderDrawLine(sdl_renderer, p1_a.x, p1_a.y, p2_a.x, p2_a.y);
+	x += x_off;
+
+	SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 255, 255);
+	SDL_Point p1_b = { x, y };
+	SDL_Point p2_b = { x + 100, y };
+	SDL_Point p3_b = { x + 100, y + 100 };
+	SDL_Point p4_b = { x, y + 100 };
+	SDL_Point p5_b = { x, y };
+	SDL_Point points_group_b[5] = { p1_b, p2_b, p3_b, p4_b, p5_b };
+	SDL_RenderDrawLines(sdl_renderer, points_group_b, ARRAYSIZE(points_group_b));
+	x += x_off;
+
+	SDL_SetRenderDrawColor(sdl_renderer, 0, 155, 155, 255);
+	SDL_Point p1_c = { x, y };
+	SDL_RenderDrawPoint(sdl_renderer, p1_c.x, p1_c.y);
+	x += x_off;
+
+	SDL_Point p1_d = { x, y };
+	SDL_Point p2_d = { x + 100, y };
+	SDL_Point p3_d = { x + 100, y + 100};
+	SDL_Point p4_d = { x, y + 100};
+	SDL_Point points_group_d[4] = { p1_d, p2_d, p3_d, p4_d };
+	SDL_RenderDrawPoints(sdl_renderer, points_group_d, ARRAYSIZE(points_group_d));
 }
