@@ -70,7 +70,7 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 	
 	SDL_Renderer* renderer = SDL_CreateRenderer(window, 0, 0);
 
-	Image castle_Infernal_Image = create_Image(renderer, "assets\\castle_Infernal.png");
+	Image castle_infernal_image = create_Image(renderer, "assets\\castle_Infernal.png");
 	Image azir_image = create_Image(renderer, "assets\\azir.jpg");
 
 	bool running = true;
@@ -102,11 +102,12 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		
 		draw_debug_images(renderer);
 
-		SDL_Rect castle_rect = { 100,400,100,100 };
-		SDL_RenderCopy(renderer, castle_Infernal_Image.texture, NULL, &castle_rect);
+		SDL_Rect castle_rect = { 100,400,200,200 };
+		SDL_SetTextureAlphaMod(castle_infernal_image.texture, 255);
+		SDL_RenderCopy(renderer, castle_infernal_image.texture, NULL, &castle_rect);
 
-		SDL_Rect azir_rect = { 250,400,100,100 };
-		SDL_SetTextureAlphaMod(azir_image.texture, 0);
+		SDL_Rect azir_rect = { 200,400,200,200 };
+		SDL_SetTextureAlphaMod(azir_image.texture, 100);
 		SDL_RenderCopy(renderer, azir_image.texture, NULL, &azir_rect);
 
 		SDL_RenderPresent(renderer);

@@ -458,8 +458,12 @@ SDL_Renderer* SDL_CreateRenderer(HWND window, int index, uint32_t flags) {
 
 	load_shaders();
 
+	// glEnable(GL_DEPTH_TEST);
 	glEnable(GL_BLEND);
-	
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	// Default is GL_FUNC_ADD
+	// glBlendEquation(GL_FUNC_ADD);
+
 	return (SDL_Renderer*)renderer;
 }
 
@@ -1139,7 +1143,7 @@ int SDL_RenderCopy(SDL_Renderer* sdl_renderer, SDL_Texture* texture, const SDL_R
 	else {
 		srcrect_final = *srcrect;
 	}
-
+	
 	// Null for entire rendering target
     SDL_Rect dstrect_final;
     if (dstrect == NULL) {
@@ -1186,19 +1190,19 @@ int SDL_RenderCopy(SDL_Renderer* sdl_renderer, SDL_Texture* texture, const SDL_R
 	vertices[0].pos = bottom_left_ndc;
 	vertices[0].color = c;
 	// Modify the alpha mod
-	vertices[0].color.a *= (texture->alpha_mod / 255);
+	vertices[0].color.a *= ((float)texture->alpha_mod / 255.0f);
 	vertices[0].uv = bottom_left_uv;
 	renderer->vertices.push_back(vertices[0]);
 	// Top Left
 	vertices[1].pos = top_left_ndc;
 	vertices[1].color = c;
-	vertices[1].color.a *= (texture->alpha_mod / 255);
+	vertices[1].color.a *= ((float)texture->alpha_mod / 255.0f);
 	vertices[1].uv = top_left_uv;
 	renderer->vertices.push_back(vertices[1]);
 	// Top Right
 	vertices[2].pos = top_right_ndc;
 	vertices[2].color = c;
-	vertices[2].color.a *= (texture->alpha_mod / 255);
+	vertices[2].color.a *= ((float)texture->alpha_mod / 255.0f);
 	vertices[2].uv = top_right_uv;
 	renderer->vertices.push_back(vertices[2]);
 
@@ -1206,19 +1210,19 @@ int SDL_RenderCopy(SDL_Renderer* sdl_renderer, SDL_Texture* texture, const SDL_R
 	// Bottom Left
 	vertices[3].pos = bottom_left_ndc;
 	vertices[3].color = c;
-	vertices[3].color.a *= (texture->alpha_mod / 255);
+	vertices[3].color.a *= ((float)texture->alpha_mod / 255.0f);
 	vertices[3].uv = bottom_left_uv;
 	renderer->vertices.push_back(vertices[3]);
 	// Bottom Right
 	vertices[4].pos = bottom_right_ndc;
 	vertices[4].color = c;
-	vertices[4].color.a *= (texture->alpha_mod / 255);
+	vertices[4].color.a *= ((float)texture->alpha_mod / 255.0f);
 	vertices[4].uv = bottom_right_uv;
 	renderer->vertices.push_back(vertices[4]);
 	// Top Right
 	vertices[5].pos = top_right_ndc;
 	vertices[5].color = c;
-	vertices[5].color.a *= (texture->alpha_mod / 255);
+	vertices[5].color.a *= ((float)texture->alpha_mod / 255.0f);
 	vertices[5].uv = top_right_uv;
 	renderer->vertices.push_back(vertices[5]);
 
@@ -1305,11 +1309,11 @@ int SDL_RenderSetClipRect(SDL_Renderer* sdl_renderer, const SDL_Rect* rect) {
 
     if (rect == nullptr) {
         // Disable clipping
-        glDisable(GL_SCISSOR_TEST);
+        // glDisable(GL_SCISSOR_TEST);
         renderer->clip_rect_enabled = false;
     } else {
         // Enable and set the scissor rectangle
-        glEnable(GL_SCISSOR_TEST);
+        // glEnable(GL_SCISSOR_TEST);
         // glScissor(rect->x, rect->y, rect->w, rect->h);
         renderer->clip_rect_enabled = true;
         renderer->clip_rect = *rect;
@@ -1362,7 +1366,9 @@ void SDL_RenderPresent(SDL_Renderer * sdl_renderer) {
     get_window_size(renderer->window, window_width, window_height);
 
 	for (Vertices_Info& info : renderer->vertices_info) {
-		glBindTexture(GL_TEXTURE_2D, info.texture_handle);
+		if (info.texture_handle) {
+			glBindTexture(GL_TEXTURE_2D, info.texture_handle);
+		}
 		GLuint shader_program = shader_program_types[info.type];
 		if (!shader_program) {
 			log("ERROR: Shader program not specified");
