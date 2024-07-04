@@ -7,8 +7,15 @@ uniform sampler2D my_texture;
 
 void main()
 {
+	// Sample the texture color using the provided UV coordinates
     vec4 tex_color = texture(my_texture, f_uv);
-	tex_color.a = f_color.a;
+	
+	// Modulate the texture color with the input color
+    vec4 modified_color = tex_color * f_color;
+	
+	// Set the alpha channel separately
+	modified_color.a = f_color.a;
+	
 	// Use texture color including alpha
-    o_color = tex_color;
+    o_color = modified_color;
 }

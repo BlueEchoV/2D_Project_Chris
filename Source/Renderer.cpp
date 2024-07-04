@@ -838,7 +838,7 @@ struct SDL_Texture {
 
 	SDL_BlendMode blend_mode;
 
-	Uint8 alpha_mod;
+	Color_8 mod;
 
 	int pitch;
 	// Locked if null
@@ -867,6 +867,9 @@ SDL_Texture* SDL_CreateTexture(SDL_Renderer* sdl_renderer, uint32_t format, int 
 	// If the pixels variable is null
 	result->pitch = 0;
 	result->pixels = NULL;
+
+	// Default color mod so the texture displays
+	SDL_SetTextureColorMod(result, 255, 255, 255);
 
 	// Default alpha mod
 	SDL_SetTextureAlphaMod(result, 255);
@@ -1027,6 +1030,41 @@ int set_gl_blend_mode(SDL_BlendMode blend_mode) {
 	return 0;
 }
 
+int SDL_SetTextureColorMod(SDL_Texture* texture, Uint8 r, Uint8 g, Uint8 b) {
+	if (texture == nullptr) {
+		log("ERROR: Invalid texture pointer");
+		return -1;
+	}
+
+	if (r < 0 || r > 255 || g < 0 || g > 255 || b < 0 || b > 255) {
+		log("ERROR: r || g || b");
+		return -1;
+	}
+
+	texture->mod.r = r;
+	texture->mod.g = g;
+	texture->mod.b = b;
+
+	return 0;
+}
+
+int SDL_GetTextureColorMod(SDL_Texture* texture, Uint8* r, Uint8* g, Uint8* b) {
+	if (texture == nullptr) {
+		log("ERROR: Invalid texture pointer");
+		return -1;
+	}
+	if (r == nullptr || g == nullptr || b == nullptr) {
+		log("ERROR: Invalid r || g || b pointer");
+		return -1;
+	}
+
+	*r = texture->mod.r; 
+	*g = texture->mod.g; 
+	*b = texture->mod.b; 
+	
+	return 0;
+}
+
 // NOTE: For changing the texture on the CPU's side
 int SDL_LockTexture(SDL_Texture* texture, const SDL_Rect* rect, void **pixels, int *pitch) {
 	if (texture == NULL) {
@@ -1129,28 +1167,31 @@ int SDL_UpdateTexture(SDL_Texture* texture, const SDL_Rect* rect, const void *pi
 }
 
 int SDL_SetTextureAlphaMod(SDL_Texture* texture, Uint8 alpha) {
-	if (texture == NULL) {
-		log("ERROR: Invalid texture or pixels");
+	if (texture == nullptr) {
+		log("ERROR: Invalid texture pointer");
 		return -1;
 	}
-
 	if (alpha < 0 || alpha > 255) {
 		log("ERROR: Invalid alpha mod");
 		return -1;
 	}
 
-	texture->alpha_mod = alpha;
+	texture->mod.a = alpha;
 
 	return 0;
 }
 
 int SDL_GetTextureAlphaMod(SDL_Texture* texture, Uint8* alpha) {
-	if (texture == NULL) {
-		log("ERROR: Invalid texture or pixels");
+	if (texture == nullptr) {
+		log("ERROR: Invalid texture pointer");
+		return -1;
+	}
+	if (alpha == nullptr) {
+		log("ERROR: Invalid alpha pointer");
 		return -1;
 	}
 
-	*alpha = texture->alpha_mod; 
+	*alpha = texture->mod.a; 
 	
 	return 0;
 }
@@ -1242,7 +1283,7 @@ int SDL_RenderCopy(SDL_Renderer* sdl_renderer, SDL_Texture* texture, const SDL_R
     V2 top_left_uv = convert_to_uv_coordinates(top_left_src, texture->w, texture->h);
 
 	// Calculate the vertices positions
-	Color_f c = convert_color_8_to_floating_point(renderer->render_draw_color);
+	Color_f c = { 1, 1, 1, 1 };
 
 	// Calculate the destination vertices based on the top-left corner
     V2 top_left_dst = { (float)dstrect_final.x, (float)dstrect_final.y };
@@ -1307,25 +1348,37 @@ int SDL_RenderCopy(SDL_Renderer* sdl_renderer, SDL_Texture* texture, const SDL_R
 	// Bottom left
 	vertices[0].pos = bottom_left_ndc;
 	vertices[0].color = c;
-	vertices[0].color.a *= ((float)texture->alpha_mod / 255.0f);
+	vertices[0].color.r *= ((float)texture->mod.r / 255.0f);
+	vertices[0].color.g *= ((float)texture->mod.g / 255.0f);
+	vertices[0].color.b *= ((float)texture->mod.b / 255.0f);
+	vertices[0].color.a *= ((float)texture->mod.a / 255.0f);
 	vertices[0].uv = bottom_left_uv;
 
 	// Top left
 	vertices[1].pos = top_left_ndc;
 	vertices[1].color = c;
-	vertices[1].color.a *= ((float)texture->alpha_mod / 255.0f);
+	vertices[1].color.r *= ((float)texture->mod.r / 255.0f);
+	vertices[1].color.g *= ((float)texture->mod.g / 255.0f);
+	vertices[1].color.b *= ((float)texture->mod.b / 255.0f);
+	vertices[1].color.a *= ((float)texture->mod.a / 255.0f);
 	vertices[1].uv = top_left_uv;
 
 	// Top right
 	vertices[2].pos = top_right_ndc;
 	vertices[2].color = c;
-	vertices[2].color.a *= ((float)texture->alpha_mod / 255.0f);
+	vertices[2].color.r *= ((float)texture->mod.r / 255.0f);
+	vertices[2].color.g *= ((float)texture->mod.g / 255.0f);
+	vertices[2].color.b *= ((float)texture->mod.b / 255.0f);
+	vertices[2].color.a *= ((float)texture->mod.a / 255.0f);
 	vertices[2].uv = top_right_uv;
 
 	// Bottom right
 	vertices[3].pos = bottom_right_ndc;
 	vertices[3].color = c;
-	vertices[3].color.a *= ((float)texture->alpha_mod / 255.0f);
+	vertices[3].color.r *= ((float)texture->mod.r / 255.0f);
+	vertices[3].color.g *= ((float)texture->mod.g / 255.0f);
+	vertices[3].color.b *= ((float)texture->mod.b / 255.0f);
+	vertices[3].color.a *= ((float)texture->mod.a / 255.0f);
 	vertices[3].uv = bottom_right_uv;
 
 	// Vertices for the vbo
