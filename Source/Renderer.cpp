@@ -41,6 +41,10 @@
 #define GL_TEXTURE0                       0x84C0
 #define GL_TEXTURE1                       0x84C1
 
+#define GL_PROGRAM_POINT_SIZE             0x8642
+
+#define GL_FUNC_ADD                       0x8006
+
 typedef int64_t GLsizeiptr;
 
 typedef GLuint(*glCreateShaderFunc)(GLenum shaderType);
@@ -122,6 +126,9 @@ glActiveTextureFunc glActiveTexture = {};
 
 typedef void(*glUniform1iFunc)(GLint location, GLint v0);
 glUniform1iFunc glUniform1i = {};
+
+typedef void(*glBlendEquationFunc)(GLenum mode);
+glBlendEquationFunc glBlendEquation = {};
 
 void loadGLFunctions() {
 	glCreateShader = (glCreateShaderFunc)wglGetProcAddress("glCreateShader");
@@ -452,12 +459,6 @@ SDL_Renderer* SDL_CreateRenderer(HWND window, int index, uint32_t flags) {
 
 	load_shaders();
 
-	// glEnable(GL_DEPTH_TEST);
-	glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	// Default is GL_FUNC_ADD
-	// glBlendEquation(GL_FUNC_ADD);
-
 	renderer->clip_rect_set = false;
 
 	return (SDL_Renderer*)renderer;
@@ -704,8 +705,6 @@ int SDL_RenderDrawLines(SDL_Renderer* sdl_renderer, const SDL_Point* points, int
 	return 0;
 }
 
-// Just call renderDrawRect
-#define GL_PROGRAM_POINT_SIZE             0x8642
 int SDL_RenderDrawPoint(SDL_Renderer* sdl_renderer, int x, int y) {
 	if (sdl_renderer == nullptr) {
 		log("ERROR: sdl_renderer is nullptr");
@@ -937,7 +936,40 @@ int SDL_SetRenderDrawBlendMode(SDL_Renderer* sdl_renderer, SDL_BlendMode blendMo
 	}
 	Renderer* renderer = (Renderer*)sdl_renderer;
 
-	renderer->blend_mode = blendMode;
+	    // Only set the blend mode if it is different from the current one
+    if (renderer->blend_mode != blendMode) {
+        renderer->blend_mode = blendMode;
+
+        switch (blendMode) {
+            case SDL_BLENDMODE_NONE:
+                glDisable(GL_BLEND);
+                break;
+            case SDL_BLENDMODE_BLEND:
+                glEnable(GL_BLEND);
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                // glBlendEquation(GL_FUNC_ADD);
+                break;
+            case SDL_BLENDMODE_ADD:
+                glEnable(GL_BLEND);
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+                // glBlendEquation(GL_FUNC_ADD);
+                break;
+            case SDL_BLENDMODE_MOD:
+                glEnable(GL_BLEND);
+                glBlendFunc(GL_DST_COLOR, GL_ZERO);
+                // glBlendEquation(GL_FUNC_ADD);
+                break;
+            case SDL_BLENDMODE_MUL:
+                glEnable(GL_BLEND);
+                glBlendFunc(GL_DST_COLOR, GL_ONE_MINUS_SRC_ALPHA);
+                // glBlendEquation(GL_FUNC_ADD);
+                break;
+            default:
+                log("ERROR: Invalid blend mode");
+                assert(false);
+                return -1;
+        }
+    }
 
 	return 0;
 }
