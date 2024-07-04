@@ -93,9 +93,9 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		SDL_RenderClear(renderer);
 
 		SDL_Rect clip_rect = { 100, 10, 500, 500 };
-		SDL_SetRenderDrawColor(renderer, 0, 100, 100, 255);
-		SDL_RenderFillRect(renderer, &clip_rect);
-		SDL_RenderSetClipRect(renderer, &clip_rect);
+		// SDL_SetRenderDrawColor(renderer, 0, 100, 100, 255);
+		// SDL_RenderFillRect(renderer, &clip_rect);
+		// SDL_RenderSetClipRect(renderer, &clip_rect);
 
 		SDL_Rect viewport_rect = { 100, 10, 500, 500 };
 		// SDL_RenderSetViewport(renderer, &clip_rect);
