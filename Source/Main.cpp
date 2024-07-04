@@ -71,7 +71,9 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 	SDL_Renderer* renderer = SDL_CreateRenderer(window, 0, 0);
 
 	Image castle_infernal_image = create_Image(renderer, "assets\\castle_Infernal.png");
+	SDL_SetTextureBlendMode(castle_infernal_image.texture, SDL_BLENDMODE_NONE);
 	Image azir_image = create_Image(renderer, "assets\\azir.jpg");
+	SDL_SetTextureBlendMode(azir_image.texture, SDL_BLENDMODE_NONE);
 
 	bool running = true;
 	while (running) {
@@ -102,7 +104,7 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		
 		draw_debug_images(renderer);
 
-		SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+		// SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
 
 		SDL_Rect castle_rect = { 100,400,200,200 };
 		SDL_SetTextureAlphaMod(castle_infernal_image.texture, 155);

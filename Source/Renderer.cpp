@@ -336,6 +336,7 @@ struct Vertices_Info {
 	int draw_type;
 	Shader_Program_Type type;
 	GLuint texture_handle;
+	SDL_BlendMode blend_mode;
 };
 
 struct Renderer {
@@ -631,6 +632,7 @@ int SDL_RenderFillRect(SDL_Renderer* sdl_renderer, const SDL_Rect* rect) {
 	info.total_vertices = ARRAYSIZE(vertices);
 	info.starting_index = renderer->vertices.size() - info.total_vertices;
 	info.type = SPT_COLOR;
+	info.blend_mode = renderer->blend_mode;
 	// Store the number of vertices to be rendered for this group
 	renderer->vertices_info.push_back(info);
 
@@ -679,6 +681,7 @@ int SDL_RenderDrawLine(SDL_Renderer* sdl_renderer, int x1, int y1, int x2, int y
 	// Subtract the already added vertices to get the starting index
 	info.starting_index = renderer->vertices.size() - info.total_vertices;
 	info.type = SPT_COLOR;
+	info.blend_mode = renderer->blend_mode;
 
 	// Store the number of vertices to be rendered for this group
 	renderer->vertices_info.push_back(info);
@@ -858,8 +861,8 @@ SDL_Texture* SDL_CreateTexture(SDL_Renderer* sdl_renderer, uint32_t format, int 
 	result->w = w;
 	result->h = h;
 
-	// For textures
-	SDL_SetTextureBlendMode(result, SDL_BLENDMODE_BLEND);
+	// Default value for textures
+	SDL_SetTextureBlendMode(result, SDL_BLENDMODE_NONE);
 
 	// If the pixels variable is null
 	result->pitch = 0;
@@ -890,20 +893,20 @@ void my_Memory_Copy(void* dest, const void* src, size_t count) {
 	}
 }
 
-bool is_valid_sdl_blend_mode(int mode) {
+int is_valid_sdl_blend_mode(int mode) {
 	switch (mode) {
 	case SDL_BLENDMODE_NONE:
-		return true;
+		return 0;
 	case SDL_BLENDMODE_BLEND:
-		return true;
+		return 0;
 	case SDL_BLENDMODE_ADD:
-		return true;
+		return 0;
 	case SDL_BLENDMODE_MOD:
-		return true;
+		return 0;
 	case SDL_BLENDMODE_MUL:
-		return true;
+		return 0;
 	default:
-		return false;
+		return -1;
 	}
 }
 
@@ -915,15 +918,34 @@ void SDL_DestroyTexture(SDL_Texture* texture) {
 	}
 }
 
-int SDL_SetTextureBlendMode(SDL_Texture* texture, SDL_BlendMode blend_mode) {
-	bool is_valid = is_valid_sdl_blend_mode(blend_mode);
-	if (is_valid) {
-		texture->blend_mode = blend_mode;
-	} else {
-		log("Invalid blend mode set");
-		texture->blend_mode = SDL_BLENDMODE_BLEND;
+int SDL_SetTextureBlendMode(SDL_Texture* texture, SDL_BlendMode blendMode) {
+	if (is_valid_sdl_blend_mode(blendMode)) {
+		// Default blend mode
+		texture->blend_mode= SDL_BLENDMODE_BLEND;
+		log("ERROR: Invalid blend_mode");
+		assert(false);
+		return -1;
+	} 
+
+	if (texture->blend_mode != blendMode) {
+		texture->blend_mode = blendMode;
+	}
+
+	return 0;
+}
+
+int SDL_GetTextureBlendMode(SDL_Texture* texture, SDL_BlendMode* blendMode) {
+	// These should never be the case, but we'll go ahead and guard against it
+	if (texture == nullptr) {
+		log("ERROR: Invalid texture pointer");
 		return -1;
 	}
+	if (blendMode == nullptr) {
+		log("ERROR: Invalid blendMode pointer");
+		return -1;
+	}
+
+	*blendMode = texture->blend_mode;
 
 	return 0;
 }
@@ -936,57 +958,71 @@ int SDL_SetRenderDrawBlendMode(SDL_Renderer* sdl_renderer, SDL_BlendMode blendMo
 	}
 	Renderer* renderer = (Renderer*)sdl_renderer;
 
-	    // Only set the blend mode if it is different from the current one
+	if (is_valid_sdl_blend_mode(blendMode)) {
+		// Default blend mode
+		renderer->blend_mode = SDL_BLENDMODE_BLEND;
+		log("ERROR: Invalid blend_mode");
+		assert(false);
+		return -1;
+	} 
+
+    // Only set the blend mode if it is different from the current one
     if (renderer->blend_mode != blendMode) {
         renderer->blend_mode = blendMode;
-
-        switch (blendMode) {
-            case SDL_BLENDMODE_NONE:
-                glDisable(GL_BLEND);
-                break;
-            case SDL_BLENDMODE_BLEND:
-                glEnable(GL_BLEND);
-                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-                // glBlendEquation(GL_FUNC_ADD);
-                break;
-            case SDL_BLENDMODE_ADD:
-                glEnable(GL_BLEND);
-                glBlendFunc(GL_SRC_ALPHA, GL_ONE);
-                // glBlendEquation(GL_FUNC_ADD);
-                break;
-            case SDL_BLENDMODE_MOD:
-                glEnable(GL_BLEND);
-                glBlendFunc(GL_DST_COLOR, GL_ZERO);
-                // glBlendEquation(GL_FUNC_ADD);
-                break;
-            case SDL_BLENDMODE_MUL:
-                glEnable(GL_BLEND);
-                glBlendFunc(GL_DST_COLOR, GL_ONE_MINUS_SRC_ALPHA);
-                // glBlendEquation(GL_FUNC_ADD);
-                break;
-            default:
-                log("ERROR: Invalid blend mode");
-                assert(false);
-                return -1;
-        }
     }
 
 	return 0;
 }
 
 int SDL_GetRenderDrawBlendMode(SDL_Renderer* sdl_renderer, SDL_BlendMode* blendMode) {
+	// These should never be the case, but we'll go ahead and guard against it
 	if (sdl_renderer == nullptr) {
-		log("ERROR: sdl_renderer is nullptr");
-		assert(false);
+		log("ERROR: Invalid sdl_renderer pointer");
+		(false);
+		return -1;
+	}
+	if (blendMode == nullptr) {
+		log("ERROR: Invalid blendMode pointer");
 		return -1;
 	}
 	Renderer* renderer = (Renderer*)sdl_renderer;
-
-	if (blendMode == NULL) {
-		log("ERROR: blend mode is not set on the renderer");
-		return -1;
-	}
 	*blendMode = renderer->blend_mode;
+
+	return 0;
+}
+
+
+// My own function
+int set_gl_blend_mode(SDL_BlendMode blend_mode) {
+	switch (blend_mode) {
+		case SDL_BLENDMODE_NONE:
+			glDisable(GL_BLEND);
+			break;
+		case SDL_BLENDMODE_BLEND:
+			glEnable(GL_BLEND);
+			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+			// glBlendEquation(GL_FUNC_ADD);
+			break;
+		case SDL_BLENDMODE_ADD:
+			glEnable(GL_BLEND);
+			glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+			// glBlendEquation(GL_FUNC_ADD);
+			break;
+		case SDL_BLENDMODE_MOD:
+			glEnable(GL_BLEND);
+			glBlendFunc(GL_DST_COLOR, GL_ZERO);
+			// glBlendEquation(GL_FUNC_ADD);
+			break;
+		case SDL_BLENDMODE_MUL:
+			glEnable(GL_BLEND);
+			glBlendFunc(GL_DST_COLOR, GL_ONE_MINUS_SRC_ALPHA);
+			// glBlendEquation(GL_FUNC_ADD);
+			break;
+		default:
+			log("ERROR: Invalid blend mode");
+			assert(false);
+			return -1;
+	}
 
 	return 0;
 }
@@ -1322,6 +1358,7 @@ int SDL_RenderCopy(SDL_Renderer* sdl_renderer, SDL_Texture* texture, const SDL_R
 	info.texture_handle = texture->handle;
 	info.total_indices = 6;
 	info.index_buffer_index = (Uint32)renderer->vertices_indices.size() - info.total_indices;
+	info.blend_mode = texture->blend_mode;
 	renderer->vertices_info.push_back(info);
 
 	return 0;
@@ -1462,6 +1499,11 @@ void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, renderer->vertices_indices.size() * sizeof(Uint32), renderer->vertices_indices.data(), GL_STATIC_DRAW);
 
 	for (Vertices_Info& info : renderer->vertices_info) {
+		// Set the blend mode before I render all the vertices
+		if (set_gl_blend_mode(info.blend_mode)) {
+			log("ERROR: blend mode not set");
+			assert(false);
+		}
 		if (info.texture_handle) {
 			glBindTexture(GL_TEXTURE_2D, info.texture_handle);
 		}
