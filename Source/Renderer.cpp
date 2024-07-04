@@ -24,6 +24,7 @@
 #define GL_FRAGMENT_SHADER                0x8B30
 #define GL_LINK_STATUS                    0x8B82
 #define GL_ARRAY_BUFFER                   0x8892
+#define GL_ELEMENT_ARRAY_BUFFER           0x8893
 #define GL_STATIC_DRAW                    0x88E4
 #define GL_STATIC_READ                    0x88E5
 #define GL_STATIC_COPY                    0x88E6
@@ -307,22 +308,6 @@ GLuint create_shader_program(const char* vertex_shader_file_path, const char* fr
 	return result;
 }
 
-void setup_vertex_vao_vbo(GLuint& vao, GLuint& vbo, Vertex* vertices, size_t vertex_count) {
-	glGenVertexArrays(1, &vao);
-	glBindVertexArray(vao);
-
-	glGenBuffers(1, &vbo);
-	glBindBuffer(GL_ARRAY_BUFFER, vbo);
-	glBufferData(GL_ARRAY_BUFFER, vertex_count * sizeof(Vertex), vertices, GL_STATIC_DRAW);
-
-	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos));
-	glEnableVertexAttribArray(1);
-	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, color));
-	glEnableVertexAttribArray(2);
-	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
-}
-
 struct Color_8 {
 	uint8_t r;
 	uint8_t g;
@@ -350,12 +335,13 @@ struct Renderer {
 	Color_8 render_draw_color;
 	SDL_BlendMode blend_mode;
 
-	GLuint vbo;
 	GLuint vao;
-	std::vector<Vertex> vertices;
+	GLuint vbo;
+	std::vector<Vertex> vertices_vbo;
+	GLuint ebo;
+	std::vector<Vertex> vertices_ebo;
 	std::vector<Vertices_Info> vertices_info;
 
-	bool clip_rect_enabled; 
 	SDL_Rect clip_rect;     
 };
 
@@ -443,11 +429,16 @@ SDL_Renderer* SDL_CreateRenderer(HWND window, int index, uint32_t flags) {
 		return NULL;
 	}
 	
+	// Stores the configuration of the vertex attributes and the buffers used
+	// NOTE: Both buffers will use this vao
 	glGenVertexArrays(1, &renderer->vao);
 	glBindVertexArray(renderer->vao);
 
 	glGenBuffers(1, &renderer->vbo);
 	glBindBuffer(GL_ARRAY_BUFFER, renderer->vbo);
+
+	glGenBuffers(1, &renderer->ebo);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, renderer->ebo);
 
 	glEnableVertexAttribArray(0);
 	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos));
@@ -525,15 +516,21 @@ Color_f convert_color_8_to_floating_point(Color_8 color) {
 	return result;
 }
 
+// This function clears the entire rendering target, ignoring the viewport and the clip rectangle.
 int SDL_RenderClear(SDL_Renderer* sdl_renderer) {
 	if (sdl_renderer == nullptr) {
 		return -1;
 	}
 	Renderer* renderer = (Renderer*)sdl_renderer;
+
 	Color_f c = convert_color_8_to_floating_point(renderer->render_draw_color);
+
+	SDL_RenderSetClipRect(sdl_renderer, NULL);
 
 	glClearColor(c.r, c.g, c.b, c.a);
 	glClear(GL_COLOR_BUFFER_BIT);
+
+	SDL_RenderSetClipRect(sdl_renderer, &renderer->clip_rect);
 
 	return 0;
 }
@@ -596,35 +593,35 @@ int SDL_RenderFillRect(SDL_Renderer* sdl_renderer, const SDL_Rect* rect) {
 	// Bottom Left
 	vertices[0].pos = bottom_left_ndc;
 	vertices[0].color = c;
-	renderer->vertices.push_back(vertices[0]);
+	renderer->vertices_vbo.push_back(vertices[0]);
 	// Top Left
 	vertices[1].pos = top_left_ndc;
 	vertices[1].color = c;
-	renderer->vertices.push_back(vertices[1]);
+	renderer->vertices_vbo.push_back(vertices[1]);
 	// Top Right
 	vertices[2].pos = top_right_ndc;
 	vertices[2].color = c;
-	renderer->vertices.push_back(vertices[2]);
+	renderer->vertices_vbo.push_back(vertices[2]);
 
 	// ***Second Triangle***
 	// Bottom Left
 	vertices[3].pos = bottom_left_ndc;
 	vertices[3].color = c;
-	renderer->vertices.push_back(vertices[3]);
+	renderer->vertices_vbo.push_back(vertices[3]);
 	// Bottom Right
 	vertices[4].pos = bottom_right_ndc;
 	vertices[4].color = c;
-	renderer->vertices.push_back(vertices[4]);
+	renderer->vertices_vbo.push_back(vertices[4]);
 	// Top Right
 	vertices[5].pos = top_right_ndc;
 	vertices[5].color = c;
-	renderer->vertices.push_back(vertices[5]);
+	renderer->vertices_vbo.push_back(vertices[5]);
 
 	// Store the number of vertices to be rendered for this group
 	Vertices_Info info;
 	info.draw_type = GL_TRIANGLES;
 	info.total_vertices = ARRAYSIZE(vertices);
-	info.starting_index = renderer->vertices.size() - info.total_vertices;
+	info.starting_index = renderer->vertices_vbo.size() - info.total_vertices;
 	info.type = SPT_COLOR;
 	// Store the number of vertices to be rendered for this group
 	renderer->vertices_info.push_back(info);
@@ -663,16 +660,16 @@ int SDL_RenderDrawLine(SDL_Renderer* sdl_renderer, int x1, int y1, int x2, int y
 	Vertex vertices[2] = {};
 	vertices[0].pos = point_one;
 	vertices[0].color = c;
-	renderer->vertices.push_back(vertices[0]);
+	renderer->vertices_vbo.push_back(vertices[0]);
 	vertices[1].pos = point_two;
 	vertices[1].color = c;
-	renderer->vertices.push_back(vertices[1]);
+	renderer->vertices_vbo.push_back(vertices[1]);
 
 	Vertices_Info info;
 	info.draw_type = GL_LINES;
 	info.total_vertices = ARRAYSIZE(vertices);
 	// Subtract the already added vertices to get the starting index
-	info.starting_index = renderer->vertices.size() - info.total_vertices;
+	info.starting_index = renderer->vertices_vbo.size() - info.total_vertices;
 	info.type = SPT_COLOR;
 
 	// Store the number of vertices to be rendered for this group
@@ -946,11 +943,11 @@ int SDL_GetRenderDrawBlendMode(SDL_Renderer* sdl_renderer, SDL_BlendMode* blendM
 	}
 	Renderer* renderer = (Renderer*)sdl_renderer;
 
-	*blendMode = renderer->blend_mode;
 	if (blendMode == NULL) {
 		log("ERROR: blend mode is not set on the renderer");
 		return -1;
 	}
+	*blendMode = renderer->blend_mode;
 
 	return 0;
 }
@@ -1192,19 +1189,19 @@ int SDL_RenderCopy(SDL_Renderer* sdl_renderer, SDL_Texture* texture, const SDL_R
 	// Modify the alpha mod
 	vertices[0].color.a *= ((float)texture->alpha_mod / 255.0f);
 	vertices[0].uv = bottom_left_uv;
-	renderer->vertices.push_back(vertices[0]);
+	renderer->vertices_vbo.push_back(vertices[0]);
 	// Top Left
 	vertices[1].pos = top_left_ndc;
 	vertices[1].color = c;
 	vertices[1].color.a *= ((float)texture->alpha_mod / 255.0f);
 	vertices[1].uv = top_left_uv;
-	renderer->vertices.push_back(vertices[1]);
+	renderer->vertices_vbo.push_back(vertices[1]);
 	// Top Right
 	vertices[2].pos = top_right_ndc;
 	vertices[2].color = c;
 	vertices[2].color.a *= ((float)texture->alpha_mod / 255.0f);
 	vertices[2].uv = top_right_uv;
-	renderer->vertices.push_back(vertices[2]);
+	renderer->vertices_vbo.push_back(vertices[2]);
 
 	// ***Second Triangle***
 	// Bottom Left
@@ -1212,24 +1209,52 @@ int SDL_RenderCopy(SDL_Renderer* sdl_renderer, SDL_Texture* texture, const SDL_R
 	vertices[3].color = c;
 	vertices[3].color.a *= ((float)texture->alpha_mod / 255.0f);
 	vertices[3].uv = bottom_left_uv;
-	renderer->vertices.push_back(vertices[3]);
+	renderer->vertices_vbo.push_back(vertices[3]);
 	// Bottom Right
 	vertices[4].pos = bottom_right_ndc;
 	vertices[4].color = c;
 	vertices[4].color.a *= ((float)texture->alpha_mod / 255.0f);
 	vertices[4].uv = bottom_right_uv;
-	renderer->vertices.push_back(vertices[4]);
+	renderer->vertices_vbo.push_back(vertices[4]);
 	// Top Right
 	vertices[5].pos = top_right_ndc;
 	vertices[5].color = c;
 	vertices[5].color.a *= ((float)texture->alpha_mod / 255.0f);
 	vertices[5].uv = top_right_uv;
-	renderer->vertices.push_back(vertices[5]);
+	renderer->vertices_vbo.push_back(vertices[5]);
+
+#if 0
+	Vertex vertices_ebo[4] = {};
+	// Bottom left
+	vertices_ebo[0].pos = bottom_left_ndc;
+	vertices_ebo[0].color = c;
+	vertices_ebo[0].color.a *= ((float)texture->alpha_mod / 255.0f);
+	vertices_ebo[0].uv = bottom_left_uv;
+	renderer->vertices_ebo.push_back(vertices_ebo[0]);
+	// Top Left
+	vertices_ebo[1].pos = top_left_ndc;
+	vertices_ebo[1].color = c;
+	vertices_ebo[1].color.a *= ((float)texture->alpha_mod / 255.0f);
+	vertices_ebo[1].uv = top_left_uv;
+	renderer->vertices_ebo.push_back(vertices_ebo[1]);
+	// Top Right
+	vertices_ebo[2].pos = top_right_ndc;
+	vertices_ebo[2].color = c;
+	vertices_ebo[2].color.a *= ((float)texture->alpha_mod / 255.0f);
+	vertices_ebo[2].uv = top_right_uv;
+	renderer->vertices_ebo.push_back(vertices_ebo[2]);
+	// Bottom Right
+	vertices_ebo[3].pos = bottom_right_ndc;
+	vertices_ebo[3].color = c;
+	vertices_ebo[3].color.a *= ((float)texture->alpha_mod / 255.0f);
+	vertices_ebo[3].uv = bottom_right_uv;
+	renderer->vertices_ebo.push_back(vertices_ebo[2]);
+#endif
 
 	Vertices_Info info = {};
 	info.draw_type = GL_TRIANGLES;
 	info.total_vertices = ARRAYSIZE(vertices);
-	info.starting_index = renderer->vertices.size() - info.total_vertices;
+	info.starting_index = renderer->vertices_vbo.size() - info.total_vertices;
 	info.type = SPT_TEXTURE;
 	info.texture_handle = texture->handle;
 	renderer->vertices_info.push_back(info);
@@ -1307,19 +1332,26 @@ int SDL_RenderSetClipRect(SDL_Renderer* sdl_renderer, const SDL_Rect* rect) {
     }
     Renderer* renderer = (Renderer*)sdl_renderer;
 
+    int window_width = 0;
+    int window_height = 0;
+    get_window_size(renderer->window, window_width, window_height);
+
     if (rect == nullptr) {
         // Disable clipping
-        // glDisable(GL_SCISSOR_TEST);
-        renderer->clip_rect_enabled = false;
+        glDisable(GL_SCISSOR_TEST);
     } else {
         // Enable and set the scissor rectangle
-        // glEnable(GL_SCISSOR_TEST);
-        // glScissor(rect->x, rect->y, rect->w, rect->h);
-        renderer->clip_rect_enabled = true;
         renderer->clip_rect = *rect;
+		// Convert because SDL coordinates are inverted
+		int scissor_x = renderer->clip_rect.x;
+		int scissor_y = window_height - renderer->clip_rect.y - renderer->clip_rect.h;
+		int scissor_width = renderer->clip_rect.w;
+		int scissor_height = renderer->clip_rect.h;
+		glEnable(GL_SCISSOR_TEST);
+		glScissor(scissor_x, scissor_y, scissor_width, scissor_height);
     }
-
-    return 0;
+    
+	return 0;
 }
 
 int SDL_RenderSetViewport(SDL_Renderer* sdl_renderer, const SDL_Rect* rect) {
@@ -1350,7 +1382,7 @@ int SDL_RenderSetViewport(SDL_Renderer* sdl_renderer, const SDL_Rect* rect) {
     return 0;
 }
 
-void SDL_RenderPresent(SDL_Renderer * sdl_renderer) {
+void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
 	if (sdl_renderer == nullptr) {
 		log("ERROR: sdl_renderer is nullptr");
 		assert(false);
@@ -1359,11 +1391,8 @@ void SDL_RenderPresent(SDL_Renderer * sdl_renderer) {
 
 	// This rebind may be pointless if I am only going with one vbo
 	glBindBuffer(GL_ARRAY_BUFFER, renderer->vbo);
-	glBufferData(GL_ARRAY_BUFFER, renderer->vertices.size() * sizeof(Vertex), renderer->vertices.data(), GL_STATIC_DRAW);
-
-    int window_width = 0;
-    int window_height = 0;
-    get_window_size(renderer->window, window_width, window_height);
+	glBufferData(GL_ARRAY_BUFFER, renderer->vertices_vbo.size() * sizeof(Vertex), renderer->vertices_vbo.data(), GL_STATIC_DRAW);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, renderer->vertices_ebo.size() * sizeof(Vertex), renderer->vertices_ebo.data(), GL_STATIC_DRAW);
 
 	for (Vertices_Info& info : renderer->vertices_info) {
 		if (info.texture_handle) {
@@ -1375,26 +1404,10 @@ void SDL_RenderPresent(SDL_Renderer * sdl_renderer) {
 			assert(false);
 		}
 		glUseProgram(shader_program);
-		
-        // Enable the scissor test if clipping is enabled
-        if (renderer->clip_rect_enabled) {
-			// Convert because SDL coordinates are inverted
-            int scissor_x = renderer->clip_rect.x;
-            int scissor_y = window_height - renderer->clip_rect.y - renderer->clip_rect.h;
-            int scissor_width = renderer->clip_rect.w;
-            int scissor_height = renderer->clip_rect.h;
-            glEnable(GL_SCISSOR_TEST);
-            glScissor(scissor_x, scissor_y, scissor_width, scissor_height);
-        } else {
-            glDisable(GL_SCISSOR_TEST);
-        }
 
+		// glDrawElements(info.draw_type, info.total_vertices, GL_UNSIGNED_INT, (void*)(info.starting_index * sizeof(unsigned int)));
 		glDrawArrays(info.draw_type, (GLuint)info.starting_index, info.total_vertices);
 	}
-
-	// If I don't clear this, it remains active across frames and causes unintended clipping and flickering
-	// Clearing it at the end of the frame ensures the next frames starts without any clipping restrictions
-	SDL_RenderSetClipRect(sdl_renderer, NULL);
 	renderer->vertices_info.clear();
 
 	SwapBuffers(renderer->hdc);
