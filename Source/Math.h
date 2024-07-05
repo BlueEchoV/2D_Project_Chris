@@ -123,4 +123,6 @@ MX4 operator*(const MX4& matrix_a, const MX4& matrix_b) {
 
 MX3 identity_mx_3();
 MX4 identity_mx_4();
-MX4 TranslationMatrixyz(float x, float y, float z);
+// If we want to change the location of a point, we can use 
+// the translation matrix.
+MX4 translation_matrix_mx_4(float x, float y, float z);
