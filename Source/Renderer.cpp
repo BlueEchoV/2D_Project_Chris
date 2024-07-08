@@ -328,8 +328,8 @@ struct Color_8 {
 	SPT_TEXTURE,
 	SPT_TOTAL
 };
- 
-struct Vertices_Info {
+
+struct Draw_Call_Info {
 	int total_vertices;
 	size_t starting_index;
 	Uint32 index_buffer_index;
@@ -340,6 +340,34 @@ struct Vertices_Info {
 	SDL_BlendMode blend_mode;
 };
 
+struct Clip_Rect_Info {
+	SDL_Rect* rect;
+	GLenum setting;
+};
+
+struct Clear_Screen_Info {
+	Color_8 clear_draw_color;
+};
+
+enum Command_Type {
+	CT_Set_Clip_Rect,
+	CT_Draw_Call,
+	CT_Clear_Screen
+};
+
+struct Command_Packet {
+	Command_Type command_type;
+
+	// Filled based off the command 
+	// Chris isn't a huge fan of this naming convention ('info')
+	Draw_Call_Info draw_call_info;
+	Clip_Rect_Info clip_rect_info;
+	Clear_Screen_Info clear_screen_info;
+
+	// Draw color needs to be set for the flush 
+	Color_8 draw_color;
+};
+ 
 struct Renderer {
 	HWND window;
 	HDC hdc;
@@ -351,10 +379,10 @@ struct Renderer {
 	std::vector<Vertex> vertices;
 	GLuint ebo;
 	std::vector<Uint32> vertices_indices;
-	std::vector<Vertices_Info> vertices_info;
+	std::vector<Command_Packet> command_packets;
 
-	SDL_Rect clip_rect;     
 	bool clip_rect_set;
+	SDL_Rect clip_rect;
 };
 
 // Set initialization list to 0
@@ -531,16 +559,14 @@ int SDL_RenderClear(SDL_Renderer* sdl_renderer) {
 	}
 	Renderer* renderer = (Renderer*)sdl_renderer;
 
-	Color_f c = convert_color_8_to_floating_point(renderer->render_draw_color);
+	Command_Packet packet = {};
 
-	SDL_RenderSetClipRect(sdl_renderer, nullptr);
+	packet.draw_color = renderer->render_draw_color;
+	packet.command_type = CT_Clear_Screen;
 
-	glClearColor(c.r, c.g, c.b, c.a);
-	glClear(GL_COLOR_BUFFER_BIT);
+	packet.clear_screen_info.clear_draw_color = renderer->render_draw_color;
 
-	if (renderer->clip_rect_set) {
-		SDL_RenderSetClipRect(sdl_renderer, &renderer->clip_rect);
-	}
+	renderer->command_packets.push_back(packet);
 
 	return 0;
 }
@@ -627,15 +653,19 @@ int SDL_RenderFillRect(SDL_Renderer* sdl_renderer, const SDL_Rect* rect) {
 	vertices[5].color = c;
 	renderer->vertices.push_back(vertices[5]);
 
+	Command_Packet packet = {};
+
+	packet.draw_color = renderer->render_draw_color;
+	packet.command_type = CT_Draw_Call;
+
 	// Store the number of vertices to be rendered for this group
-	Vertices_Info info;
-	info.draw_type = GL_TRIANGLES;
-	info.total_vertices = ARRAYSIZE(vertices);
-	info.starting_index = renderer->vertices.size() - info.total_vertices;
-	info.type = SPT_COLOR;
-	info.blend_mode = renderer->blend_mode;
+	packet.draw_call_info.draw_type = GL_TRIANGLES;
+	packet.draw_call_info.total_vertices = ARRAYSIZE(vertices);
+	packet.draw_call_info.starting_index = renderer->vertices.size() - packet.draw_call_info.total_vertices;
+	packet.draw_call_info.type = SPT_COLOR;
+	packet.draw_call_info.blend_mode = renderer->blend_mode;
 	// Store the number of vertices to be rendered for this group
-	renderer->vertices_info.push_back(info);
+	renderer->command_packets.push_back(packet);
 
 	// Returns 0 on success
 	return 0;
@@ -676,16 +706,21 @@ int SDL_RenderDrawLine(SDL_Renderer* sdl_renderer, int x1, int y1, int x2, int y
 	vertices[1].color = c;
 	renderer->vertices.push_back(vertices[1]);
 
-	Vertices_Info info;
-	info.draw_type = GL_LINES;
-	info.total_vertices = ARRAYSIZE(vertices);
+
+	Command_Packet packet = {};
+	
+	packet.draw_color = renderer->render_draw_color;
+	packet.command_type = CT_Draw_Call;
+
+	packet.draw_call_info.draw_type = GL_LINES;
+	packet.draw_call_info.total_vertices = ARRAYSIZE(vertices);
 	// Subtract the already added vertices to get the starting index
-	info.starting_index = renderer->vertices.size() - info.total_vertices;
-	info.type = SPT_COLOR;
-	info.blend_mode = renderer->blend_mode;
+	packet.draw_call_info.starting_index = renderer->vertices.size() - packet.draw_call_info.total_vertices;
+	packet.draw_call_info.type = SPT_COLOR;
+	packet.draw_call_info.blend_mode = renderer->blend_mode;
 
 	// Store the number of vertices to be rendered for this group
-	renderer->vertices_info.push_back(info);
+	renderer->command_packets.push_back(packet);
 	
 	return 0;
 }
@@ -869,7 +904,7 @@ SDL_Texture* SDL_CreateTexture(SDL_Renderer* sdl_renderer, uint32_t format, int 
 	result->pitch = 0;
 	result->pixels = NULL;
 
-	// Default color mod so the texture displays
+	// Default color mod so the texture displays
 	SDL_SetTextureColorMod(result, 255, 255, 255);
 
 	// Default alpha mod
@@ -1404,16 +1439,20 @@ int SDL_RenderCopy(SDL_Renderer* sdl_renderer, SDL_Texture* texture, const SDL_R
 	// Bottom right
 	renderer->vertices_indices.push_back(base_index + 3); 
 
-	Vertices_Info info = {};
-	info.draw_type = GL_TRIANGLES;
-	info.total_vertices = ARRAYSIZE(vertices);
-	info.starting_index = renderer->vertices.size() - info.total_vertices;
-	info.type = SPT_TEXTURE;
-	info.texture_handle = texture->handle;
-	info.total_indices = 6;
-	info.index_buffer_index = (Uint32)renderer->vertices_indices.size() - info.total_indices;
-	info.blend_mode = texture->blend_mode;
-	renderer->vertices_info.push_back(info);
+	Command_Packet packet = {};
+
+	packet.draw_color = renderer->render_draw_color;
+	packet.command_type = CT_Draw_Call;
+
+	packet.draw_call_info.draw_type = GL_TRIANGLES;
+	packet.draw_call_info.total_vertices = ARRAYSIZE(vertices);
+	packet.draw_call_info.starting_index = renderer->vertices.size() - packet.draw_call_info.total_vertices;
+	packet.draw_call_info.type = SPT_TEXTURE;
+	packet.draw_call_info.texture_handle = texture->handle;
+	packet.draw_call_info.total_indices = 6;
+	packet.draw_call_info.index_buffer_index = (Uint32)renderer->vertices_indices.size() - packet.draw_call_info.total_indices;
+	packet.draw_call_info.blend_mode = texture->blend_mode;
+	renderer->command_packets.push_back(packet);
 
 	return 0;
 }
@@ -1488,27 +1527,16 @@ int SDL_RenderSetClipRect(SDL_Renderer* sdl_renderer, const SDL_Rect* rect) {
     }
     Renderer* renderer = (Renderer*)sdl_renderer;
 
-    int window_width = 0;
-    int window_height = 0;
-    get_window_size(renderer->window, window_width, window_height);
+	Command_Packet packet = {};
 
-    if (rect == nullptr) {
-        // Disable clipping
-        glDisable(GL_SCISSOR_TEST);
-		renderer->clip_rect_set = false;
-    } else {
-        // Enable and set the scissor rectangle
-        renderer->clip_rect = *rect;
-		renderer->clip_rect_set = true;
-		// Convert because SDL coordinates are inverted
-		int scissor_x = renderer->clip_rect.x;
-		int scissor_y = window_height - renderer->clip_rect.y - renderer->clip_rect.h;
-		int scissor_width = renderer->clip_rect.w;
-		int scissor_height = renderer->clip_rect.h;
-		glEnable(GL_SCISSOR_TEST);
-		glScissor(scissor_x, scissor_y, scissor_width, scissor_height);
-    }
-    
+	packet.draw_color = renderer->render_draw_color;
+	packet.command_type = CT_Set_Clip_Rect;
+
+	packet.clip_rect_info.rect = (SDL_Rect*)rect;
+	packet.clip_rect_info.setting = GL_SCISSOR_TEST;
+
+	renderer->command_packets.push_back(packet);
+
 	return 0;
 }
 
@@ -1544,21 +1572,62 @@ struct Vertex_3D {
 	V3 pos;
 };
 
-Vertex_3D cube[36] = { 
-	{-1, -1, -1}, 
-	{-1, -1, 1}, 
-	{-1, 1, -1}, 
-	{-1, -1, 1}, 
-	{-1, 1, 1}, 
-	{-1, 1, -1 }, 
+Vertex_3D cube[36] = {
+    // Front face
+    {-1, -1,  1}, { 1, -1,  1}, { 1,  1,  1},
+    {-1, -1,  1}, { 1,  1,  1}, {-1,  1,  1},
 
-	{-1, -1, 1 }, 
-	{-1, 1, 1 }, 
-	{-1, -1, -1 }, 
-	{-1, -1, -1 }, 
-	{-1, -1, -1 }, 
-	{-1, -1, -1 }, 
+    // Back face
+    {-1, -1, -1}, {-1,  1, -1}, { 1,  1, -1},
+    {-1, -1, -1}, { 1,  1, -1}, { 1, -1, -1},
+
+    // Left face
+    {-1, -1, -1}, {-1, -1,  1}, {-1,  1,  1},
+    {-1, -1, -1}, {-1,  1,  1}, {-1,  1, -1},
+
+    // Right face
+    { 1, -1, -1}, { 1,  1, -1}, { 1,  1,  1},
+    { 1, -1, -1}, { 1,  1,  1}, { 1, -1,  1},
+
+    // Top face
+    {-1,  1, -1}, {-1,  1,  1}, { 1,  1,  1},
+    {-1,  1, -1}, { 1,  1,  1}, { 1,  1, -1},
+
+    // Bottom face
+    {-1, -1, -1}, { 1, -1, -1}, { 1, -1,  1},
+    {-1, -1, -1}, { 1, -1,  1}, {-1, -1,  1}
 };
+
+void execute_set_clip_rect_command(SDL_Renderer* sdl_renderer, Clip_Rect_Info info) {
+    if (sdl_renderer == nullptr) {
+        log("ERROR: sdl_renderer is nullptr");
+        assert(false);
+		return;
+    }
+    Renderer* renderer = (Renderer*)sdl_renderer;
+
+	if (info.rect == nullptr) {
+		// Disable clipping
+		// GL_SCISSOR_TEST
+		glDisable(info.setting);
+		renderer->clip_rect_set = false;
+	} else {
+		int window_width = 0;
+		int window_height = 0;
+		get_window_size(renderer->window, window_width, window_height);
+
+		// Enable and set the scissor rectangle
+		renderer->clip_rect = *info.rect;
+		renderer->clip_rect_set = true;
+		// Convert because SDL coordinates are inverted
+		int scissor_x = renderer->clip_rect.x;
+		int scissor_y = window_height - renderer->clip_rect.y - renderer->clip_rect.h;
+		int scissor_width = renderer->clip_rect.w;
+		int scissor_height = renderer->clip_rect.h;
+		glEnable(info.setting);
+		glScissor(scissor_x, scissor_y, scissor_width, scissor_height);
+	}
+}
 
 void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
 	if (sdl_renderer == nullptr) {
@@ -1572,30 +1641,75 @@ void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
 	glBufferData(GL_ARRAY_BUFFER, renderer->vertices.size() * sizeof(Vertex), renderer->vertices.data(), GL_STATIC_DRAW);
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, renderer->vertices_indices.size() * sizeof(Uint32), renderer->vertices_indices.data(), GL_STATIC_DRAW);
 
-	for (Vertices_Info& info : renderer->vertices_info) {
-		// Set the blend mode before I render all the vertices
-		if (set_gl_blend_mode(info.blend_mode)) {
-			log("ERROR: blend mode not set");
-			assert(false);
-		}
-		if (info.texture_handle) {
-			glBindTexture(GL_TEXTURE_2D, info.texture_handle);
-		}
-		GLuint shader_program = shader_program_types[info.type];
-		if (!shader_program) {
-			log("ERROR: Shader program not specified");
-			assert(false);
-		}
-		glUseProgram(shader_program);
+	// This could become the flush function
+	for (Command_Packet command_packet : renderer->command_packets) {
+		switch (command_packet.command_type) {
+		case CT_Draw_Call: {
+			Draw_Call_Info info = command_packet.draw_call_info;
+			// Set the blend mode before I render all the vertices
+			if (set_gl_blend_mode(info.blend_mode)) {
+				log("ERROR: blend mode not set");
+				assert(false);
+			}
+			if (info.texture_handle) {
+				glBindTexture(GL_TEXTURE_2D, info.texture_handle);
+			}
+			GLuint shader_program = shader_program_types[info.type];
+			if (!shader_program) {
+				log("ERROR: Shader program not specified");
+				assert(false);
+			}
+			glUseProgram(shader_program);
 
-		if (info.total_indices > 0) {
-			glDrawElements(info.draw_type, info.total_indices, GL_UNSIGNED_INT, (void*)(info.index_buffer_index * sizeof(unsigned int)));
+			if (info.total_indices > 0) {
+				glDrawElements(info.draw_type, info.total_indices, GL_UNSIGNED_INT, (void*)(info.index_buffer_index * sizeof(unsigned int)));
+			}
+			else {
+				glDrawArrays(info.draw_type, (GLuint)info.starting_index, info.total_vertices);
+			}
+			break;
 		}
-		else {
-			glDrawArrays(info.draw_type, (GLuint)info.starting_index, info.total_vertices);
+		case CT_Set_Clip_Rect: {
+			Clip_Rect_Info info = command_packet.clip_rect_info;
+			execute_set_clip_rect_command(sdl_renderer, command_packet.clip_rect_info);
+			break;
+		}
+		case CT_Clear_Screen: {
+			Clear_Screen_Info info = command_packet.clear_screen_info;
+
+			Color_f c = convert_color_8_to_floating_point(info.clear_draw_color);
+
+			// Create functions that execute the commands in here
+			SDL_RenderSetClipRect(sdl_renderer, nullptr);
+			Clip_Rect_Info clip_rect_info = {};
+			clip_rect_info.setting = GL_SCISSOR_TEST;
+			execute_set_clip_rect_command(sdl_renderer, clip_rect_info);
+
+			glClearColor(c.r, c.g, c.b, c.a);
+			glClear(GL_COLOR_BUFFER_BIT);
+
+			if (renderer->clip_rect_set) {
+				clip_rect_info.setting = GL_SCISSOR_TEST;
+				clip_rect_info.rect = &renderer->clip_rect;;
+				execute_set_clip_rect_command(sdl_renderer, clip_rect_info);
+				SDL_RenderSetClipRect(sdl_renderer, &renderer->clip_rect);
+			}
+			break;
+		}
 		}
 	}
-	renderer->vertices_info.clear();
+#if 0
+	// Clear later!
+	for (Command_Packet command_packet : renderer->command_packets) {
+		switch (command_packet.command_type) {
+			case CT_Clear_Screen: {
+				Clear_Screen_Info info = command_packet.clear_screen_info;
+				break;
+			}
+		}
+	}
+#endif
+	renderer->command_packets.clear();
 
 	SwapBuffers(renderer->hdc);
 }
