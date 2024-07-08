@@ -1,6 +1,7 @@
 #include "Renderer.h"
 
 #include "Utility.h"
+#include "Math.h"
 
 #include <errno.h>
 #include <string.h>
@@ -1388,20 +1389,20 @@ int SDL_RenderCopy(SDL_Renderer* sdl_renderer, SDL_Texture* texture, const SDL_R
 	renderer->vertices.push_back(vertices[3]);
 
 	// Define indices for the two triangles that make up the quad
-	Uint32 baseIndex = static_cast<Uint32>(renderer->vertices.size()) - 4;
+	Uint32 base_index = static_cast<Uint32>(renderer->vertices.size()) - 4;
 	// Bottom left
-	renderer->vertices_indices.push_back(baseIndex + 0);
+	renderer->vertices_indices.push_back(base_index + 0);
 	// Top left
-	renderer->vertices_indices.push_back(baseIndex + 1); 
+	renderer->vertices_indices.push_back(base_index + 1); 
 	// Top right
-	renderer->vertices_indices.push_back(baseIndex + 2); 
+	renderer->vertices_indices.push_back(base_index + 2); 
 
 	// Bottom left
-	renderer->vertices_indices.push_back(baseIndex + 0); 
+	renderer->vertices_indices.push_back(base_index + 0); 
 	// Top right
-	renderer->vertices_indices.push_back(baseIndex + 2); 
+	renderer->vertices_indices.push_back(base_index + 2); 
 	// Bottom right
-	renderer->vertices_indices.push_back(baseIndex + 3); 
+	renderer->vertices_indices.push_back(base_index + 3); 
 
 	Vertices_Info info = {};
 	info.draw_type = GL_TRIANGLES;
@@ -1539,6 +1540,26 @@ int SDL_RenderSetViewport(SDL_Renderer* sdl_renderer, const SDL_Rect* rect) {
     return 0;
 }
 
+struct Vertex_3D {
+	V3 pos;
+};
+
+Vertex_3D cube[36] = { 
+	{-1, -1, -1}, 
+	{-1, -1, 1}, 
+	{-1, 1, -1}, 
+	{-1, -1, 1}, 
+	{-1, 1, 1}, 
+	{-1, 1, -1 }, 
+
+	{-1, -1, 1 }, 
+	{-1, 1, 1 }, 
+	{-1, -1, -1 }, 
+	{-1, -1, -1 }, 
+	{-1, -1, -1 }, 
+	{-1, -1, -1 }, 
+};
+
 void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
 	if (sdl_renderer == nullptr) {
 		log("ERROR: sdl_renderer is nullptr");
@@ -1567,7 +1588,7 @@ void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
 		}
 		glUseProgram(shader_program);
 
-		if (info.total_vertices == 4) {
+		if (info.total_indices > 0) {
 			glDrawElements(info.draw_type, info.total_indices, GL_UNSIGNED_INT, (void*)(info.index_buffer_index * sizeof(unsigned int)));
 		}
 		else {

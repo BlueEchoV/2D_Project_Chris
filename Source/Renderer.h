@@ -300,7 +300,6 @@ void draw_debug_images(SDL_Renderer* sdl_renderer);
 Image create_Image(SDL_Renderer* sdl_renderer, const char* file_Path);
 
 #if 0
-SDL_GetTextureColorMod
 SDL_GetTextureUserData
 SDL_QueryTexture
 SDL_RenderCopyEx

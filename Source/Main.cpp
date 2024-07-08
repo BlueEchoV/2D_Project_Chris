@@ -13,6 +13,7 @@
 
 #include "Utility.h"
 #include "Renderer.h"
+#include "Math.h"
 
 LRESULT windowProcedure(HWND windowHandle, UINT messageType, WPARAM wParam, LPARAM lParam)
 {
@@ -71,9 +72,9 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 	SDL_Renderer* renderer = SDL_CreateRenderer(window, 0, 0);
 
 	Image castle_infernal_image = create_Image(renderer, "assets\\castle_Infernal.png");
-	SDL_SetTextureBlendMode(castle_infernal_image.texture, SDL_BLENDMODE_NONE);
+	SDL_SetTextureBlendMode(castle_infernal_image.texture, SDL_BLENDMODE_BLEND);
 	Image azir_image = create_Image(renderer, "assets\\azir.jpg");
-	SDL_SetTextureBlendMode(azir_image.texture, SDL_BLENDMODE_NONE);
+	SDL_SetTextureBlendMode(azir_image.texture, SDL_BLENDMODE_BLEND);
 
 	bool running = true;
 	while (running) {
@@ -87,6 +88,27 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 			}
 			
 		}
+
+		// 1 0 0 1
+		// 0 1 0 3
+		// 0 0 1 5
+		// 0 0 0 1
+		MX4 mx_one = translation_matrix_mx_4(1, 3, 5);
+		// 1 0 0 7 
+		// 0 1 0 9 
+		// 0 0 1 11
+		// 0 0 0 1
+		MX4 mx_two = translation_matrix_mx_4(7, 9, 11);
+
+		// 1 0 0 7   *   1 0 0 1    =    1 0 1 8
+		// 0 1 0 9       0 1 0 3         0 1 0 12
+		// 0 0 1 11      0 0 1 5         0 0 1 16
+		// 0 0 0 1       0 0 0 1         0 0 0 1
+		MX4 result_mx = mx_one * mx_two;
+
+		V4 vec_one = { 2, 4, 6, 1 };
+
+		V4 result_v4 = result_mx * vec_one;
 
 		// RECT rect_temp = {};
 		// GetClientRect(window, &rect_temp);
