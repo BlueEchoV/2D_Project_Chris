@@ -292,27 +292,26 @@ int SDL_UpdateTexture(SDL_Texture* texture, const SDL_Rect* rect, const void *pi
 void SDL_DestroyTexture(SDL_Texture* texture);
 int SDL_RenderCopy(SDL_Renderer* sdl_renderer, SDL_Texture* texture, const SDL_Rect* srcrect, const SDL_Rect* dstrect);
 void SDL_RenderPresent(SDL_Renderer* sdl_renderer);
+
 int SDL_RenderSetClipRect(SDL_Renderer* sdl_renderer, const SDL_Rect* rect);
+void SDL_RenderGetClipRect(SDL_Renderer* sdl_renderer, SDL_Rect* rect);
+
 int SDL_RenderSetViewport(SDL_Renderer* sdl_renderer, const SDL_Rect* rect);
+void SDL_RenderGetViewport(SDL_Renderer* sdl_renderer, SDL_Rect* rect);
 
 void draw_debug_images(SDL_Renderer* sdl_renderer);
 
 Image create_Image(SDL_Renderer* sdl_renderer, const char* file_Path);
 
 #if 0
-SDL_GetTextureUserData
-SDL_QueryTexture
-SDL_RenderCopyEx
-SDL_RenderGetClipRect
 SDL_RenderGetViewport
 SDL_RenderGetWindow
 SDL_RenderIsClipEnabled
-SDL_RenderSetClipRect
-SDL_RenderSetViewport
+
+SDL_GetTextureUserData
+SDL_QueryTexture
+SDL_RenderCopyEx
 SDL_RenderSetVSync
-SDL_SetRenderDrawBlendMode
-SDL_SetTextureBlendMode
-SDL_SetTextureColorMod
 SDL_SetTextureScaleMode
 SDL_SetTextureUserData
 #endif

@@ -345,12 +345,17 @@ struct Clip_Rect_Info {
 	GLenum setting;
 };
 
+struct Viewport_Info {
+	SDL_Rect* rect;
+};
+
 struct Clear_Screen_Info {
 	Color_8 clear_draw_color;
 };
 
 enum Command_Type {
 	CT_Set_Clip_Rect,
+	CT_Set_Viewport,
 	CT_Draw_Call,
 	CT_Clear_Screen
 };
@@ -363,6 +368,7 @@ struct Command_Packet {
 	Draw_Call_Info draw_call_info;
 	Clip_Rect_Info clip_rect_info;
 	Clear_Screen_Info clear_screen_info;
+	Viewport_Info viewport_info;
 
 	// Draw color needs to be set for the flush 
 	Color_8 draw_color;
@@ -383,6 +389,8 @@ struct Renderer {
 
 	bool clip_rect_set;
 	SDL_Rect clip_rect;
+
+	SDL_Rect viewport;
 };
 
 // Set initialization list to 0
@@ -1540,6 +1548,27 @@ int SDL_RenderSetClipRect(SDL_Renderer* sdl_renderer, const SDL_Rect* rect) {
 	return 0;
 }
 
+void SDL_RenderGetClipRect(SDL_Renderer* sdl_renderer, SDL_Rect* rect) {
+    if (sdl_renderer == nullptr) {
+        log("ERROR: sdl_renderer is nullptr");
+        assert(false);
+		return;
+    }
+    Renderer* renderer = (Renderer*)sdl_renderer;
+
+	// Should never reach this but lets guard anyways
+	if (rect == nullptr) {
+		log("ERROR: rect* is nullptr");
+		assert(false);
+		return;
+	}
+
+	rect->x = renderer->clip_rect.x;
+	rect->y = renderer->clip_rect.y;
+	rect->w = renderer->clip_rect.w;
+	rect->h = renderer->clip_rect.h;
+}
+
 int SDL_RenderSetViewport(SDL_Renderer* sdl_renderer, const SDL_Rect* rect) {
     if (sdl_renderer == nullptr) {
         log("ERROR: sdl_renderer is nullptr");
@@ -1548,24 +1577,36 @@ int SDL_RenderSetViewport(SDL_Renderer* sdl_renderer, const SDL_Rect* rect) {
     }
     Renderer* renderer = (Renderer*)sdl_renderer;
 
-    int window_width = 0;
-    int window_height = 0;
-    get_window_size(renderer->window, window_width, window_height);
+	Command_Packet packet = {};
 
-    if (rect == NULL) {
-        // If rect is NULL, use the entire window as the viewport
-        glViewport(0, 0, window_width, window_height);
-    } else {
-        // Convert SDL rect coordinates to OpenGL coordinates
-        int viewport_x = rect->x;
-        int viewport_y = window_height - rect->y - rect->h;
-        int viewport_width = rect->w;
-        int viewport_height = rect->h;
+	packet.command_type = CT_Set_Viewport;
 
-        glViewport(viewport_x, viewport_y, viewport_width, viewport_height);
-    }
+	packet.viewport_info.rect = (SDL_Rect*)rect;
+
+	renderer->command_packets.push_back(packet);
 
     return 0;
+}
+
+void SDL_RenderGetViewport(SDL_Renderer* sdl_renderer, SDL_Rect* rect) {
+    if (sdl_renderer == nullptr) {
+        log("ERROR: sdl_renderer is nullptr");
+        assert(false);
+		return;
+    }
+    Renderer* renderer = (Renderer*)sdl_renderer;
+
+	// Should never reach this but lets guard anyways
+	if (rect == nullptr) {
+		log("ERROR: rect* is nullptr");
+		assert(false);
+		return;
+	}
+
+	rect->x = renderer->viewport.x;
+	rect->y = renderer->viewport.y;
+	rect->w = renderer->viewport.w;
+	rect->h = renderer->viewport.h;
 }
 
 struct Vertex_3D {
@@ -1672,6 +1713,23 @@ void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
 		case CT_Set_Clip_Rect: {
 			Clip_Rect_Info info = command_packet.clip_rect_info;
 			execute_set_clip_rect_command(sdl_renderer, command_packet.clip_rect_info);
+			break;
+		}
+		case CT_Set_Viewport: {
+			int window_width = 0;
+			int window_height = 0;
+			get_window_size(renderer->window, window_width, window_height);
+
+			Viewport_Info info = command_packet.viewport_info;
+			if (info.rect == NULL) {
+				// If rect is NULL, use the entire window as the viewport
+				renderer->viewport = { 0, 0, window_width, window_height };
+			} else {
+				// Convert SDL rect coordinates to OpenGL coordinates
+				renderer->viewport = { info.rect->x, window_height - info.rect->y - info.rect->h, info.rect->w, info.rect->h };
+			}
+			glViewport(info.rect->x, info.rect->y, info.rect->w, info.rect->h);
+
 			break;
 		}
 		case CT_Clear_Screen: {
