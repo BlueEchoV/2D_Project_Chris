@@ -258,10 +258,20 @@ typedef enum SDL_BlendMode
 
 } SDL_BlendMode;
 
+/**
+ * Flip constants for SDL_RenderCopyEx
+ */
+typedef enum
+{
+    SDL_FLIP_NONE = 0x00000000,     /**< Do not flip */
+    SDL_FLIP_HORIZONTAL = 0x00000001,    /**< flip horizontally */
+    SDL_FLIP_VERTICAL = 0x00000002     /**< flip vertically */
+} SDL_RendererFlip;
+
 struct SDL_Renderer;
 SDL_Renderer* SDL_CreateRenderer(HWND window, int index, uint32_t flags);
-int SDL_GetRendererOutputSize(SDL_Renderer* sdl_renderer, int* w, int* h);
 void SDL_DestroyRenderer(SDL_Renderer * renderer);
+int SDL_GetRendererOutputSize(SDL_Renderer* sdl_renderer, int* w, int* h);
 
 int SDL_SetRenderDrawColor(SDL_Renderer* sdl_renderer, uint8_t r, uint8_t g, uint8_t b, uint8_t a);
 int SDL_GetRenderDrawColor(SDL_Renderer* sdl_renderer, Uint8* r, Uint8* g, Uint8* b, Uint8* a);
@@ -291,10 +301,12 @@ SDL_Texture* SDL_CreateTexture(SDL_Renderer* sdl_renderer, uint32_t format, int 
 int SDL_UpdateTexture(SDL_Texture* texture, const SDL_Rect* rect, const void *pixels, int pitch);
 void SDL_DestroyTexture(SDL_Texture* texture);
 int SDL_RenderCopy(SDL_Renderer* sdl_renderer, SDL_Texture* texture, const SDL_Rect* srcrect, const SDL_Rect* dstrect);
+int SDL_RenderCopyEx(SDL_Renderer* sdl_renderer, SDL_Texture* texture, const SDL_Rect* srcrect, const SDL_Rect* dstrect, const float angle, const SDL_Point* center, const SDL_RendererFlip flip);
 void SDL_RenderPresent(SDL_Renderer* sdl_renderer);
 
 int SDL_RenderSetClipRect(SDL_Renderer* sdl_renderer, const SDL_Rect* rect);
 void SDL_RenderGetClipRect(SDL_Renderer* sdl_renderer, SDL_Rect* rect);
+bool SDL_RenderIsClipEnabled(SDL_Renderer* sdl_renderer);
 
 int SDL_RenderSetViewport(SDL_Renderer* sdl_renderer, const SDL_Rect* rect);
 void SDL_RenderGetViewport(SDL_Renderer* sdl_renderer, SDL_Rect* rect);
@@ -304,10 +316,7 @@ void draw_debug_images(SDL_Renderer* sdl_renderer);
 Image create_Image(SDL_Renderer* sdl_renderer, const char* file_Path);
 
 #if 0
-SDL_RenderGetViewport
 SDL_RenderGetWindow
-SDL_RenderIsClipEnabled
-
 SDL_GetTextureUserData
 SDL_QueryTexture
 SDL_RenderCopyEx

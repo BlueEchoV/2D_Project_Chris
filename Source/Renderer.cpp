@@ -104,6 +104,9 @@ glVertexAttribPointerFunc glVertexAttribPointer = {};
 typedef void(*glEnableVertexAttribArrayFunc)(GLuint index);
 glEnableVertexAttribArrayFunc glEnableVertexAttribArray = {};
 
+typedef void(*glDisableVertexAttribArrayFunc)(GLuint index);
+glDisableVertexAttribArrayFunc glDisableVertexAttribArray = {};
+
 typedef void(*glBindVertexArrayFunc)(GLuint array);
 glBindVertexArrayFunc glBindVertexArray = {};
 
@@ -118,6 +121,9 @@ glGetUniformLocationFunc glGetUniformLocation = {};
 
 typedef void(*glUniform1fFunc)(GLint location, GLfloat v0);
 glUniform1fFunc glUniform1f = {};
+
+typedef void (*glUniformMatrix4fvFunc)(GLint location, GLsizei count, GLboolean transpose, const GLfloat *value);
+glUniformMatrix4fvFunc glUniformMatrix4fv = {};
 
 typedef HGLRC(WINAPI* wglCreateContextAttribsARBFunc) (HDC hDC, HGLRC hShareContext, const int* attribList);
 wglCreateContextAttribsARBFunc wglCreateContextAttribsARB = {};
@@ -153,6 +159,7 @@ void loadGLFunctions() {
 	glGenBuffers = (glGenBuffersFunc)wglGetProcAddress("glGenBuffers");
 	glVertexAttribPointer = (glVertexAttribPointerFunc)wglGetProcAddress("glVertexAttribPointer");
 	glEnableVertexAttribArray = (glEnableVertexAttribArrayFunc)wglGetProcAddress("glEnableVertexAttribArray");
+	glDisableVertexAttribArray = (glDisableVertexAttribArrayFunc)wglGetProcAddress("glDisableVertexAttribArray");
 	glBindVertexArray = (glBindVertexArrayFunc)wglGetProcAddress("glBindVertexArray");
 	glBindBuffer = (glBindBufferFunc)wglGetProcAddress("glBindBuffer");
 	glBufferData = (glBufferDataFunc)wglGetProcAddress("glBufferData");
@@ -160,10 +167,12 @@ void loadGLFunctions() {
 	glGetUniformLocation = (glGetUniformLocationFunc)wglGetProcAddress("glGetUniformLocation");
 	glUniform1f = (glUniform1fFunc)wglGetProcAddress("glUniform1f");
 	glUniform1i = (glUniform1iFunc)wglGetProcAddress("glUniform1i");
+	glUniformMatrix4fv = (glUniformMatrix4fvFunc)wglGetProcAddress("glUniformMatrix4fv");
 
 	wglCreateContextAttribsARB = (wglCreateContextAttribsARBFunc)wglGetProcAddress("wglCreateContextAttribsARB");
 
 	glActiveTexture = (glActiveTextureFunc)wglGetProcAddress("glActiveTexture");
+
 }
 
 #if 0
@@ -326,6 +335,7 @@ struct Color_8 {
  enum Shader_Program_Type {
 	SPT_COLOR,
 	SPT_TEXTURE,
+	SPT_3D,
 	SPT_TOTAL
 };
 
@@ -405,6 +415,11 @@ void load_shaders() {
 	const char* texture_fragment_shader_file_path = "Shaders\\fragment_shader_texture.txt";
 	GLuint texture_shader = create_shader_program(texture_vertex_shader_file_path, texture_fragment_shader_file_path);
 	shader_program_types[SPT_TEXTURE] = texture_shader;
+
+	const char* three_d_vertex_shader_file_path = "Shaders\\vertex_shader_3d.txt";
+	const char* three_d_fragment_shader_file_path = "Shaders\\fragment_shader_3d.txt";
+	GLuint three_d_shader = create_shader_program(three_d_vertex_shader_file_path, three_d_fragment_shader_file_path);
+	shader_program_types[SPT_3D] = three_d_shader;
 }
 
 #define REF(v) (void)v
@@ -561,6 +576,7 @@ Color_f convert_color_8_to_floating_point(Color_8 color) {
 }
 
 // This function clears the entire rendering target, ignoring the viewport and the clip rectangle.
+// I Could submit three packets
 int SDL_RenderClear(SDL_Renderer* sdl_renderer) {
 	if (sdl_renderer == nullptr) {
 		return -1;
@@ -1465,6 +1481,144 @@ int SDL_RenderCopy(SDL_Renderer* sdl_renderer, SDL_Texture* texture, const SDL_R
 	return 0;
 }
 
+V2 rotate_point(const V2 point_ws, const V2 center_ws, float angle) {
+    float radians = angle * (float)M_PI / 180.0f;
+    float s = (float)sin(radians);
+    float c = (float)cos(radians);
+
+    // Translate point back to origin
+    V2 translated_point = { point_ws.x - center_ws.x, point_ws.y - center_ws.y };
+
+    // Rotate point
+    V2 rotated_point = {
+        translated_point.x * c - translated_point.y * s,
+        translated_point.x * s + translated_point.y * c
+    };
+
+    // Translate point back
+    rotated_point.x += center_ws.x;
+    rotated_point.y += center_ws.y;
+
+    return rotated_point;
+}
+
+int SDL_RenderCopyEx(SDL_Renderer* sdl_renderer, SDL_Texture* texture, const SDL_Rect* srcrect, const SDL_Rect* dstrect, 
+                    const float angle, const SDL_Point* center, const SDL_RendererFlip flip) {
+    if (sdl_renderer == nullptr) {
+        log("ERROR: sdl_renderer is nullptr");
+        assert(false);
+        return -1;
+    }
+    Renderer* renderer = (Renderer*)sdl_renderer;
+
+    if (texture == nullptr) {
+        log("ERROR: texture is nullptr");
+        return -1;
+    }
+
+    SDL_Rect srcrect_final;
+    if (srcrect == NULL) {
+        srcrect_final = { 0, 0, texture->w, texture->h };
+    } else {
+        srcrect_final = *srcrect;
+    }
+
+    SDL_Rect dstrect_final;
+    if (dstrect == NULL) {
+        int screen_w = 0;
+        int screen_h = 0;
+        get_window_size(renderer->window, screen_w, screen_h);
+        dstrect_final.x = 0;
+        dstrect_final.y = 0;
+        dstrect_final.w = screen_w;
+        dstrect_final.h = screen_h;
+    } else {
+        dstrect_final = *dstrect;
+    }
+
+    V2 bottom_left_src = { (float)srcrect_final.x, (float)srcrect_final.y + srcrect_final.h };
+    V2 bottom_right_src = { (float)(srcrect_final.x + srcrect_final.w), (float)(srcrect_final.y + srcrect_final.h) };
+    V2 top_right_src = { (float)(srcrect_final.x + srcrect_final.w), (float)srcrect_final.y };
+    V2 top_left_src = { (float)srcrect_final.x, (float)srcrect_final.y };
+
+    V2 bottom_left_uv = convert_to_uv_coordinates(bottom_left_src, texture->w, texture->h);
+    V2 bottom_right_uv = convert_to_uv_coordinates(bottom_right_src, texture->w, texture->h);
+    V2 top_right_uv = convert_to_uv_coordinates(top_right_src, texture->w, texture->h);
+    V2 top_left_uv = convert_to_uv_coordinates(top_left_src, texture->w, texture->h);
+
+    Color_f c = { 1.0f, 1.0f, 1.0f, 1.0f };
+
+	V2 center_point_ws = {};
+	if (center != NULL) {
+		center_point_ws.x = (float)center->x;
+		center_point_ws.y = (float)center->y;
+	}
+	else {
+		center_point_ws.x = (float)dstrect_final.x + (float)dstrect_final.w / 2.0f;
+		center_point_ws.y = (float)dstrect_final.y + (float)dstrect_final.h / 2.0f;
+	}
+
+    V2 dst_points[4] = {
+        { (float)(dstrect_final.x + dstrect_final.w), (float)dstrect_final.y },
+        { (float)(dstrect_final.x + dstrect_final.w), (float)(dstrect_final.y + dstrect_final.h) },
+        { (float)dstrect_final.x, (float)(dstrect_final.y + dstrect_final.h) },
+        { (float)dstrect_final.x, (float)dstrect_final.y }
+    };
+
+	V2 dst_points_rotated[4] = {};
+    for (int i = 0; i < 4; ++i) {
+		dst_points_rotated[i] = rotate_point(dst_points[i], center_point_ws, angle);
+    }
+
+    if (flip & SDL_FLIP_HORIZONTAL) {
+        std::swap(dst_points_rotated[0], dst_points_rotated[1]);
+        std::swap(dst_points_rotated[2], dst_points_rotated[3]);
+    }
+    if (flip & SDL_FLIP_VERTICAL) {
+        std::swap(dst_points_rotated[0], dst_points_rotated[3]);
+        std::swap(dst_points_rotated[1], dst_points_rotated[2]);
+    }
+
+    V2 ndc_points[4];
+    for (int i = 0; i < 4; ++i) {
+        ndc_points[i] = convert_to_ndc(sdl_renderer, dst_points_rotated[i]);
+    }
+
+    Vertex vertices[4];
+    vertices[0] = { ndc_points[0], c, bottom_left_uv };
+    vertices[1] = { ndc_points[1], c, top_left_uv };
+    vertices[2] = { ndc_points[2], c, top_right_uv };
+    vertices[3] = { ndc_points[3], c, bottom_right_uv };
+
+    renderer->vertices.push_back(vertices[0]);
+    renderer->vertices.push_back(vertices[1]);
+    renderer->vertices.push_back(vertices[2]);
+    renderer->vertices.push_back(vertices[3]);
+
+    Uint32 base_index = (Uint32)(renderer->vertices.size()) - 4;
+    renderer->vertices_indices.push_back(base_index + 0);
+    renderer->vertices_indices.push_back(base_index + 1);
+    renderer->vertices_indices.push_back(base_index + 2);
+    renderer->vertices_indices.push_back(base_index + 0);
+    renderer->vertices_indices.push_back(base_index + 2);
+    renderer->vertices_indices.push_back(base_index + 3);
+
+    Command_Packet packet = {};
+    packet.draw_color = renderer->render_draw_color;
+    packet.command_type = CT_Draw_Call;
+    packet.draw_call_info.draw_type = GL_TRIANGLES;
+    packet.draw_call_info.total_vertices = ARRAYSIZE(vertices);
+    packet.draw_call_info.starting_index = renderer->vertices.size() - packet.draw_call_info.total_vertices;
+    packet.draw_call_info.type = SPT_TEXTURE;
+    packet.draw_call_info.texture_handle = texture->handle;
+    packet.draw_call_info.total_indices = 6;
+    packet.draw_call_info.index_buffer_index = (Uint32)renderer->vertices_indices.size() - packet.draw_call_info.total_indices;
+    packet.draw_call_info.blend_mode = texture->blend_mode;
+    renderer->command_packets.push_back(packet);
+
+    return 0;
+}
+
 Image create_Image(SDL_Renderer* sdl_renderer, const char* file_Path) {
 	Image result = {};
 	result.file_Path = file_Path;
@@ -1569,6 +1723,17 @@ void SDL_RenderGetClipRect(SDL_Renderer* sdl_renderer, SDL_Rect* rect) {
 	rect->h = renderer->clip_rect.h;
 }
 
+bool SDL_RenderIsClipEnabled(SDL_Renderer* sdl_renderer) {
+    if (sdl_renderer == nullptr) {
+        log("ERROR: sdl_renderer is nullptr");
+        assert(false);
+        return false;
+    }
+    Renderer* renderer = (Renderer*)sdl_renderer;
+
+	return renderer->clip_rect_set;
+}
+
 int SDL_RenderSetViewport(SDL_Renderer* sdl_renderer, const SDL_Rect* rect) {
     if (sdl_renderer == nullptr) {
         log("ERROR: sdl_renderer is nullptr");
@@ -1639,6 +1804,76 @@ Vertex_3D cube[36] = {
     {-1, -1, -1}, { 1, -1,  1}, {-1, -1,  1}
 };
 
+// Frustum
+MX4 mat4_perspective(float fovy, float aspect)
+{
+    float z_near = 0.01f;
+    float z_far  = 1000.0f;
+
+    float tan_half_fovy = tanf(0.5f * fovy);
+    MX4 out = {};
+    out.col[0].x = 1.0f / (aspect * tan_half_fovy);
+    out.col[1].y = 1.0f / (tan_half_fovy);
+    out.col[2].z = -(z_far + z_near) / (z_far - z_near);
+    out.col[2].w = -1.0f;
+    out.col[3].z = -2.0f * z_far * z_near / (z_far - z_near);
+    return out;
+}
+
+// I don't need to upload the data every time I draw a cube
+void upload_cube_data() {
+	static GLuint vbo;
+	if (vbo == 0) {
+		glGenBuffers(1, &vbo);
+	}
+
+	glBindBuffer(GL_ARRAY_BUFFER, vbo);
+
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D), (void*)offsetof(Vertex_3D, pos));
+	glDisableVertexAttribArray(1);
+	glDisableVertexAttribArray(2);
+
+	glBufferData(GL_ARRAY_BUFFER, sizeof(cube), cube, GL_STATIC_DRAW);
+}
+
+void draw_cube(SDL_Renderer* sdl_renderer, float z) {
+	if (sdl_renderer == nullptr) {
+		log("ERROR: sdl_renderer is nullptr");
+		assert(false);
+	}
+	Renderer* renderer = (Renderer*)sdl_renderer;
+
+	GLuint shader_program = shader_program_types[SPT_3D];
+	if (!shader_program) {
+		log("ERROR: Shader program not specified");
+		assert(false);
+	}
+
+	static float x = 0;
+	MX4 world_from_model = translation_matrix_mx_4(cos(x) * 5, sin(x) * 5, z);
+	x += 0.01f;
+
+	int window_width = 0;
+	int window_height = 0;
+	get_window_size(renderer->window, window_width, window_height);
+
+	// The perspective is gotten from the frustum
+	MX4 perspective_from_view = mat4_perspective((float)M_PI / 2.0f, (float)window_width / (float)window_height);
+
+	MX4 view_from_world = translation_matrix_mx_4(0, 0, -5);
+
+	// When you take these three matrices and multiple them all together, 
+	// you get one matrix that has one transformation.
+	MX4 perspective_from_model = perspective_from_view * view_from_world * world_from_model;
+
+	// MVP = Model View Perspective
+	GLuint mvp_loc = glGetUniformLocation(shader_program, "MVP");
+	glUseProgram(shader_program);
+	glUniformMatrix4fv(mvp_loc, 1, GL_FALSE, perspective_from_model.e);
+
+	glDrawArrays(GL_TRIANGLES, 0, ARRAYSIZE(cube));
+}
+
 void execute_set_clip_rect_command(SDL_Renderer* sdl_renderer, Clip_Rect_Info info) {
     if (sdl_renderer == nullptr) {
         log("ERROR: sdl_renderer is nullptr");
@@ -1677,10 +1912,23 @@ void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
 	}
 	Renderer* renderer = (Renderer*)sdl_renderer;
 
+	int window_width = 0;
+	int window_height = 0;
+	get_window_size(renderer->window, window_width, window_height);
+	SDL_Rect new_viewport = { 0, 0, window_width, window_height };
+	glViewport(new_viewport.x, new_viewport.y, new_viewport.w, new_viewport.h);
+
 	// This rebind may be pointless if I am only going with one vbo
 	glBindBuffer(GL_ARRAY_BUFFER, renderer->vbo);
 	glBufferData(GL_ARRAY_BUFFER, renderer->vertices.size() * sizeof(Vertex), renderer->vertices.data(), GL_STATIC_DRAW);
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, renderer->vertices_indices.size() * sizeof(Uint32), renderer->vertices_indices.data(), GL_STATIC_DRAW);
+
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos));
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, color));
+	glEnableVertexAttribArray(1);
+	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
+	glEnableVertexAttribArray(2);
 
 	// This could become the flush function
 	for (Command_Packet command_packet : renderer->command_packets) {
@@ -1716,8 +1964,6 @@ void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
 			break;
 		}
 		case CT_Set_Viewport: {
-			int window_width = 0;
-			int window_height = 0;
 			get_window_size(renderer->window, window_width, window_height);
 
 			Viewport_Info info = command_packet.viewport_info;
@@ -1738,7 +1984,6 @@ void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
 			Color_f c = convert_color_8_to_floating_point(info.clear_draw_color);
 
 			// Create functions that execute the commands in here
-			SDL_RenderSetClipRect(sdl_renderer, nullptr);
 			Clip_Rect_Info clip_rect_info = {};
 			clip_rect_info.setting = GL_SCISSOR_TEST;
 			execute_set_clip_rect_command(sdl_renderer, clip_rect_info);
@@ -1748,26 +1993,20 @@ void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
 
 			if (renderer->clip_rect_set) {
 				clip_rect_info.setting = GL_SCISSOR_TEST;
-				clip_rect_info.rect = &renderer->clip_rect;;
+				clip_rect_info.rect = &renderer->clip_rect;
 				execute_set_clip_rect_command(sdl_renderer, clip_rect_info);
-				SDL_RenderSetClipRect(sdl_renderer, &renderer->clip_rect);
 			}
 			break;
 		}
 		}
 	}
-#if 0
-	// Clear later!
-	for (Command_Packet command_packet : renderer->command_packets) {
-		switch (command_packet.command_type) {
-			case CT_Clear_Screen: {
-				Clear_Screen_Info info = command_packet.clear_screen_info;
-				break;
-			}
-		}
-	}
-#endif
 	renderer->command_packets.clear();
+	renderer->vertices.clear();
+	renderer->vertices_indices.clear();
+
+	upload_cube_data();
+	draw_cube(sdl_renderer, -10);
+	draw_cube(sdl_renderer, -5);
 
 	SwapBuffers(renderer->hdc);
 }
