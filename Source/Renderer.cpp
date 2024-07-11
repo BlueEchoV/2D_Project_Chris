@@ -1836,7 +1836,7 @@ void upload_cube_data() {
 	glBufferData(GL_ARRAY_BUFFER, sizeof(cube), cube, GL_STATIC_DRAW);
 }
 
-void draw_cube(SDL_Renderer* sdl_renderer, float z) {
+void draw_cube(SDL_Renderer* sdl_renderer, float x_speed, float y_speed, float z_pos) {
 	if (sdl_renderer == nullptr) {
 		log("ERROR: sdl_renderer is nullptr");
 		assert(false);
@@ -1850,7 +1850,7 @@ void draw_cube(SDL_Renderer* sdl_renderer, float z) {
 	}
 
 	static float x = 0;
-	MX4 world_from_model = translation_matrix_mx_4(cos(x) * 5, sin(x) * 5, z);
+	MX4 world_from_model = translation_matrix_mx_4(cos(x) * x_speed, sin(x) * y_speed, z_pos);
 	x += 0.01f;
 
 	int window_width = 0;
@@ -2005,8 +2005,11 @@ void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
 	renderer->vertices_indices.clear();
 
 	upload_cube_data();
-	draw_cube(sdl_renderer, -10);
-	draw_cube(sdl_renderer, -5);
+	float offset = 2;
+	for (float i = 0.0f; i < 5.0f; i++) {
+		draw_cube(sdl_renderer, 5, i, -i - offset);
+		offset += 2;
+	}
 
 	SwapBuffers(renderer->hdc);
 }
