@@ -1776,32 +1776,38 @@ void SDL_RenderGetViewport(SDL_Renderer* sdl_renderer, SDL_Rect* rect) {
 
 struct Vertex_3D {
 	V3 pos;
+	Color_f color;
+	V2 uv;
 };
+
+Color_f color_one = { 1.0f, 0.0f, 0.0f, 1.0f };
+Color_f color_two = { 0.0f, 1.0f, 0.0f, 1.0f };
+Color_f color_three = { 0.0f, 0.0f, 1.0f, 1.0f };
 
 Vertex_3D cube[36] = {
     // Front face
-    {-1, -1,  1}, { 1, -1,  1}, { 1,  1,  1},
-    {-1, -1,  1}, { 1,  1,  1}, {-1,  1,  1},
+    {{-1, -1,  1}, color_one, {0, 0}}, {{ 1, -1,  1}, color_one, {1, 0}}, {{ 1,  1,  1}, color_one, {1, 1}},
+    {{-1, -1,  1}, color_one, {0, 0}}, {{ 1,  1,  1}, color_one, {1, 1}}, {{-1,  1,  1}, color_one, {0, 1}},
 
     // Back face
-    {-1, -1, -1}, {-1,  1, -1}, { 1,  1, -1},
-    {-1, -1, -1}, { 1,  1, -1}, { 1, -1, -1},
+    {{-1, -1, -1}, color_one, {1, 0}}, {{-1,  1, -1}, color_one, {1, 1}}, {{ 1,  1, -1}, color_one, {0, 1}},
+    {{-1, -1, -1}, color_one, {1, 0}}, {{ 1,  1, -1}, color_one, {0, 1}}, {{ 1, -1, -1}, color_one, {0, 0}},
 
     // Left face
-    {-1, -1, -1}, {-1, -1,  1}, {-1,  1,  1},
-    {-1, -1, -1}, {-1,  1,  1}, {-1,  1, -1},
+    {{-1, -1, -1}, color_two, {0, 0}}, {{-1, -1,  1}, color_two, {1, 0}}, {{-1,  1,  1}, color_two, {1, 1}},
+    {{-1, -1, -1}, color_two, {0, 0}}, {{-1,  1,  1}, color_two, {1, 1}}, {{-1,  1, -1}, color_two, {0, 1}},
 
     // Right face
-    { 1, -1, -1}, { 1,  1, -1}, { 1,  1,  1},
-    { 1, -1, -1}, { 1,  1,  1}, { 1, -1,  1},
+    {{ 1, -1, -1}, color_two, {1, 0}}, {{ 1,  1, -1}, color_two, {1, 1}}, {{ 1,  1,  1}, color_two, {0, 1}},
+    {{ 1, -1, -1}, color_two, {1, 0}}, {{ 1,  1,  1}, color_two, {0, 1}}, {{ 1, -1,  1}, color_two, {0, 0}},
 
     // Top face
-    {-1,  1, -1}, {-1,  1,  1}, { 1,  1,  1},
-    {-1,  1, -1}, { 1,  1,  1}, { 1,  1, -1},
+    {{-1,  1, -1}, color_three, {0, 1}}, {{-1,  1,  1}, color_three, {0, 0}}, {{ 1,  1,  1}, color_three, {1, 0}},
+    {{-1,  1, -1}, color_three, {0, 1}}, {{ 1,  1,  1}, color_three, {1, 0}}, {{ 1,  1, -1}, color_three, {1, 1}},
 
     // Bottom face
-    {-1, -1, -1}, { 1, -1, -1}, { 1, -1,  1},
-    {-1, -1, -1}, { 1, -1,  1}, {-1, -1,  1}
+    {{-1, -1, -1}, color_three, {0, 0}}, {{ 1, -1, -1}, color_three, {1, 0}}, {{ 1, -1,  1}, color_three, {1, 1}},
+    {{-1, -1, -1}, color_three, {0, 0}}, {{ 1, -1,  1}, color_three, {1, 1}}, {{-1, -1,  1}, color_three, {0, 1}}
 };
 
 // Frustum
@@ -1830,8 +1836,8 @@ void upload_cube_data() {
 	glBindBuffer(GL_ARRAY_BUFFER, vbo);
 
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D), (void*)offsetof(Vertex_3D, pos));
-	glDisableVertexAttribArray(1);
-	glDisableVertexAttribArray(2);
+	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D), (void*)offsetof(Vertex_3D, color));
+	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D), (void*)offsetof(Vertex_3D, uv));
 
 	glBufferData(GL_ARRAY_BUFFER, sizeof(cube), cube, GL_STATIC_DRAW);
 }
@@ -2004,11 +2010,11 @@ void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
 	renderer->vertices.clear();
 	renderer->vertices_indices.clear();
 
+	Image smolder_image = create_Image(sdl_renderer, "assets\\smolder.jpg");
+	glBindTexture(GL_TEXTURE_2D, smolder_image.texture->handle);
 	upload_cube_data();
-	float offset = 2;
 	for (float i = 0.0f; i < 5.0f; i++) {
-		draw_cube(sdl_renderer, 5, i, -i - offset);
-		offset += 2;
+		draw_cube(sdl_renderer, i + 1, i + 1, - 5 + i);
 	}
 
 	SwapBuffers(renderer->hdc);
