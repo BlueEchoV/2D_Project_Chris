@@ -1,6 +1,7 @@
 #pragma once
 #include <stdint.h>
 #include <Windows.h>
+#include "Math.h"
 
 // *********************SDL Information*********************
 /**
@@ -312,6 +313,7 @@ int SDL_RenderSetViewport(SDL_Renderer* sdl_renderer, const SDL_Rect* rect);
 void SDL_RenderGetViewport(SDL_Renderer* sdl_renderer, SDL_Rect* rect);
 
 void draw_debug_images(SDL_Renderer* sdl_renderer);
+void mp_draw_cube(SDL_Renderer* sdl_renderer, V3 pos, SDL_Texture* texture);
 
 Image create_Image(SDL_Renderer* sdl_renderer, const char* file_Path);
 

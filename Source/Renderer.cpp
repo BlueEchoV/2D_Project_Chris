@@ -1,7 +1,6 @@
 #include "Renderer.h"
 
 #include "Utility.h"
-#include "Math.h"
 
 #include <errno.h>
 #include <string.h>
@@ -363,10 +362,16 @@ struct Clear_Screen_Info {
 	Color_8 clear_draw_color;
 };
 
+struct Draw_Call_3D_Info {
+	V3 pos;
+	GLuint texture_handle;
+};
+
 enum Command_Type {
 	CT_Set_Clip_Rect,
 	CT_Set_Viewport,
 	CT_Draw_Call,
+	CT_Draw_Call_3D,
 	CT_Clear_Screen
 };
 
@@ -379,6 +384,8 @@ struct Command_Packet {
 	Clip_Rect_Info clip_rect_info;
 	Clear_Screen_Info clear_screen_info;
 	Viewport_Info viewport_info;
+
+	Draw_Call_3D_Info draw_call_3d_info;
 
 	// Draw color needs to be set for the flush 
 	Color_8 draw_color;
@@ -396,6 +403,7 @@ struct Renderer {
 	GLuint ebo;
 	std::vector<Uint32> vertices_indices;
 	std::vector<Command_Packet> command_packets;
+	std::vector<Command_Packet> command_packets_3d;
 
 	bool clip_rect_set;
 	SDL_Rect clip_rect;
@@ -1842,7 +1850,24 @@ void upload_cube_data() {
 	glBufferData(GL_ARRAY_BUFFER, sizeof(cube), cube, GL_STATIC_DRAW);
 }
 
-void draw_cube(SDL_Renderer* sdl_renderer, float x_speed, float y_speed, float z_pos) {
+void mp_draw_cube(SDL_Renderer* sdl_renderer, V3 pos, SDL_Texture* texture) {
+	if (sdl_renderer == nullptr) {
+		log("ERROR: sdl_renderer is nullptr");
+		assert(false);
+	}
+	Renderer* renderer = (Renderer*)sdl_renderer;
+
+	Command_Packet command_packet = {};
+
+	command_packet.command_type = CT_Draw_Call_3D;
+
+	command_packet.draw_call_3d_info.pos = pos;
+	command_packet.draw_call_3d_info.texture_handle = texture->handle;
+
+	renderer->command_packets_3d.push_back(command_packet);
+}
+
+void draw_cube(SDL_Renderer* sdl_renderer, V3 pos) {
 	if (sdl_renderer == nullptr) {
 		log("ERROR: sdl_renderer is nullptr");
 		assert(false);
@@ -1856,8 +1881,8 @@ void draw_cube(SDL_Renderer* sdl_renderer, float x_speed, float y_speed, float z
 	}
 
 	static float x = 0;
-	MX4 world_from_model = translation_matrix_mx_4(cos(x) * x_speed, sin(x) * y_speed, z_pos);
-	x += 0.01f;
+	// MX4 world_from_model = translation_matrix_mx_4(cos(x) * x_speed, sin(x) * y_speed, z_pos);
+	MX4 world_from_model = translation_matrix_mx_4(pos.x, pos.y, pos.z);
 
 	int window_width = 0;
 	int window_height = 0;
@@ -1976,12 +2001,12 @@ void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
 			if (info.rect == NULL) {
 				// If rect is NULL, use the entire window as the viewport
 				renderer->viewport = { 0, 0, window_width, window_height };
-			} else {
+			}
+			else {
 				// Convert SDL rect coordinates to OpenGL coordinates
 				renderer->viewport = { info.rect->x, window_height - info.rect->y - info.rect->h, info.rect->w, info.rect->h };
 			}
 			glViewport(info.rect->x, info.rect->y, info.rect->w, info.rect->h);
-
 			break;
 		}
 		case CT_Clear_Screen: {
@@ -2010,15 +2035,17 @@ void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
 	renderer->vertices.clear();
 	renderer->vertices_indices.clear();
 
-	Image smolder_image = create_Image(sdl_renderer, "assets\\smolder.jpg");
-	glBindTexture(GL_TEXTURE_2D, smolder_image.texture->handle);
 	upload_cube_data();
-	for (float i = 0.0f; i < 5.0f; i++) {
-		draw_cube(sdl_renderer, i + 1, i + 1, - 5 + i);
+
+	for (Command_Packet packet : renderer->command_packets_3d) {
+		glBindTexture(GL_TEXTURE_2D, packet.draw_call_3d_info.texture_handle);
+		draw_cube(sdl_renderer, packet.draw_call_3d_info.pos);
 	}
+	renderer->command_packets_3d.clear();
 
 	SwapBuffers(renderer->hdc);
 }
+
 
 void draw_debug_images(SDL_Renderer* sdl_renderer) {
     if (sdl_renderer == nullptr) {

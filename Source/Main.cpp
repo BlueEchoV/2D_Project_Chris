@@ -75,6 +75,8 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 	SDL_SetTextureBlendMode(castle_infernal_image.texture, SDL_BLENDMODE_BLEND);
 	Image azir_image = create_Image(renderer, "assets\\azir.jpg");
 	SDL_SetTextureBlendMode(azir_image.texture, SDL_BLENDMODE_BLEND);
+	Image cobblestone_image = create_Image(renderer, "assets\\cobblestone.png");
+	SDL_SetTextureBlendMode(cobblestone_image.texture, SDL_BLENDMODE_BLEND);
 
 	bool running = true;
 	while (running) {
@@ -136,6 +138,17 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		SDL_SetTextureColorMod(azir_image.texture, 255, 255, 255);
 		SDL_SetTextureAlphaMod(azir_image.texture, 155);
 		SDL_RenderCopy(renderer, azir_image.texture, NULL, &azir_rect);
+
+		for (float i = 0; i <= 20; i += 2) {
+			for (float j = 0; j <= 20; j += 2) {
+				float x = i - 10;
+				if (x > 0) {
+					x = 10 - x;
+				}
+				V3 cube_pos = { x, -4, j - 15};
+				mp_draw_cube(renderer, cube_pos, cobblestone_image.texture);
+			}
+		}
 
 		SDL_RenderPresent(renderer);
 
