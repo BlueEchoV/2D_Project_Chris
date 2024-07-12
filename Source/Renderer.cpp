@@ -1943,6 +1943,15 @@ void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
 	}
 	Renderer* renderer = (Renderer*)sdl_renderer;
 
+	// GL_COLOR_BUFFER_BIT: This clears the color buffer, which is responsible for holding the color 
+	// information of the pixels. Clearing this buffer sets all the pixels to the color specified by glClearColor.
+	// GL_DEPTH_BUFFER_BIT: This clears the depth buffer, which is responsible for holding the depth 
+	// information of the pixels. The depth buffer keeps track of the distance from the camera to each pixel
+	// to handle occlusion correctly.
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	glEnable(GL_DEPTH_TEST | GL_BLEND);
+	glDepthFunc(GL_LESS);
+
 	int window_width = 0;
 	int window_height = 0;
 	get_window_size(renderer->window, window_width, window_height);
@@ -2036,7 +2045,6 @@ void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
 	renderer->vertices_indices.clear();
 
 	upload_cube_data();
-
 	for (Command_Packet packet : renderer->command_packets_3d) {
 		glBindTexture(GL_TEXTURE_2D, packet.draw_call_3d_info.texture_handle);
 		draw_cube(sdl_renderer, packet.draw_call_3d_info.pos);
@@ -2045,7 +2053,6 @@ void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
 
 	SwapBuffers(renderer->hdc);
 }
-
 
 void draw_debug_images(SDL_Renderer* sdl_renderer) {
     if (sdl_renderer == nullptr) {

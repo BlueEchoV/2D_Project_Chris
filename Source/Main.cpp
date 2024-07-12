@@ -15,13 +15,32 @@
 #include "Renderer.h"
 #include "Math.h"
 
+struct Key_State {
+	bool pressed_this_frame;
+	bool held_down;
+};
+
+std::unordered_map<LPARAM, Key_State> key_states;
+
+void reset_Pressed_This_Frame() {
+	for (auto& key_State : key_states) {
+		key_states[key_State.first].pressed_this_frame = false;
+	}
+}
+
 LRESULT windowProcedure(HWND windowHandle, UINT messageType, WPARAM wParam, LPARAM lParam)
 {
+	reset_Pressed_This_Frame();
 	LRESULT result = {};
 	switch (messageType) {
 	case WM_KEYDOWN: {
+		key_states[wParam].pressed_this_frame = true;
+		key_states[wParam].held_down = true;
 		log("WM_KEYDOWN: %llu", wParam);
 		break;
+	}
+	case WM_KEYUP: {
+		key_states[wParam].held_down = false;
 	}
 	case WM_LBUTTONDOWN: {
 		break;
@@ -75,8 +94,11 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 	SDL_SetTextureBlendMode(castle_infernal_image.texture, SDL_BLENDMODE_BLEND);
 	Image azir_image = create_Image(renderer, "assets\\azir.jpg");
 	SDL_SetTextureBlendMode(azir_image.texture, SDL_BLENDMODE_BLEND);
+
 	Image cobblestone_image = create_Image(renderer, "assets\\cobblestone.png");
 	SDL_SetTextureBlendMode(cobblestone_image.texture, SDL_BLENDMODE_BLEND);
+	Image dirt_image = create_Image(renderer, "assets\\dirt.png");
+	SDL_SetTextureBlendMode(dirt_image.texture, SDL_BLENDMODE_BLEND);
 
 	bool running = true;
 	while (running) {
@@ -139,16 +161,66 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		SDL_SetTextureAlphaMod(azir_image.texture, 155);
 		SDL_RenderCopy(renderer, azir_image.texture, NULL, &azir_rect);
 
-		for (float i = 0; i <= 20; i += 2) {
-			for (float j = 0; j <= 20; j += 2) {
-				float x = i - 10;
-				if (x > 0) {
-					x = 10 - x;
-				}
-				V3 cube_pos = { x, -4, j - 15};
+		// for (float i = 0; i <= 20; i += 2) {
+		// 	for (float j = 0; j <= 20; j += 2) {
+		// 		float x = i - 10;
+		// 		// Invert the drawing so the cubes dont draw on top of eachother
+		// 		if (x > 0) {
+		// 			x = 10 - x;
+		// 		}
+		// 		V3 cube_pos = { x, -4, j - 15};
+		// 		mp_draw_cube(renderer, cube_pos, cobblestone_image.texture);
+		// 	}
+		// }
+
+		static float width = 0;
+		static float depth = 0;
+		if (key_states[VK_INSERT].pressed_this_frame || key_states[VK_INSERT].held_down) {
+			width += 1;
+		}
+		if (key_states[VK_DELETE].pressed_this_frame || key_states[VK_DELETE].held_down) {
+			if (width > 0) {
+				width -= 1;
+			}
+		}
+		if (key_states[VK_HOME].pressed_this_frame || key_states[VK_HOME].held_down) {
+			depth += 1;
+		}
+		if (key_states[VK_END].pressed_this_frame || key_states[VK_END].held_down) {
+			if (depth > 0) {
+				depth -= 1;
+			}
+		}
+		for (float i = 0; i <= width; i += 2) {
+			for (float j = 0; j <= depth; j += 2) {
+				V3 cube_pos = { i - (width / 2), -4, j - (depth / 2)};
 				mp_draw_cube(renderer, cube_pos, cobblestone_image.texture);
 			}
 		}
+
+		static V3 player_pos = { 0, -2, 0 };
+		float player_speed = 0.05f;
+		// TODO: There is a bug with holding down the keys simultaneously and 
+		// the player moving faster diagonally. 
+		if (key_states[VK_DOWN].pressed_this_frame || key_states[VK_DOWN].held_down) {
+			player_pos.z += player_speed;
+		} 
+		if (key_states[VK_UP].pressed_this_frame || key_states[VK_UP].held_down) {
+			player_pos.z -= player_speed;
+		} 
+		if (key_states[VK_RIGHT].pressed_this_frame || key_states[VK_RIGHT].held_down) {
+			player_pos.x += player_speed;
+		}
+		if (key_states[VK_LEFT].pressed_this_frame || key_states[VK_LEFT].held_down) {
+			player_pos.x -= player_speed;
+		}
+		if (key_states[VK_SPACE].pressed_this_frame || key_states[VK_SPACE].held_down) {
+			player_pos.y += player_speed;
+		}
+		if (key_states[VK_CONTROL].pressed_this_frame || key_states[VK_CONTROL].held_down) {
+			player_pos.y -= player_speed;
+		}
+		mp_draw_cube(renderer, player_pos, dirt_image.texture);
 
 		SDL_RenderPresent(renderer);
 
