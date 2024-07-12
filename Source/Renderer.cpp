@@ -1949,7 +1949,9 @@ void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
 	// information of the pixels. The depth buffer keeps track of the distance from the camera to each pixel
 	// to handle occlusion correctly.
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	glEnable(GL_DEPTH_TEST | GL_BLEND);
+	// GL_BLEND interferes with the depth test
+	// depth test draws the pixels based on their distance from the camera
+	glEnable(GL_DEPTH_TEST);
 	glDepthFunc(GL_LESS);
 
 	int window_width = 0;

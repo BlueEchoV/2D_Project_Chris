@@ -199,7 +199,7 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		}
 
 		static V3 player_pos = { 0, -2, 0 };
-		float player_speed = 0.05f;
+		static float player_speed = 0.05f;
 		// TODO: There is a bug with holding down the keys simultaneously and 
 		// the player moving faster diagonally. 
 		if (key_states[VK_DOWN].pressed_this_frame || key_states[VK_DOWN].held_down) {
@@ -219,6 +219,11 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		}
 		if (key_states[VK_CONTROL].pressed_this_frame || key_states[VK_CONTROL].held_down) {
 			player_pos.y -= player_speed;
+		}
+		if (key_states[VK_SHIFT].pressed_this_frame || key_states[VK_SHIFT].held_down) {
+			player_speed = 0.1f;
+		} else {
+			player_speed = 0.05f;
 		}
 		mp_draw_cube(renderer, player_pos, dirt_image.texture);
 
