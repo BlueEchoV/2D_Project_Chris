@@ -1977,15 +1977,18 @@ void draw_cube(SDL_Renderer* sdl_renderer, V3 pos) {
 	MX4 perspective_from_view = mat4_perspective((float)M_PI / 2.0f, (float)window_width / (float)window_height);
 
 	V2 mouse_delta = get_mouse_delta();
-	mouse_delta.x *= 0.00002f;
-	mouse_delta.y *= 0.00002f;
+	mouse_delta.x *= 0.000001f;
+	mouse_delta.y *= 0.000001f;
 	renderer->yaw += mouse_delta.x;
 	renderer->pitch += mouse_delta.y;
 
-	MX4 view_from_world = translation_matrix_mx_4(
+	// This is my camera
+	// Move the camera by the same amount of the player but do the negation
+	// Doing the multiplication before the translation rotates the view first.
+	MX4 view_from_world = mat4_rotate_y(renderer->yaw) /* mat4_rotate_x(renderer->pitch)*/ * translation_matrix_mx_4(
 		-renderer->player_pos.x, 
 		-renderer->player_pos.y, 
-		-renderer->player_pos.z) * mat4_rotate_x(renderer->pitch) * mat4_rotate_y(renderer->yaw);
+		-renderer->player_pos.z);
 
 	// When you take these three matrices and multiple them all together, 
 	// you get one matrix that has one transformation.
@@ -2030,6 +2033,25 @@ void execute_set_clip_rect_command(SDL_Renderer* sdl_renderer, Clip_Rect_Info in
 	}
 }
 
+// Function to calculate forward vector based on yaw angle
+V3 calculate_forward(float yaw, float rotation_offset) {
+    V3 forward;
+	float yaw_temp = yaw - (rotation_offset * ((float)M_PI / 180.0f));
+    forward.x = (float)cos(yaw_temp);
+    forward.y = 0;
+	forward.z = (float)sin(yaw_temp);
+    return forward;
+}
+
+V3 normalize(const V3& v) {
+    float length = sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+	V3 result = {};
+    if (length != 0.0f) {
+        result = {v.x / length, v.y / length, v.z / length};
+    }
+	return result;
+}
+
 #define VK_W 0x57
 #define VK_S 0x53
 #define VK_A 0x41
@@ -2044,24 +2066,37 @@ void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
 
 	renderer->time += 0.01f;
 
+    // Calculate the forward vector
+    V3 forward = calculate_forward(renderer->yaw, 90.0f);    
+	// Normalize the vectors
+    forward = normalize(forward);
+
+	V3 right = calculate_forward(renderer->yaw, 180.0f);
+
 	// TODO: There is a bug with holding down the keys simultaneously and 
 	// the player moving faster diagonally. 
 	if (key_states[VK_SHIFT].pressed_this_frame || key_states[VK_SHIFT].held_down) {
-		renderer->player_speed = 0.08f;
+		renderer->player_speed = 0.40f;
 	} else {
-		renderer->player_speed = 0.04f;
+		renderer->player_speed = 0.20f;
 	}
 	if (key_states[VK_S].pressed_this_frame || key_states[VK_S].held_down) {
 		renderer->player_pos.z += renderer->player_speed;
 	} 
-	if (key_states[VK_UP].pressed_this_frame || key_states[VK_W].held_down) {
-		renderer->player_pos.z -= renderer->player_speed;
-	} 
+	if (key_states[VK_W].pressed_this_frame || key_states[VK_W].held_down) {
+        renderer->player_pos.x += forward.x * renderer->player_speed;
+        renderer->player_pos.y += forward.y * renderer->player_speed;
+        renderer->player_pos.z += forward.z * renderer->player_speed;
+    } 
 	if (key_states[VK_D].pressed_this_frame || key_states[VK_D].held_down) {
-		renderer->player_pos.x += renderer->player_speed;
+		renderer->player_pos.x -= right.x * renderer->player_speed;
+        renderer->player_pos.y -= right.y * renderer->player_speed;
+        renderer->player_pos.z -= right.z * renderer->player_speed;
 	}
 	if (key_states[VK_A].pressed_this_frame || key_states[VK_A].held_down) {
-		renderer->player_pos.x -= renderer->player_speed;
+		renderer->player_pos.x += right.x * renderer->player_speed;
+        renderer->player_pos.y += right.y * renderer->player_speed;
+        renderer->player_pos.z += right.z * renderer->player_speed;
 	}
 	if (key_states[VK_SPACE].pressed_this_frame || key_states[VK_SPACE].held_down) {
 		renderer->player_pos.y += renderer->player_speed;

@@ -18,6 +18,74 @@
 #define STB_PERLIN_IMPLEMENTATION
 #include "Perlin.h"
 
+struct Cube {
+	V3 pos;
+	float perlin_value;
+};
+
+struct Cube_Height_Map {
+	float width, length, height, layers;
+	std::vector<Cube> map;
+};
+
+#define REF(v) (void)v
+
+Cube_Height_Map create_height_map(float world_pos, float width, float length, float height, float layers, int perlin_noise) {
+	Cube_Height_Map result;
+	REF(world_pos);
+
+	result.width = width;
+	result.height = height;
+	result.length = length;
+	result.layers = layers;
+
+	for (int lay = 0; lay < result.layers; lay++) {
+		for (int wid = 0; wid < result.width; wid++) {
+			for (int len = 0; len < result.length; len++) {
+				int h = len * 2;
+				if ((h % 2) != 0) {
+					h++;
+				}
+				int w = wid * 2;
+				if ((w % 2) != 0) {
+					w++;
+				}
+
+				// Center the map
+				V3 cube_pos = { w - (result.width / 2), -10, h - (result.length / 2) };
+				float perlin_result = stb_perlin_noise3((float)w / (float)perlin_noise, 0, (float)h / (float)perlin_noise, 0, 0, 0);
+				cube_pos.y += perlin_result * result.height;
+				// Cast to truncate
+				int y = (int)cube_pos.y;
+				y += (int)lay * 2;
+				if ((y % 2) != 0) {
+					y++;
+				}
+				cube_pos.y = (float)y;
+
+				Cube cube = {};
+				cube.pos = cube_pos;
+				cube.perlin_value = perlin_result;
+
+				result.map.push_back(cube);
+			}
+		}
+	}
+
+	return result;
+}
+
+void draw_height_map(SDL_Renderer* sdl_renderer, Cube_Height_Map height_map) {
+	for (int lay = 0; lay < height_map.layers; lay++) {
+		for (int wid = 0; wid < height_map.width; wid++) {
+			for (int len = 0; len < height_map.length; len++) {
+				int index = lay * ((int)height_map.length * (int)height_map.width) + (len * (int)height_map.width) + wid;
+				draw_perlin_cube(sdl_renderer, height_map.map[index].pos, height_map.map[index].perlin_value);
+			}
+		}
+	}
+}
+
 std::unordered_map<LPARAM, Key_State> key_states;
 // Static (can't be global)
 static V2 frame_mouse_delta = {};
@@ -103,6 +171,8 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 	Image azir_image = create_Image(renderer, "assets\\azir.jpg");
 	SDL_SetTextureBlendMode(azir_image.texture, SDL_BLENDMODE_BLEND);
 
+	Cube_Height_Map height_map = create_height_map(0, 100, 100, 10, 2, 20);
+
 	bool running = true;
 	while (running) {
 		reset_Pressed_This_Frame();
@@ -167,40 +237,7 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		SDL_SetTextureAlphaMod(azir_image.texture, 155);
 		SDL_RenderCopy(renderer, azir_image.texture, NULL, &azir_rect);
 
-		// for (float i = 0; i <= 20; i += 2) {
-		// 	for (float j = 0; j <= 20; j += 2) {
-		// 		float x = i - 10;
-		// 		// Invert the drawing so the cubes dont draw on top of eachother
-		// 		if (x > 0) {
-		// 			x = 10 - x;
-		// 		}
-		// 		V3 cube_pos = { x, -4, j - 15};
-		// 		mp_draw_cube(renderer, cube_pos, cobblestone_image.texture);
-		// 	}
-		// }
-
-
-		static float width = 100;
-		static float depth = 100;
-		static float world_height = 20;
-		static int layers = 4;
-		for (float h = 0; h < layers; h++) {
-			for (float i = 0; i <= width; i += 2) {
-				for (float j = 0; j <= depth; j += 2) {
-					V3 cube_pos = { i - (width / 2), -4, j - (depth / 2) };
-					float perlin_result = stb_perlin_noise3(i / 20, 0, j / 20, 0, 0, 0);
-					cube_pos.y += perlin_result * world_height;
-					// Truncate and make sure it's bound
-					int y = (int)cube_pos.y;
-					y += ((int)h * 2);
-					if ((y % 2) != 0) {
-						y++;
-					}
-					cube_pos.y = (float)y;
-					draw_perlin_cube(renderer, cube_pos, perlin_result);
-				}
-			}
-		}
+		draw_height_map(renderer, height_map);
 
 		SDL_RenderPresent(renderer);
 
