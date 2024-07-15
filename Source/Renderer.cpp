@@ -16,7 +16,6 @@
 #include <Windows.h>
 #include <stdint.h>
 #include <stdlib.h>
-
 #include <gl/GL.h>
 
 #define GL_VERTEX_SHADER                  0x8B31
@@ -256,11 +255,6 @@ void main()
 #endif
 // *********************************************************
 
-struct V2 {
-	float x;
-	float y;
-};
-
 struct Color_f {
 	float r;
 	float g;
@@ -409,6 +403,16 @@ struct Renderer {
 	SDL_Rect clip_rect;
 
 	SDL_Rect viewport;
+
+	float time;
+	float player_speed;
+	V3 player_pos = { 0, 0, 0 };
+
+	// x or z axis (tbd)
+	float pitch;
+	float roll;
+	// y 
+	float yaw;
 };
 
 // Set initialization list to 0
@@ -428,6 +432,30 @@ void load_shaders() {
 	const char* three_d_fragment_shader_file_path = "Shaders\\fragment_shader_3d.txt";
 	GLuint three_d_shader = create_shader_program(three_d_vertex_shader_file_path, three_d_fragment_shader_file_path);
 	shader_program_types[SPT_3D] = three_d_shader;
+}
+
+enum Image_Type {
+	IT_Cobblestone,
+	IT_Dirt,
+	IT_Grass,
+	IT_Total
+};
+
+Image images[IT_Total] = {};
+
+void init_images(SDL_Renderer* sdl_renderer) {
+	if (sdl_renderer == nullptr) {
+		log("ERROR: sdl_renderer is nullptr");
+		assert(false);
+		return;
+	}
+
+	images[IT_Cobblestone] = create_Image(sdl_renderer, "assets\\cobblestone.png");
+	SDL_SetTextureBlendMode(images[IT_Cobblestone].texture, SDL_BLENDMODE_BLEND);
+	images[IT_Dirt] = create_Image(sdl_renderer, "assets\\dirt.png");
+	SDL_SetTextureBlendMode(images[IT_Dirt].texture, SDL_BLENDMODE_BLEND);
+	images[IT_Grass] = create_Image(sdl_renderer, "assets\\grass.png");
+	SDL_SetTextureBlendMode(images[IT_Grass].texture, SDL_BLENDMODE_BLEND);
 }
 
 #define REF(v) (void)v
@@ -519,6 +547,8 @@ SDL_Renderer* SDL_CreateRenderer(HWND window, int index, uint32_t flags) {
 	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
 
 	load_shaders();
+
+	init_images((SDL_Renderer*)renderer);
 
 	renderer->clip_rect_set = false;
 
@@ -1806,8 +1836,8 @@ Vertex_3D cube[36] = {
     {{-1, -1, -1}, color_two, {0, 0}}, {{-1,  1,  1}, color_two, {1, 1}}, {{-1,  1, -1}, color_two, {0, 1}},
 
     // Right face
-    {{ 1, -1, -1}, color_two, {1, 0}}, {{ 1,  1, -1}, color_two, {1, 1}}, {{ 1,  1,  1}, color_two, {0, 1}},
-    {{ 1, -1, -1}, color_two, {1, 0}}, {{ 1,  1,  1}, color_two, {0, 1}}, {{ 1, -1,  1}, color_two, {0, 0}},
+    {{1, -1, -1}, color_two, {1, 0}}, {{ 1,  1, -1}, color_two, {1, 1}}, {{ 1,  1,  1}, color_two, {0, 1}},
+    {{1, -1, -1}, color_two, {1, 0}}, {{ 1,  1,  1}, color_two, {0, 1}}, {{ 1, -1,  1}, color_two, {0, 0}},
 
     // Top face
     {{-1,  1, -1}, color_three, {0, 1}}, {{-1,  1,  1}, color_three, {0, 0}}, {{ 1,  1,  1}, color_three, {1, 0}},
@@ -1835,19 +1865,37 @@ MX4 mat4_perspective(float fovy, float aspect)
 }
 
 // I don't need to upload the data every time I draw a cube
-void upload_cube_data() {
+void prepare_to_draw_cube() {
 	static GLuint vbo;
 	if (vbo == 0) {
 		glGenBuffers(1, &vbo);
+		glBindBuffer(GL_ARRAY_BUFFER, vbo);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(cube), cube, GL_STATIC_DRAW);
 	}
 
 	glBindBuffer(GL_ARRAY_BUFFER, vbo);
-
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D), (void*)offsetof(Vertex_3D, pos));
 	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D), (void*)offsetof(Vertex_3D, color));
 	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D), (void*)offsetof(Vertex_3D, uv));
+}
 
-	glBufferData(GL_ARRAY_BUFFER, sizeof(cube), cube, GL_STATIC_DRAW);
+void draw_perlin_cube(SDL_Renderer* sdl_renderer, V3 pos, float perlin) {
+	Image_Type result;
+
+	if (perlin > -0.1) {
+		result = IT_Grass;
+	}
+	else if (perlin > -0.35) {
+		result = IT_Dirt;
+	}
+	// Default
+	else {
+		result = IT_Cobblestone;
+	}
+
+	SDL_Texture* result_texture = images[result].texture;
+
+	mp_draw_cube(sdl_renderer, pos, result_texture);
 }
 
 void mp_draw_cube(SDL_Renderer* sdl_renderer, V3 pos, SDL_Texture* texture) {
@@ -1867,6 +1915,44 @@ void mp_draw_cube(SDL_Renderer* sdl_renderer, V3 pos, SDL_Texture* texture) {
 	renderer->command_packets_3d.push_back(command_packet);
 }
 
+typedef MX4 Matrix4;
+typedef V3 Vector3;
+Matrix4 mat4_rotate_x(float angle_radians)
+{
+    float c = cosf(angle_radians);
+    float s = sinf(angle_radians);
+    Matrix4 rot = identity_mx_4();
+    rot.col[1].y = c;
+    rot.col[1].z = s;
+    rot.col[2].y = -s;
+    rot.col[2].z = c;
+    return rot;
+}
+
+Matrix4 mat4_rotate_y(float angle_radians)
+{
+    float c = cosf(angle_radians);
+    float s = sinf(angle_radians);
+    Matrix4 rot = identity_mx_4();
+    rot.col[0].x = c;
+    rot.col[0].z = -s;
+    rot.col[2].x = s;
+    rot.col[2].z = c;
+    return rot;
+}
+
+Matrix4 mat4_rotate_z(float angle_radians)
+{
+    float c = cosf(angle_radians);
+    float s = sinf(angle_radians);
+    Matrix4 rot = identity_mx_4();
+    rot.col[0].x = c;
+    rot.col[0].y = s;
+    rot.col[1].x = -s;
+    rot.col[1].y = c;
+    return rot;
+}
+
 void draw_cube(SDL_Renderer* sdl_renderer, V3 pos) {
 	if (sdl_renderer == nullptr) {
 		log("ERROR: sdl_renderer is nullptr");
@@ -1880,9 +1966,8 @@ void draw_cube(SDL_Renderer* sdl_renderer, V3 pos) {
 		assert(false);
 	}
 
-	static float x = 0;
 	// MX4 world_from_model = translation_matrix_mx_4(cos(x) * x_speed, sin(x) * y_speed, z_pos);
-	MX4 world_from_model = translation_matrix_mx_4(pos.x, pos.y, pos.z);
+	MX4 world_from_model = translation_matrix_mx_4(pos.x, pos.y, pos.z)/* * mat4_rotate_x(renderer->time)*/;
 
 	int window_width = 0;
 	int window_height = 0;
@@ -1891,7 +1976,16 @@ void draw_cube(SDL_Renderer* sdl_renderer, V3 pos) {
 	// The perspective is gotten from the frustum
 	MX4 perspective_from_view = mat4_perspective((float)M_PI / 2.0f, (float)window_width / (float)window_height);
 
-	MX4 view_from_world = translation_matrix_mx_4(0, 0, -5);
+	V2 mouse_delta = get_mouse_delta();
+	mouse_delta.x *= 0.00002f;
+	mouse_delta.y *= 0.00002f;
+	renderer->yaw += mouse_delta.x;
+	renderer->pitch += mouse_delta.y;
+
+	MX4 view_from_world = translation_matrix_mx_4(
+		-renderer->player_pos.x, 
+		-renderer->player_pos.y, 
+		-renderer->player_pos.z) * mat4_rotate_x(renderer->pitch) * mat4_rotate_y(renderer->yaw);
 
 	// When you take these three matrices and multiple them all together, 
 	// you get one matrix that has one transformation.
@@ -1936,6 +2030,11 @@ void execute_set_clip_rect_command(SDL_Renderer* sdl_renderer, Clip_Rect_Info in
 	}
 }
 
+#define VK_W 0x57
+#define VK_S 0x53
+#define VK_A 0x41
+#define VK_D 0x44
+
 void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
 	if (sdl_renderer == nullptr) {
 		log("ERROR: sdl_renderer is nullptr");
@@ -1943,22 +2042,56 @@ void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
 	}
 	Renderer* renderer = (Renderer*)sdl_renderer;
 
+	renderer->time += 0.01f;
+
+	// TODO: There is a bug with holding down the keys simultaneously and 
+	// the player moving faster diagonally. 
+	if (key_states[VK_SHIFT].pressed_this_frame || key_states[VK_SHIFT].held_down) {
+		renderer->player_speed = 0.08f;
+	} else {
+		renderer->player_speed = 0.04f;
+	}
+	if (key_states[VK_S].pressed_this_frame || key_states[VK_S].held_down) {
+		renderer->player_pos.z += renderer->player_speed;
+	} 
+	if (key_states[VK_UP].pressed_this_frame || key_states[VK_W].held_down) {
+		renderer->player_pos.z -= renderer->player_speed;
+	} 
+	if (key_states[VK_D].pressed_this_frame || key_states[VK_D].held_down) {
+		renderer->player_pos.x += renderer->player_speed;
+	}
+	if (key_states[VK_A].pressed_this_frame || key_states[VK_A].held_down) {
+		renderer->player_pos.x -= renderer->player_speed;
+	}
+	if (key_states[VK_SPACE].pressed_this_frame || key_states[VK_SPACE].held_down) {
+		renderer->player_pos.y += renderer->player_speed;
+	}
+	if (key_states[VK_CONTROL].pressed_this_frame || key_states[VK_CONTROL].held_down) {
+		renderer->player_pos.y -= renderer->player_speed;
+	}
+
 	// GL_COLOR_BUFFER_BIT: This clears the color buffer, which is responsible for holding the color 
 	// information of the pixels. Clearing this buffer sets all the pixels to the color specified by glClearColor.
 	// GL_DEPTH_BUFFER_BIT: This clears the depth buffer, which is responsible for holding the depth 
 	// information of the pixels. The depth buffer keeps track of the distance from the camera to each pixel
 	// to handle occlusion correctly.
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	// GL_BLEND interferes with the depth test
-	// depth test draws the pixels based on their distance from the camera
-	glEnable(GL_DEPTH_TEST);
-	glDepthFunc(GL_LESS);
 
 	int window_width = 0;
 	int window_height = 0;
 	get_window_size(renderer->window, window_width, window_height);
 	SDL_Rect new_viewport = { 0, 0, window_width, window_height };
 	glViewport(new_viewport.x, new_viewport.y, new_viewport.w, new_viewport.h);
+
+	glEnable(GL_DEPTH_TEST);
+	glDepthFunc(GL_LESS);
+	prepare_to_draw_cube();
+	for (Command_Packet packet : renderer->command_packets_3d) {
+		glBindTexture(GL_TEXTURE_2D, packet.draw_call_3d_info.texture_handle);
+		draw_cube(sdl_renderer, packet.draw_call_3d_info.pos);
+	}
+	renderer->command_packets_3d.clear();
+	glDisable(GL_DEPTH_TEST);
 
 	// This rebind may be pointless if I am only going with one vbo
 	glBindBuffer(GL_ARRAY_BUFFER, renderer->vbo);
@@ -2045,13 +2178,6 @@ void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
 	renderer->command_packets.clear();
 	renderer->vertices.clear();
 	renderer->vertices_indices.clear();
-
-	upload_cube_data();
-	for (Command_Packet packet : renderer->command_packets_3d) {
-		glBindTexture(GL_TEXTURE_2D, packet.draw_call_3d_info.texture_handle);
-		draw_cube(sdl_renderer, packet.draw_call_3d_info.pos);
-	}
-	renderer->command_packets_3d.clear();
 
 	SwapBuffers(renderer->hdc);
 }

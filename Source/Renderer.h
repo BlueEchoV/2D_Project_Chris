@@ -1,7 +1,23 @@
 #pragma once
 #include <stdint.h>
 #include <Windows.h>
+#include <unordered_map>
+
 #include "Math.h"
+
+struct Key_State {
+	bool pressed_this_frame;
+	bool held_down;
+};
+
+extern std::unordered_map<LPARAM, Key_State> key_states;
+
+struct V2 {
+	float x, y;
+};
+
+// Make a function that can return something and expose the variable over globals
+V2 get_mouse_delta();
 
 // *********************SDL Information*********************
 /**
@@ -314,6 +330,7 @@ void SDL_RenderGetViewport(SDL_Renderer* sdl_renderer, SDL_Rect* rect);
 
 void draw_debug_images(SDL_Renderer* sdl_renderer);
 void mp_draw_cube(SDL_Renderer* sdl_renderer, V3 pos, SDL_Texture* texture);
+void draw_perlin_cube(SDL_Renderer* sdl_renderer, V3 pos, float perlin);
 
 Image create_Image(SDL_Renderer* sdl_renderer, const char* file_Path);
 

@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <Windows.h>
+#include <WindowsX.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string>
@@ -14,13 +15,21 @@
 #include "Utility.h"
 #include "Renderer.h"
 #include "Math.h"
-
-struct Key_State {
-	bool pressed_this_frame;
-	bool held_down;
-};
+#define STB_PERLIN_IMPLEMENTATION
+#include "Perlin.h"
 
 std::unordered_map<LPARAM, Key_State> key_states;
+// Static (can't be global)
+static V2 frame_mouse_delta = {};
+
+V2 last_mouse_position;
+V2 current_mouse_position;
+
+V2 get_mouse_delta() {
+	frame_mouse_delta.x = current_mouse_position.x - last_mouse_position.x;
+	frame_mouse_delta.y = current_mouse_position.y - last_mouse_position.y;
+	return frame_mouse_delta;
+}
 
 void reset_Pressed_This_Frame() {
 	for (auto& key_State : key_states) {
@@ -30,32 +39,31 @@ void reset_Pressed_This_Frame() {
 
 LRESULT windowProcedure(HWND windowHandle, UINT messageType, WPARAM wParam, LPARAM lParam)
 {
-	reset_Pressed_This_Frame();
 	LRESULT result = {};
 	switch (messageType) {
 	case WM_KEYDOWN: {
 		key_states[wParam].pressed_this_frame = true;
 		key_states[wParam].held_down = true;
 		log("WM_KEYDOWN: %llu", wParam);
-		break;
-	}
+	} break;
 	case WM_KEYUP: {
 		key_states[wParam].held_down = false;
-	}
+	} break;
+	case WM_MOUSEMOVE: {
+		current_mouse_position.x = (float)GET_X_LPARAM(lParam);
+		current_mouse_position.y = (float)GET_Y_LPARAM(lParam);
+	} break;
 	case WM_LBUTTONDOWN: {
-		break;
-	}
+	} break;
 	case WM_CLOSE: {
 		DestroyWindow(windowHandle);
-		break;
-	}
+	} break;
 	case WM_DESTROY: {
 		PostQuitMessage(0);
-		break;
-	} 
+	} break;
 	default: {
 		result = DefWindowProc(windowHandle, messageType, wParam, lParam);
-	}
+	} break;
 	}
 
 	return result;
@@ -95,13 +103,11 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 	Image azir_image = create_Image(renderer, "assets\\azir.jpg");
 	SDL_SetTextureBlendMode(azir_image.texture, SDL_BLENDMODE_BLEND);
 
-	Image cobblestone_image = create_Image(renderer, "assets\\cobblestone.png");
-	SDL_SetTextureBlendMode(cobblestone_image.texture, SDL_BLENDMODE_BLEND);
-	Image dirt_image = create_Image(renderer, "assets\\dirt.png");
-	SDL_SetTextureBlendMode(dirt_image.texture, SDL_BLENDMODE_BLEND);
-
 	bool running = true;
 	while (running) {
+		reset_Pressed_This_Frame();
+		frame_mouse_delta = {};
+		last_mouse_position = current_mouse_position;
 		MSG msg;
 		while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
 			TranslateMessage(&msg);
@@ -138,7 +144,7 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		// GetClientRect(window, &rect_temp);
 
 		SDL_SetRenderDrawColor(renderer, 100, 100, 100, 255);
-		SDL_RenderClear(renderer);
+		// SDL_RenderClear(renderer);
 
 		SDL_Rect clip_rect = { 100, 10, 500, 500 };
 		// SDL_SetRenderDrawColor(renderer, 0, 100, 100, 255);
@@ -173,59 +179,28 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		// 	}
 		// }
 
-		static float width = 0;
-		static float depth = 0;
-		if (key_states[VK_INSERT].pressed_this_frame || key_states[VK_INSERT].held_down) {
-			width += 1;
-		}
-		if (key_states[VK_DELETE].pressed_this_frame || key_states[VK_DELETE].held_down) {
-			if (width > 0) {
-				width -= 1;
-			}
-		}
-		if (key_states[VK_HOME].pressed_this_frame || key_states[VK_HOME].held_down) {
-			depth += 1;
-		}
-		if (key_states[VK_END].pressed_this_frame || key_states[VK_END].held_down) {
-			if (depth > 0) {
-				depth -= 1;
-			}
-		}
-		for (float i = 0; i <= width; i += 2) {
-			for (float j = 0; j <= depth; j += 2) {
-				V3 cube_pos = { i - (width / 2), -4, j - (depth / 2)};
-				mp_draw_cube(renderer, cube_pos, cobblestone_image.texture);
-			}
-		}
 
-		static V3 player_pos = { 0, -2, 0 };
-		static float player_speed = 0.05f;
-		// TODO: There is a bug with holding down the keys simultaneously and 
-		// the player moving faster diagonally. 
-		if (key_states[VK_DOWN].pressed_this_frame || key_states[VK_DOWN].held_down) {
-			player_pos.z += player_speed;
-		} 
-		if (key_states[VK_UP].pressed_this_frame || key_states[VK_UP].held_down) {
-			player_pos.z -= player_speed;
-		} 
-		if (key_states[VK_RIGHT].pressed_this_frame || key_states[VK_RIGHT].held_down) {
-			player_pos.x += player_speed;
+		static float width = 100;
+		static float depth = 100;
+		static float world_height = 20;
+		static int layers = 4;
+		for (float h = 0; h < layers; h++) {
+			for (float i = 0; i <= width; i += 2) {
+				for (float j = 0; j <= depth; j += 2) {
+					V3 cube_pos = { i - (width / 2), -4, j - (depth / 2) };
+					float perlin_result = stb_perlin_noise3(i / 20, 0, j / 20, 0, 0, 0);
+					cube_pos.y += perlin_result * world_height;
+					// Truncate and make sure it's bound
+					int y = (int)cube_pos.y;
+					y += ((int)h * 2);
+					if ((y % 2) != 0) {
+						y++;
+					}
+					cube_pos.y = (float)y;
+					draw_perlin_cube(renderer, cube_pos, perlin_result);
+				}
+			}
 		}
-		if (key_states[VK_LEFT].pressed_this_frame || key_states[VK_LEFT].held_down) {
-			player_pos.x -= player_speed;
-		}
-		if (key_states[VK_SPACE].pressed_this_frame || key_states[VK_SPACE].held_down) {
-			player_pos.y += player_speed;
-		}
-		if (key_states[VK_CONTROL].pressed_this_frame || key_states[VK_CONTROL].held_down) {
-			player_pos.y -= player_speed;
-		}
-		if (key_states[VK_SHIFT].pressed_this_frame || key_states[VK_SHIFT].held_down) {
-			player_speed = 0.1f;
-		} else {
-			player_speed = 0.05f;
-		}
-		mp_draw_cube(renderer, player_pos, dirt_image.texture);
 
 		SDL_RenderPresent(renderer);
 
