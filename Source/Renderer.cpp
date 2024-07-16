@@ -290,7 +290,7 @@ GLuint create_shader(const std::string shader_file_path, GLenum shader_type) {
 	glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
 	if (!success) {
 		glGetShaderInfoLog(shader, 512, NULL, info_Log);
-		log("ERROR: Vertex shader compilation failed: %s", info_Log);
+		log("ERROR: shader compilation failed: %s", info_Log);
 		assert(false);
 	}
 
@@ -413,6 +413,9 @@ struct Renderer {
 	float roll;
 	// y 
 	float yaw;
+
+	MX4 perspective_from_view;
+	MX4 view_from_world;
 };
 
 // Set initialization list to 0
@@ -538,13 +541,6 @@ SDL_Renderer* SDL_CreateRenderer(HWND window, int index, uint32_t flags) {
 
 	glGenBuffers(1, &renderer->ebo);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, renderer->ebo);
-
-	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos));
-	glEnableVertexAttribArray(1);
-	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, color));
-	glEnableVertexAttribArray(2);
-	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
 
 	load_shaders();
 
@@ -1816,6 +1812,7 @@ struct Vertex_3D {
 	V3 pos;
 	Color_f color;
 	V2 uv;
+	V3 normal;
 };
 
 Color_f color_one = { 1.0f, 0.0f, 0.0f, 1.0f };
@@ -1824,28 +1821,52 @@ Color_f color_three = { 0.0f, 0.0f, 1.0f, 1.0f };
 
 Vertex_3D cube[36] = {
     // Front face
-    {{-1, -1,  1}, color_one, {0, 0}}, {{ 1, -1,  1}, color_one, {1, 0}}, {{ 1,  1,  1}, color_one, {1, 1}},
-    {{-1, -1,  1}, color_one, {0, 0}}, {{ 1,  1,  1}, color_one, {1, 1}}, {{-1,  1,  1}, color_one, {0, 1}},
+	{{-0.5, -0.5,  0.5}, color_one, {0, 0}, {0, 0, 1}}, 
+	{{ 0.5, -0.5,  0.5}, color_one, {1, 0}, {0, 0, 1}},
+	{{ 0.5,  0.5,  0.5}, color_one, {1, 1}, {0, 0, 1}},
+    {{-0.5, -0.5,  0.5}, color_one, {0, 0}, {0, 0, 1}},
+	{{ 0.5,  0.5,  0.5}, color_one, {1, 1}, {0, 0, 1}},
+	{{-0.5,  0.5,  0.5}, color_one, {0, 1}, {0, 0, 1}},
 
     // Back face
-    {{-1, -1, -1}, color_one, {1, 0}}, {{-1,  1, -1}, color_one, {1, 1}}, {{ 1,  1, -1}, color_one, {0, 1}},
-    {{-1, -1, -1}, color_one, {1, 0}}, {{ 1,  1, -1}, color_one, {0, 1}}, {{ 1, -1, -1}, color_one, {0, 0}},
+	{{-0.5, -0.5, -0.5}, color_one, {1, 0}, {0, 0, -1}},
+	{{-0.5,  0.5, -0.5}, color_one, {1, 1}, {0, 0, -1}},
+	{{ 0.5,  0.5, -0.5}, color_one, {0, 1}, {0, 0, -1}},
+    {{-0.5, -0.5, -0.5}, color_one, {1, 0}, {0, 0, -1}}, 
+	{{ 0.5,  0.5, -0.5}, color_one, {0, 1}, {0, 0, -1}}, 
+	{{ 0.5, -0.5, -0.5}, color_one, {0, 0}, {0, 0, -1}},
 
     // Left face
-    {{-1, -1, -1}, color_two, {0, 0}}, {{-1, -1,  1}, color_two, {1, 0}}, {{-1,  1,  1}, color_two, {1, 1}},
-    {{-1, -1, -1}, color_two, {0, 0}}, {{-1,  1,  1}, color_two, {1, 1}}, {{-1,  1, -1}, color_two, {0, 1}},
+	{{-0.5, -0.5, -0.5}, color_two, {0, 0}, {-1, 0, 0}},
+	{{-0.5, -0.5,  0.5}, color_two, {1, 0}, {-1, 0, 0}}, 
+	{{-0.5,  0.5,  0.5}, color_two, {1, 1}, {-1, 0, 0}},
+    {{-0.5, -0.5, -0.5}, color_two, {0, 0}, {-1, 0, 0}}, 
+	{{-0.5,  0.5,  0.5}, color_two, {1, 1}, {-1, 0, 0}}, 
+	{{-0.5,  0.5, -0.5}, color_two, {0, 1}, {-1, 0, 0}},
 
     // Right face
-    {{1, -1, -1}, color_two, {1, 0}}, {{ 1,  1, -1}, color_two, {1, 1}}, {{ 1,  1,  1}, color_two, {0, 1}},
-    {{1, -1, -1}, color_two, {1, 0}}, {{ 1,  1,  1}, color_two, {0, 1}}, {{ 1, -1,  1}, color_two, {0, 0}},
+	{{0.5, -0.5, -0.5}, color_two, {1, 0}, {1, 0, 0}},
+	{{0.5,  0.5, -0.5}, color_two, {1, 1}, {1, 0, 0}}, 
+	{{0.5,  0.5,  0.5}, color_two, {0, 1}, {1, 0, 0}},
+    {{0.5, -0.5, -0.5}, color_two, {1, 0}, {1, 0, 0}}, 
+	{{0.5,  0.5,  0.5}, color_two, {0, 1}, {1, 0, 0}}, 
+	{{0.5, -0.5,  0.5}, color_two, {0, 0}, {1, 0, 0}},
 
     // Top face
-    {{-1,  1, -1}, color_three, {0, 1}}, {{-1,  1,  1}, color_three, {0, 0}}, {{ 1,  1,  1}, color_three, {1, 0}},
-    {{-1,  1, -1}, color_three, {0, 1}}, {{ 1,  1,  1}, color_three, {1, 0}}, {{ 1,  1, -1}, color_three, {1, 1}},
+	{{-0.5,  0.5, -0.5}, color_three, {0, 1}, {0, 1, 0}},
+	{{-0.5,  0.5,  0.5}, color_three, {0, 0}, {0, 1, 0}}, 
+	{{ 0.5,  0.5,  0.5}, color_three, {1, 0}, {0, 1, 0}},
+    {{-0.5,  0.5, -0.5}, color_three, {0, 1}, {0, 1, 0}}, 
+	{{ 0.5,  0.5,  0.5}, color_three, {1, 0}, {0, 1, 0}}, 
+	{{ 0.5,  0.5, -0.5}, color_three, {1, 1}, {0, 1, 0}},
 
     // Bottom face
-    {{-1, -1, -1}, color_three, {0, 0}}, {{ 1, -1, -1}, color_three, {1, 0}}, {{ 1, -1,  1}, color_three, {1, 1}},
-    {{-1, -1, -1}, color_three, {0, 0}}, {{ 1, -1,  1}, color_three, {1, 1}}, {{-1, -1,  1}, color_three, {0, 1}}
+	{{-0.5, -0.5, -0.5}, color_three, {0, 0}, {0, -1, 0}},
+	{{ 0.5, -0.5, -0.5}, color_three, {1, 0}, {0, -1, 0}}, 
+	{{ 0.5, -0.5,  0.5}, color_three, {1, 1}, {0, -1, 0}},
+    {{-0.5, -0.5, -0.5}, color_three, {0, 0}, {0, -1, 0}}, 
+	{{ 0.5, -0.5,  0.5}, color_three, {1, 1}, {0, -1, 0}}, 
+	{{-0.5, -0.5,  0.5}, color_three, {0, 1}, {0, -1, 0}}
 };
 
 // Frustum
@@ -1877,6 +1898,8 @@ void prepare_to_draw_cube() {
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D), (void*)offsetof(Vertex_3D, pos));
 	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D), (void*)offsetof(Vertex_3D, color));
 	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D), (void*)offsetof(Vertex_3D, uv));
+	glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D), (void*)offsetof(Vertex_3D, normal));
+	glEnableVertexAttribArray(3);
 }
 
 void draw_perlin_cube(SDL_Renderer* sdl_renderer, V3 pos, float perlin) {
@@ -1969,35 +1992,19 @@ void draw_cube(SDL_Renderer* sdl_renderer, V3 pos) {
 	// MX4 world_from_model = translation_matrix_mx_4(cos(x) * x_speed, sin(x) * y_speed, z_pos);
 	MX4 world_from_model = translation_matrix_mx_4(pos.x, pos.y, pos.z)/* * mat4_rotate_x(renderer->time)*/;
 
-	int window_width = 0;
-	int window_height = 0;
-	get_window_size(renderer->window, window_width, window_height);
-
-	// The perspective is gotten from the frustum
-	MX4 perspective_from_view = mat4_perspective((float)M_PI / 2.0f, (float)window_width / (float)window_height);
-
-	V2 mouse_delta = get_mouse_delta();
-	mouse_delta.x *= 0.000001f;
-	mouse_delta.y *= 0.000001f;
-	renderer->yaw += mouse_delta.x;
-	renderer->pitch += mouse_delta.y;
-
-	// This is my camera
-	// Move the camera by the same amount of the player but do the negation
-	// Doing the multiplication before the translation rotates the view first.
-	MX4 view_from_world = mat4_rotate_y(renderer->yaw) /* mat4_rotate_x(renderer->pitch)*/ * translation_matrix_mx_4(
-		-renderer->player_pos.x, 
-		-renderer->player_pos.y, 
-		-renderer->player_pos.z);
-
 	// When you take these three matrices and multiple them all together, 
 	// you get one matrix that has one transformation.
-	MX4 perspective_from_model = perspective_from_view * view_from_world * world_from_model;
+	MX4 perspective_from_model = renderer->perspective_from_view * renderer->view_from_world * world_from_model;
 
-	// MVP = Model View Perspective
-	GLuint mvp_loc = glGetUniformLocation(shader_program, "MVP");
+	GLuint world_from_model_loc = glGetUniformLocation(shader_program, "world_from_model");
+	GLuint perspective_from_world_loc = glGetUniformLocation(shader_program, "perspective_from_world");
 	glUseProgram(shader_program);
-	glUniformMatrix4fv(mvp_loc, 1, GL_FALSE, perspective_from_model.e);
+	glUniformMatrix4fv(world_from_model_loc, 1, GL_FALSE, world_from_model.e);
+	MX4 perspective_from_world = renderer->perspective_from_view * renderer->view_from_world;
+	glUniformMatrix4fv(perspective_from_world_loc, 1, GL_FALSE, perspective_from_world.e);
+
+	GLuint time_loc = glGetUniformLocation(shader_program, "u_time");
+	glUniform1f(time_loc, renderer->time);
 
 	glDrawArrays(GL_TRIANGLES, 0, ARRAYSIZE(cube));
 }
@@ -2064,7 +2071,16 @@ void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
 	}
 	Renderer* renderer = (Renderer*)sdl_renderer;
 
+	glEnable(GL_CULL_FACE);
+	glFrontFace(GL_CCW);
+
 	renderer->time += 0.01f;
+
+	V2 mouse_delta = get_mouse_delta();
+	mouse_delta.x *= 0.01f;
+	mouse_delta.y *= 0.01f;
+	renderer->yaw += mouse_delta.x;
+	renderer->pitch += mouse_delta.y;
 
     // Calculate the forward vector
     V3 forward = calculate_forward(renderer->yaw, 90.0f);    
@@ -2081,7 +2097,9 @@ void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
 		renderer->player_speed = 0.20f;
 	}
 	if (key_states[VK_S].pressed_this_frame || key_states[VK_S].held_down) {
-		renderer->player_pos.z += renderer->player_speed;
+        renderer->player_pos.x -= forward.x * renderer->player_speed;
+        renderer->player_pos.y -= forward.y * renderer->player_speed;
+        renderer->player_pos.z -= forward.z * renderer->player_speed;
 	} 
 	if (key_states[VK_W].pressed_this_frame || key_states[VK_W].held_down) {
         renderer->player_pos.x += forward.x * renderer->player_speed;
@@ -2118,6 +2136,18 @@ void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
 	SDL_Rect new_viewport = { 0, 0, window_width, window_height };
 	glViewport(new_viewport.x, new_viewport.y, new_viewport.w, new_viewport.h);
 
+	// The perspective is gotten from the frustum
+	renderer->perspective_from_view = mat4_perspective((float)M_PI / 2.0f, (float)window_width / (float)window_height);
+
+	// This is my camera
+	// Move the camera by the same amount of the player but do the negation
+	// Doing the multiplication before the translation rotates the view first.
+	renderer->view_from_world = mat4_rotate_y(renderer->yaw) /** mat4_rotate_x(renderer->pitch)*/ * translation_matrix_mx_4(
+		-renderer->player_pos.x, 
+		-renderer->player_pos.y, 
+		-renderer->player_pos.z);
+
+	glDisable(GL_BLEND);
 	glEnable(GL_DEPTH_TEST);
 	glDepthFunc(GL_LESS);
 	prepare_to_draw_cube();

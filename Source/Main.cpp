@@ -30,9 +30,8 @@ struct Cube_Height_Map {
 
 #define REF(v) (void)v
 
-Cube_Height_Map create_height_map(float world_pos, float width, float length, float height, float layers, int perlin_noise) {
+Cube_Height_Map create_height_map(float width, float length, float height, float layers, int perlin_noise) {
 	Cube_Height_Map result;
-	REF(world_pos);
 
 	result.width = width;
 	result.height = height;
@@ -42,25 +41,13 @@ Cube_Height_Map create_height_map(float world_pos, float width, float length, fl
 	for (int lay = 0; lay < result.layers; lay++) {
 		for (int wid = 0; wid < result.width; wid++) {
 			for (int len = 0; len < result.length; len++) {
-				int h = len * 2;
-				if ((h % 2) != 0) {
-					h++;
-				}
-				int w = wid * 2;
-				if ((w % 2) != 0) {
-					w++;
-				}
-
 				// Center the map
-				V3 cube_pos = { w - (result.width / 2), -10, h - (result.length / 2) };
-				float perlin_result = stb_perlin_noise3((float)w / (float)perlin_noise, 0, (float)h / (float)perlin_noise, 0, 0, 0);
+				V3 cube_pos = { wid - (result.width / 2), -10, len - (result.length / 2) };
+				float perlin_result = stb_perlin_noise3((float)wid / (float)perlin_noise, 0, (float)len / (float)perlin_noise, 0, 0, 0);
 				cube_pos.y += perlin_result * result.height;
 				// Cast to truncate
 				int y = (int)cube_pos.y;
-				y += (int)lay * 2;
-				if ((y % 2) != 0) {
-					y++;
-				}
+				y += (int)lay;
 				cube_pos.y = (float)y;
 
 				Cube cube = {};
@@ -87,13 +74,12 @@ void draw_height_map(SDL_Renderer* sdl_renderer, Cube_Height_Map height_map) {
 }
 
 std::unordered_map<LPARAM, Key_State> key_states;
-// Static (can't be global)
-static V2 frame_mouse_delta = {};
 
 V2 last_mouse_position;
 V2 current_mouse_position;
 
 V2 get_mouse_delta() {
+	V2 frame_mouse_delta;
 	frame_mouse_delta.x = current_mouse_position.x - last_mouse_position.x;
 	frame_mouse_delta.y = current_mouse_position.y - last_mouse_position.y;
 	return frame_mouse_delta;
@@ -171,12 +157,11 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 	Image azir_image = create_Image(renderer, "assets\\azir.jpg");
 	SDL_SetTextureBlendMode(azir_image.texture, SDL_BLENDMODE_BLEND);
 
-	Cube_Height_Map height_map = create_height_map(0, 100, 100, 10, 2, 20);
+	Cube_Height_Map height_map = create_height_map(100, 100, 20, 2, 20);
 
 	bool running = true;
 	while (running) {
 		reset_Pressed_This_Frame();
-		frame_mouse_delta = {};
 		last_mouse_position = current_mouse_position;
 		MSG msg;
 		while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
