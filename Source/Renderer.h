@@ -245,6 +245,16 @@ struct SDL_Point {
 };
 
 struct SDL_Texture;
+
+enum Image_Type {
+	IT_Cobblestone,
+	IT_Dirt,
+	IT_Grass,
+	IT_Total
+};
+
+SDL_Texture* get_perlin_noise_texture(float perlin_noise);
+
 struct Image {
 	int width;
 	int height;

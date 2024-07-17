@@ -437,14 +437,25 @@ void load_shaders() {
 	shader_program_types[SPT_3D] = three_d_shader;
 }
 
-enum Image_Type {
-	IT_Cobblestone,
-	IT_Dirt,
-	IT_Grass,
-	IT_Total
-};
-
 Image images[IT_Total] = {};
+
+SDL_Texture* get_perlin_noise_texture(float perlin_noise) {
+	Image_Type result;
+
+	if (perlin_noise > -0.05) {
+		result = IT_Cobblestone;
+	}
+	else if (perlin_noise > -0.15) {
+		result = IT_Dirt;
+	}
+	else if (perlin_noise > -0.25) {
+		result = IT_Grass;
+	} else {
+		return nullptr;
+	}
+
+	return images[result].texture;
+}
 
 void init_images(SDL_Renderer* sdl_renderer) {
 	if (sdl_renderer == nullptr) {
@@ -1916,10 +1927,8 @@ void draw_perlin_cube(SDL_Renderer* sdl_renderer, V3 pos, float perlin) {
 		result = IT_Cobblestone;
 	}
 
-	if (perlin > -0.40) {
-		SDL_Texture* result_texture = images[result].texture;
-		mp_draw_cube(sdl_renderer, pos, result_texture);
-	}
+	SDL_Texture* result_texture = images[result].texture;
+	mp_draw_cube(sdl_renderer, pos, result_texture);
 }
 
 void mp_draw_cube(SDL_Renderer* sdl_renderer, V3 pos, SDL_Texture* texture) {

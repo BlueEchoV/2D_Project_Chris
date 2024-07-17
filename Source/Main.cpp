@@ -20,21 +20,18 @@
 #include <utility>
 
 struct Cube {
-	float perlin_value;
+	SDL_Texture* texture;
 };
 
-const int CHUNK_SIZE = 5;
+const int CHUNK_SIZE = 10;
 struct Chunk {
-	V3 pos;
-	int width, length, height;
 	Cube cubes[CHUNK_SIZE][CHUNK_SIZE][CHUNK_SIZE] = {};
 };
 
-const int WORLD_SIZE_X = 10;
-const int WORLD_SIZE_Z = 10;
+const int WORLD_SIZE = 4;
 // Height is stored in the chunks
 
-Chunk world_chunks[WORLD_SIZE_X][WORLD_SIZE_Z] = {};
+Chunk world_chunks[WORLD_SIZE][WORLD_SIZE] = {};
 
 template <typename T>
 T clamp(T value, T min, T max) {
@@ -47,54 +44,58 @@ T clamp(T value, T min, T max) {
     return value;
 }
 
-void generate_world_chunk(int world_pos_x, int world_pos_z, int chunk_width, int chunk_length, int chunk_height, float noise) {
-	// Perlin noise will happen in here	for 
-	int final_world_pos_x = clamp(world_pos_x, 0, WORLD_SIZE_X);
-	int final_world_pos_z = clamp(world_pos_z, 0, WORLD_SIZE_Z);
-	int final_width = clamp(chunk_width, 0, CHUNK_SIZE);
-	int final_length = clamp(chunk_length, 0, CHUNK_SIZE);
-	int final_height = clamp(chunk_height, 0, CHUNK_SIZE);
+void generate_world_chunk(int x_arr_pos, int z_arr_pos, float noise) {
+	int final_arr_pos_x = clamp(x_arr_pos, 0, WORLD_SIZE);
+	int final_arr_pos_z = clamp(z_arr_pos, 0, WORLD_SIZE);
 
 	Chunk new_chunk = {};
-	new_chunk.width = final_width;
-	new_chunk.length = final_length;
-	new_chunk.height = final_height;
-
-	for (int h = 0; h < final_height; h++) {
-		for (int w = 0; w < final_width; w++) {
-			for (int l = 0; l < final_length; l++) {
-				float perlin_result = stb_perlin_noise3((float)w / (float)noise, 0, (float)l / (float)noise, 0, 0, 0);
-				new_chunk.cubes[w][l][h].perlin_value = perlin_result;
+	for (int x = 0; x < CHUNK_SIZE; x++) {
+		for (int y = 0; y < CHUNK_SIZE; y++) {
+			for (int z = 0; z < CHUNK_SIZE; z++) {
+				float world_space_x = x + (float)final_arr_pos_x * CHUNK_SIZE;
+				float world_space_z = z + (float)final_arr_pos_z * CHUNK_SIZE;
+				float perlin_result = stb_perlin_noise3(
+					(float)world_space_x / (float)noise, 
+					y / float(noise),
+					(float)world_space_z / (float)noise, 
+					0, 0, 0 // wrapping
+				);
+				new_chunk.cubes[x][y][z].texture = get_perlin_noise_texture(perlin_result);
 			}
 		}
 	}
 
-	world_chunks[final_world_pos_x][final_world_pos_z] = new_chunk;
+	world_chunks[final_arr_pos_x][final_arr_pos_z] = new_chunk;
 }
 
 void generate_world_chunks(float noise) {
-	for (int x = 0; x < WORLD_SIZE_X; x++) {
-		for (int z = 0; z < WORLD_SIZE_Z; z++) {
-			generate_world_chunk(x, z, CHUNK_SIZE, CHUNK_SIZE, CHUNK_SIZE, noise);
+	for (int x = 0; x < WORLD_SIZE; x++) {
+		for (int z = 0; z < WORLD_SIZE; z++) {
+			generate_world_chunk(x, z, noise);
 		}
 	}
 }
 
-void draw_chunk(SDL_Renderer* sdl_renderer, int x, int z) {
-	Chunk* chunk = &world_chunks[x][z];
-	for (int h = 0; h < chunk->height; h++) {
-		for (int w = 0; w < chunk->width; w++) {
-			for (int l = 0; l < chunk->length; l++) {
-				Cube* cube = &chunk->cubes[l][w][h];
+void draw_chunk(SDL_Renderer* sdl_renderer, int world_space_x, int world_space_z) {
+	Chunk* chunk = &world_chunks[world_space_x][world_space_z];
+	for (int x = 0; x < CHUNK_SIZE; x++) {
+		for (int y = 0; y < CHUNK_SIZE; y++) {
+			for (int z = 0; z < CHUNK_SIZE; z++) {
+				Cube* cube = &chunk->cubes[x][y][z];
 				V3 cube_pos;
-				cube_pos.x = (float)(z * CHUNK_SIZE + w) - ((float)WORLD_SIZE_X * (float)CHUNK_SIZE) / 2.0f;
-                cube_pos.y = (float)(h - 5);
-                cube_pos.z = (float)(x * CHUNK_SIZE + l) - ((float)WORLD_SIZE_Z * (float)CHUNK_SIZE) / 2.0f;
+				//											 Center the world 
+				cube_pos.x = (float)(x) - ((float)WORLD_SIZE * (float)CHUNK_SIZE) / 2.0f;
+				cube_pos.y = (float)(y) - ((float)WORLD_SIZE * (float)CHUNK_SIZE) / 2.0f;
+				cube_pos.z = (float)(z) - ((float)WORLD_SIZE * (float)CHUNK_SIZE) / 2.0f;
 
-				if (w % 2 == 0) {
-					draw_perlin_cube(sdl_renderer, cube_pos, cube->perlin_value);
+				cube_pos.x += (world_space_x * CHUNK_SIZE);
+				cube_pos.z += (world_space_z * CHUNK_SIZE);
+
+				// if (z % 2 == 0) {
+				if (cube->texture != nullptr) {
+					mp_draw_cube(sdl_renderer, cube_pos, cube->texture);
 				}
-
+				// }
 			}
 		}
 	}
@@ -102,8 +103,8 @@ void draw_chunk(SDL_Renderer* sdl_renderer, int x, int z) {
 }
 
 void draw_chunks(SDL_Renderer* sdl_renderer) {
-	for (int x = 0; x < WORLD_SIZE_X; x++) {
-		for (int z = 0; z < WORLD_SIZE_Z; z++) {
+	for (int x = 0; x < WORLD_SIZE; x++) {
+		for (int z = 0; z < WORLD_SIZE; z++) {
 			draw_chunk(sdl_renderer, x, z);
 		}
 	}
@@ -195,8 +196,7 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 	Image azir_image = create_Image(renderer, "assets\\azir.jpg");
 	SDL_SetTextureBlendMode(azir_image.texture, SDL_BLENDMODE_BLEND);
 
-	generate_world_chunk(0, 0, 15, 15, 15, 20);
-	generate_world_chunks(20);
+	generate_world_chunks(15);
 
 	bool running = true;
 	while (running) {
@@ -261,8 +261,7 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		SDL_SetTextureAlphaMod(azir_image.texture, 155);
 		SDL_RenderCopy(renderer, azir_image.texture, NULL, &azir_rect);
 
-		draw_chunk(renderer, 0, 0);
-		// draw_chunks(renderer);
+		draw_chunks(renderer);
 
 		SDL_RenderPresent(renderer);
 
