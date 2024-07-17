@@ -1916,9 +1916,10 @@ void draw_perlin_cube(SDL_Renderer* sdl_renderer, V3 pos, float perlin) {
 		result = IT_Cobblestone;
 	}
 
-	SDL_Texture* result_texture = images[result].texture;
-
-	mp_draw_cube(sdl_renderer, pos, result_texture);
+	if (perlin > -0.40) {
+		SDL_Texture* result_texture = images[result].texture;
+		mp_draw_cube(sdl_renderer, pos, result_texture);
+	}
 }
 
 void mp_draw_cube(SDL_Renderer* sdl_renderer, V3 pos, SDL_Texture* texture) {
@@ -2147,7 +2148,6 @@ void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
 		-renderer->player_pos.y, 
 		-renderer->player_pos.z);
 
-	glDisable(GL_BLEND);
 	glEnable(GL_DEPTH_TEST);
 	glDepthFunc(GL_LESS);
 	prepare_to_draw_cube();

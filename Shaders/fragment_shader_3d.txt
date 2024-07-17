@@ -24,6 +24,6 @@ void main()
 	vec3 pixel_to_light = normalize(pixel_to_light_length);
 	float light_intensity = max(dot(f_normal, pixel_to_light), 0);
 	o_color = tex_color;
-	o_color.xyz *= clamp((light_intensity * distance_intensity) + 0.1, 0, 1);
+	// o_color.xyz *= clamp((light_intensity * distance_intensity) + 0.1, 0, 1);
 	// o_color = vec4(f_normal, 1.0);
 }
