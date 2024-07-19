@@ -369,9 +369,9 @@ struct Draw_Call_3D_Cube {
 };
 
 struct Draw_Call_3D_Line {
-	V3 pos;
-	float angle_x_degrees;
-	float angle_z_degrees;
+	int total_vertices;
+	size_t starting_index;
+	Shader_Program_Type shader_type;
 };
 
 enum Command_Type {
@@ -692,10 +692,13 @@ V3 convert_to_ndc_v3(SDL_Renderer* sdl_renderer, V3 pos) {
     int screen_w, screen_h;
     get_window_size(renderer->window, screen_w, screen_h);
 
-    V3 ndc;
+	V3 ndc = {};
     ndc.x = ((2.0f * pos.x) / screen_w) - 1.0f;
+	log("x: %f", ndc.x);
     ndc.y = 1.0f - ((2.0f * pos.y) / screen_h);
-    ndc.z = pos.z; // Assuming pos.z is already in the range [-1, 1]
+	log("y: %f", ndc.y);
+	ndc.z = ((2.0f * pos.z) / screen_w) - 1.0f;
+	log("z: %f", ndc.z);
 
     return ndc;
 }
@@ -2106,48 +2109,95 @@ void prepare_to_draw_lines() {
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Temp), (void*)offsetof(Vertex_3D_Temp, pos));
 	glEnableVertexAttribArray(0);
 }
+#if 0
+int SDL_RenderDrawLine(SDL_Renderer* sdl_renderer, int x1, int y1, int x2, int y2) {
+	if (sdl_renderer == nullptr) {
+		log("ERROR: sdl_renderer is nullptr");
+		return -1;
+	}
+	Renderer* renderer = (Renderer*)sdl_renderer;
 
-void mp_draw_3d_line(SDL_Renderer* sdl_renderer, V3 pos, float angle_x_degrees, float angle_z_degrees) {
+	Color_f c =	convert_color_8_to_floating_point(renderer->render_draw_color);
+	
+	V2 point_one =		convert_to_ndc(sdl_renderer, x1, y1);
+	V2 point_two =		convert_to_ndc(sdl_renderer, x2, y2);
+	
+	Vertex vertices[2] = {};
+	vertices[0].pos = point_one;
+	vertices[0].color = c;
+	renderer->vertices.push_back(vertices[0]);
+	vertices[1].pos = point_two;
+	vertices[1].color = c;
+	renderer->vertices.push_back(vertices[1]);
+
+	Command_Packet packet = {};
+	
+	packet.draw_color = renderer->render_draw_color;
+	packet.command_type = CT_Draw_Call;
+
+	packet.draw_call_info.draw_type = GL_LINES;
+	packet.draw_call_info.total_vertices = ARRAYSIZE(vertices);
+	// Subtract the already added vertices to get the starting index
+	packet.draw_call_info.starting_index = renderer->vertices.size() - packet.draw_call_info.total_vertices;
+	packet.draw_call_info.type = SPT_COLOR;
+	packet.draw_call_info.blend_mode = renderer->blend_mode;
+
+	// Store the number of vertices to be rendered for this group
+	renderer->command_packets.push_back(packet);
+	
+	return 0;
+}
+#endif
+
+void mp_draw_line_3d(SDL_Renderer* sdl_renderer, V3 pos_1, V3 pos_2) {
     if (sdl_renderer == nullptr) {
         log("ERROR: sdl_renderer is nullptr");
         assert(false);
     }
 	Renderer* renderer = (Renderer*)sdl_renderer;
 	
+	// Add a color here
+
+	// NOTE: Confirm this works as intended
+	V3 p1 = convert_to_ndc_v3(sdl_renderer, pos_1);
+	V3 p2 = convert_to_ndc_v3(sdl_renderer, pos_2);
+
+	Vertex_3D_Temp vertices[2];
+	vertices[0].pos = p1;
+	renderer->vertices_3d.push_back(vertices[0]);
+	vertices[1].pos = p2;
+	renderer->vertices_3d.push_back(vertices[1]);
+
 	Command_Packet packet = {};
 
-	packet.draw_call_3d_line.pos = pos;
-	packet.draw_call_3d_line.angle_x_degrees = angle_x_degrees;
-	packet.draw_call_3d_line.angle_z_degrees = angle_z_degrees;
+	packet.draw_call_3d_line.total_vertices = ARRAYSIZE(vertices);
+	packet.draw_call_3d_line.starting_index = renderer->vertices_3d.size() - ARRAYSIZE(vertices);
+	packet.draw_call_3d_line.shader_type = SPT_3D_Lines;
 
 	renderer->command_packets_3d_lines.push_back(packet);
 }
 
-void draw_line_3d(SDL_Renderer* sdl_renderer, V3 pos, float angle_x_degrees, float angle_z_degrees) {
+void execute_draw_line_3d(SDL_Renderer* sdl_renderer, Draw_Call_3D_Line draw_call) {
     if (sdl_renderer == nullptr) {
         log("ERROR: sdl_renderer is nullptr");
         assert(false);
     }
 	Renderer* renderer = (Renderer*)sdl_renderer;
 
-    GLuint shader_program = shader_program_types[SPT_3D_Lines];
+    GLuint shader_program = shader_program_types[draw_call.shader_type];
     if (!shader_program) {
         log("ERROR: Shader program not specified");
         assert(false);
     }
     glUseProgram(shader_program);
 
-	prepare_to_draw_lines();
-
-	float angle_x_radians = angle_x_degrees * ((float)M_PI / 180.0f);
-	float angle_z_radians = angle_z_degrees * ((float)M_PI / 180.0f);
-	MX4 world_from_model = translation_matrix_mx_4(pos.x, pos.y, pos.z) * mat4_rotate_x(angle_x_radians) * mat4_rotate_z(angle_z_radians);
+	float scale = 10;
+	MX4 world_from_model = translation_matrix_mx_4(10, 0, 0) * scaling_matrix_mx_4(scale, scale, scale);
     MX4 perspective_from_model = renderer->perspective_from_view * renderer->view_from_world * world_from_model;
-
 	GLuint perspective_from_model_location = glGetUniformLocation(shader_program, "perspective_from_model");
 	glUniformMatrix4fv(perspective_from_model_location, 1, GL_FALSE, perspective_from_model.e);
 
-    glDrawArrays(GL_LINES, 0, 2);
+    glDrawArrays(GL_LINES, (GLint)draw_call.starting_index, draw_call.total_vertices);
 }
 
 void execute_set_clip_rect_command(SDL_Renderer* sdl_renderer, Clip_Rect_Info info) {
@@ -2301,8 +2351,9 @@ void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
 
 	prepare_to_draw_lines();
 	for (Command_Packet packet : renderer->command_packets_3d_lines) {
-		draw_line_3d(sdl_renderer, packet.draw_call_3d_line.pos, packet.draw_call_3d_line.angle_x_degrees, packet.draw_call_3d_line.angle_z_degrees);
+		execute_draw_line_3d(sdl_renderer, packet.draw_call_3d_line);
 	}
+	renderer->vertices_3d.clear();
 	renderer->command_packets_3d_lines.clear();
 
 	// This rebind may be pointless if I am only going with one vbo

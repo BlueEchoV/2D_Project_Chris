@@ -42,9 +42,9 @@ struct Chunk {
 	Cube cubes[CHUNK_SIZE][CHUNK_SIZE][CHUNK_SIZE] = {};
 };
 
-const int WORLD_SIZE_WIDTH = 16;
-const int WORLD_SIZE_LENGTH = 16;
-const int WORLD_SIZE_HEIGHT = 4;
+const int WORLD_SIZE_WIDTH = 2;
+const int WORLD_SIZE_LENGTH = 2;
+const int WORLD_SIZE_HEIGHT = 1;
 Chunk world_chunks[WORLD_SIZE_WIDTH][WORLD_SIZE_HEIGHT][WORLD_SIZE_LENGTH] = {};
 
 int height_map[(WORLD_SIZE_WIDTH * CHUNK_SIZE)][(WORLD_SIZE_LENGTH * CHUNK_SIZE)] = {};
@@ -158,7 +158,7 @@ void draw_chunks(SDL_Renderer* sdl_renderer) {
 	}
 }
 
-
+#if 0
 void draw_wire_frame(SDL_Renderer* sdl_renderer, V3 pos, float width, float length, float height) {
 	REF(length);
 	REF(height);
@@ -184,7 +184,7 @@ void draw_wire_frame(SDL_Renderer* sdl_renderer, V3 pos, float width, float leng
 	mp_draw_3d_line(sdl_renderer, {pos.x + 0.5f, pos.y - 0.5f, pos.z + 1.0f},  0, 90);
 	mp_draw_3d_line(sdl_renderer, {pos.x + 0.5f, pos.y + 0.5f, pos.z + 1.0f},  0, 90);
 }
-
+#endif
 
 std::unordered_map<LPARAM, Key_State> key_states;
 
@@ -335,9 +335,10 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		SDL_SetTextureAlphaMod(azir_image.texture, 155);
 		// SDL_RenderCopy(renderer, azir_image.texture, NULL, &azir_rect);
 
-		// draw_chunks(renderer);
+		draw_chunks(renderer);
 
-		draw_wire_frame(renderer, { 0,0,0 }, 2, 1, 1);
+		// draw_wire_frame(renderer, { 0,0,0 }, 2, 1, 1);
+		mp_draw_line_3d(renderer, { 0,0,0 }, { 1000, 1000, 1000});
 
 		SDL_RenderPresent(renderer);
 

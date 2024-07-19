@@ -131,3 +131,12 @@ MX4 translation_matrix_mx_4(float x, float y, float z) {
     result.e[14] = z;
     return result;
 }
+
+MX4 scaling_matrix_mx_4(float scale_x, float scale_y, float scale_z) {
+    MX4 scale = {0};
+    scale.e[0] = scale_x;
+    scale.e[5] = scale_y;
+    scale.e[10] = scale_z;
+    scale.e[15] = 1.0f;
+    return scale;
+}

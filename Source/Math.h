@@ -44,3 +44,4 @@ MX4 identity_mx_4();
 // If we want to change the location of a point, we can use 
 // the translation matrix.
 MX4 translation_matrix_mx_4(float x, float y, float z);
+MX4 scaling_matrix_mx_4(float scale_x, float scale_y, float scale_z);
