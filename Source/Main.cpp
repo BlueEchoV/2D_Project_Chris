@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string>
 #include <unordered_map>
+#include <algorithm>
 
 #include <errno.h>
 #include <string.h>
@@ -19,17 +20,7 @@
 #include "Perlin.h"
 #include <utility>
 
-struct Cube {
-	SDL_Texture* texture;
-};
-
-const int CHUNK_SIZE = 5;
-struct Chunk {
-	Cube cubes[CHUNK_SIZE][CHUNK_SIZE][CHUNK_SIZE] = {};
-};
-
-const int WORLD_SIZE = 4;
-Chunk world_chunks[WORLD_SIZE][WORLD_SIZE][WORLD_SIZE] = {};
+#define REF(v) (void)v
 
 template <typename T>
 T clamp(T value, T min, T max) {
@@ -42,10 +33,38 @@ T clamp(T value, T min, T max) {
     return value;
 }
 
+struct Cube {
+	Image_Type type;
+};
+
+const int CHUNK_SIZE = 5;
+struct Chunk {
+	Cube cubes[CHUNK_SIZE][CHUNK_SIZE][CHUNK_SIZE] = {};
+};
+
+const int WORLD_SIZE_WIDTH = 16;
+const int WORLD_SIZE_LENGTH = 16;
+const int WORLD_SIZE_HEIGHT = 4;
+Chunk world_chunks[WORLD_SIZE_WIDTH][WORLD_SIZE_HEIGHT][WORLD_SIZE_LENGTH] = {};
+
+int height_map[(WORLD_SIZE_WIDTH * CHUNK_SIZE)][(WORLD_SIZE_LENGTH * CHUNK_SIZE)] = {};
+
+void generate_height_map(float noise) {
+	for (int x = 0; x < WORLD_SIZE_WIDTH * CHUNK_SIZE; x++) {
+		for (int z = 0; z < WORLD_SIZE_LENGTH * CHUNK_SIZE; z++) {
+			float height_value = stb_perlin_noise3((float)x / (float)noise, 0, z / noise, 0, 0, 0);
+			// Normalize and convert the perlin value into a height map value
+			int height = (int)((height_value + 1.0f) * 0.5f * CHUNK_SIZE);
+			height += (WORLD_SIZE_HEIGHT * CHUNK_SIZE) - CHUNK_SIZE;
+			height_map[x][z] = height;
+		}
+	}
+}
+
 void generate_world_chunk(int x_arr_pos, int y_arr_pos, int z_arr_pos, float noise) {
-	int final_arr_pos_x = clamp(x_arr_pos, 0, WORLD_SIZE);
-	int final_arr_pos_y = clamp(y_arr_pos, 0, WORLD_SIZE);
-	int final_arr_pos_z = clamp(z_arr_pos, 0, WORLD_SIZE);
+	int final_arr_pos_x = clamp(x_arr_pos, 0, WORLD_SIZE_WIDTH);
+	int final_arr_pos_y = clamp(y_arr_pos, 0, WORLD_SIZE_HEIGHT);
+	int final_arr_pos_z = clamp(z_arr_pos, 0, WORLD_SIZE_LENGTH);
 
 	Chunk new_chunk = {};
 	for (int x = 0; x < CHUNK_SIZE; x++) {
@@ -60,7 +79,34 @@ void generate_world_chunk(int x_arr_pos, int y_arr_pos, int z_arr_pos, float noi
 					(float)world_space_z / (float)noise, 
 					0, 0, 0 // wrapping
 				);
-				new_chunk.cubes[x][y][z].texture = get_perlin_noise_texture(perlin_result);
+
+				int height = height_map[(int)world_space_x][(int)world_space_z];
+
+				Image_Type result = IT_Air;
+
+				// We know this is the top chunk
+				// Draw the chunk
+				if (world_space_y < height) {
+					if (world_space_y == height - 1) {
+						result = IT_Grass;
+					} else if (world_space_y < height - 1 && world_space_y >= height - 4) {
+						result = IT_Dirt;
+					} else if (world_space_y < height - 4 && world_space_y >= height - 8) {
+						result = IT_Cobblestone;
+					} 
+					else {
+						if (perlin_result > -0.3) {
+							result = IT_Cobblestone;
+						} else {
+							result = IT_Air;
+						}
+					}
+				// Don't draw
+				} else {
+					result = IT_Air;
+				}
+
+				new_chunk.cubes[x][y][z].type = result;
 			}
 		}
 	}
@@ -69,9 +115,10 @@ void generate_world_chunk(int x_arr_pos, int y_arr_pos, int z_arr_pos, float noi
 }
 
 void generate_world_chunks(float noise) {
-	for (int x = 0; x < WORLD_SIZE; x++) {
-		for (int y = 0; y < WORLD_SIZE; y++) {
-			for (int z = 0; z < WORLD_SIZE; z++) {
+	generate_height_map(noise);
+	for (int x = 0; x < WORLD_SIZE_WIDTH; x++) {
+		for (int y = 0; y < WORLD_SIZE_HEIGHT; y++) {
+			for (int z = 0; z < WORLD_SIZE_LENGTH; z++) {
 				generate_world_chunk(x, y, z, noise);
 			}
 		}
@@ -85,20 +132,16 @@ void draw_chunk(SDL_Renderer* sdl_renderer, int world_space_x, int world_space_y
 			for (int z = 0; z < CHUNK_SIZE; z++) {
 				Cube* cube = &chunk->cubes[x][y][z];
 				V3 cube_pos;
-				//											 Center the world 
-				cube_pos.x = (float)(x) - ((float)WORLD_SIZE * (float)CHUNK_SIZE) / 2.0f;
-				cube_pos.y = (float)(y) - ((float)WORLD_SIZE * (float)CHUNK_SIZE) / 2.0f;
-				cube_pos.z = (float)(z) - ((float)WORLD_SIZE * (float)CHUNK_SIZE) / 2.0f;
+				//														Center the world 
+				cube_pos.x = (float)(x) - ((float)WORLD_SIZE_WIDTH); // * (float)CHUNK_SIZE) / 2.0f;
+				cube_pos.y = (float)(y) - ((float)WORLD_SIZE_HEIGHT); // * (float)CHUNK_SIZE) / 2.0f;
+				cube_pos.z = (float)(z) - ((float)WORLD_SIZE_LENGTH); // * (float)CHUNK_SIZE) / 2.0f;
 
 				cube_pos.x += (world_space_x * CHUNK_SIZE);
 				cube_pos.y += (world_space_y * CHUNK_SIZE);
 				cube_pos.z += (world_space_z * CHUNK_SIZE);
 
-				// if (z % 2 == 0) {
-				if (cube->texture != nullptr) {
-					mp_draw_cube(sdl_renderer, cube_pos, cube->texture);
-				}
-				// }
+				draw_cube_type(sdl_renderer, cube_pos, cube->type);
 			}
 		}
 	}
@@ -106,16 +149,42 @@ void draw_chunk(SDL_Renderer* sdl_renderer, int world_space_x, int world_space_y
 }
 
 void draw_chunks(SDL_Renderer* sdl_renderer) {
-	for (int x = 0; x < WORLD_SIZE; x++) {
-		for (int y = 0; y < WORLD_SIZE; y++) {
-			for (int z = 0; z < WORLD_SIZE; z++) {
+	for (int x = 0; x < WORLD_SIZE_WIDTH; x++) {
+		for (int y = 0; y < WORLD_SIZE_HEIGHT; y++) {
+			for (int z = 0; z < WORLD_SIZE_LENGTH; z++) {
 				draw_chunk(sdl_renderer, x, y, z);
 			}
 		}
 	}
 }
 
-#define REF(v) (void)v
+
+void draw_wire_frame(SDL_Renderer* sdl_renderer, V3 pos, float width, float length, float height) {
+	REF(length);
+	REF(height);
+
+	// Pillars 
+	for (int i = 0; i < width; i++) {
+		float x = i + pos.x;
+		float y = i + pos.y;
+		float z = i + pos.z;
+
+		mp_draw_3d_line(sdl_renderer, {x,		 y, z},        0, 0);
+		mp_draw_3d_line(sdl_renderer, {x + 1.0f, y, z},        0, 0);
+		mp_draw_3d_line(sdl_renderer, {x,		 y, z + 1.0f}, 0, 0);
+		mp_draw_3d_line(sdl_renderer, {x + 1.0f, y, z + 1.0f}, 0, 0);
+	}
+
+	mp_draw_3d_line(sdl_renderer, {pos.x,		 pos.y - 0.5f, pos.z + 0.5f},  90, 0);
+	mp_draw_3d_line(sdl_renderer, {pos.x,		 pos.y + 0.5f, pos.z + 0.5f},  90, 0);
+	mp_draw_3d_line(sdl_renderer, {pos.x + 1.0f, pos.y - 0.5f, pos.z + 0.5f},  90, 0);
+	mp_draw_3d_line(sdl_renderer, {pos.x + 1.0f, pos.y + 0.5f, pos.z + 0.5f},  90, 0);
+	mp_draw_3d_line(sdl_renderer, {pos.x + 0.5f, pos.y - 0.5f, pos.z},  0, 90);
+	mp_draw_3d_line(sdl_renderer, {pos.x + 0.5f, pos.y + 0.5f, pos.z},  0, 90);
+	mp_draw_3d_line(sdl_renderer, {pos.x + 0.5f, pos.y - 0.5f, pos.z + 1.0f},  0, 90);
+	mp_draw_3d_line(sdl_renderer, {pos.x + 0.5f, pos.y + 0.5f, pos.z + 1.0f},  0, 90);
+}
+
 
 std::unordered_map<LPARAM, Key_State> key_states;
 
@@ -201,7 +270,7 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 	Image azir_image = create_Image(renderer, "assets\\azir.jpg");
 	SDL_SetTextureBlendMode(azir_image.texture, SDL_BLENDMODE_BLEND);
 
-	generate_world_chunks(15);
+	generate_world_chunks(20);
 
 	bool running = true;
 	while (running) {
@@ -253,20 +322,22 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		SDL_Rect viewport_rect = { 100, 10, 500, 500 };
 		// SDL_RenderSetViewport(renderer, &clip_rect);
 		
-		draw_debug_images(renderer);
+		// draw_debug_images(renderer);
 
 		// SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
 
 		SDL_Rect castle_rect = { 100,400,200,200 };
 		SDL_SetTextureAlphaMod(castle_infernal_image.texture, 155);
-		SDL_RenderCopy(renderer, castle_infernal_image.texture, NULL, &castle_rect);
+		// SDL_RenderCopy(renderer, castle_infernal_image.texture, NULL, &castle_rect);
 
 		SDL_Rect azir_rect = { 200,400,200,200 };
 		SDL_SetTextureColorMod(azir_image.texture, 255, 255, 255);
 		SDL_SetTextureAlphaMod(azir_image.texture, 155);
-		SDL_RenderCopy(renderer, azir_image.texture, NULL, &azir_rect);
+		// SDL_RenderCopy(renderer, azir_image.texture, NULL, &azir_rect);
 
-		draw_chunks(renderer);
+		// draw_chunks(renderer);
+
+		draw_wire_frame(renderer, { 0,0,0 }, 2, 1, 1);
 
 		SDL_RenderPresent(renderer);
 

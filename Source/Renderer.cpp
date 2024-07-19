@@ -268,6 +268,12 @@ struct Vertex {
 	V2 uv;
 };
 
+struct Vertex_3D_Temp {
+	V3 pos;
+};
+
+
+
 GLuint create_shader(const std::string shader_file_path, GLenum shader_type) {
 	std::ifstream file(shader_file_path);
 	if (!file.is_open()) {
@@ -329,6 +335,7 @@ struct Color_8 {
 	SPT_COLOR,
 	SPT_TEXTURE,
 	SPT_3D,
+	SPT_3D_Lines,
 	SPT_TOTAL
 };
 
@@ -356,9 +363,15 @@ struct Clear_Screen_Info {
 	Color_8 clear_draw_color;
 };
 
-struct Draw_Call_3D_Info {
+struct Draw_Call_3D_Cube {
 	V3 pos;
 	GLuint texture_handle;
+};
+
+struct Draw_Call_3D_Line {
+	V3 pos;
+	float angle_x_degrees;
+	float angle_z_degrees;
 };
 
 enum Command_Type {
@@ -379,7 +392,8 @@ struct Command_Packet {
 	Clear_Screen_Info clear_screen_info;
 	Viewport_Info viewport_info;
 
-	Draw_Call_3D_Info draw_call_3d_info;
+	Draw_Call_3D_Cube draw_call_3d_cube;
+	Draw_Call_3D_Line draw_call_3d_line;
 
 	// Draw color needs to be set for the flush 
 	Color_8 draw_color;
@@ -397,7 +411,10 @@ struct Renderer {
 	GLuint ebo;
 	std::vector<Uint32> vertices_indices;
 	std::vector<Command_Packet> command_packets;
-	std::vector<Command_Packet> command_packets_3d;
+	std::vector<Command_Packet> command_packets_3d_cubes;
+
+	std::vector<Vertex_3D_Temp> vertices_3d;
+	std::vector<Command_Packet> command_packets_3d_lines;
 
 	bool clip_rect_set;
 	SDL_Rect clip_rect;
@@ -435,6 +452,11 @@ void load_shaders() {
 	const char* three_d_fragment_shader_file_path = "Shaders\\fragment_shader_3d.txt";
 	GLuint three_d_shader = create_shader_program(three_d_vertex_shader_file_path, three_d_fragment_shader_file_path);
 	shader_program_types[SPT_3D] = three_d_shader;
+
+	const char* three_d_lines_vertex_shader_file_path = "Shaders\\vertex_shader_3d_lines.txt";
+	const char* three_d_lines_fragment_shader_file_path = "Shaders\\fragment_shader_3d_lines.txt";
+	GLuint three_d_lines_shader = create_shader_program(three_d_lines_vertex_shader_file_path, three_d_lines_fragment_shader_file_path);
+	shader_program_types[SPT_3D_Lines] = three_d_lines_shader;
 }
 
 Image images[IT_Total] = {};
@@ -660,6 +682,24 @@ V2 convert_to_ndc(SDL_Renderer* sdl_renderer, int x, int y) {
 	return convert_to_ndc(sdl_renderer, { (float)x, (float)y });
 }
 
+V3 convert_to_ndc_v3(SDL_Renderer* sdl_renderer, V3 pos) {
+    if (sdl_renderer == nullptr) {
+        log("ERROR: sdl_renderer is nullptr");
+        assert(false);
+    }
+    Renderer* renderer = (Renderer*)sdl_renderer;
+
+    int screen_w, screen_h;
+    get_window_size(renderer->window, screen_w, screen_h);
+
+    V3 ndc;
+    ndc.x = ((2.0f * pos.x) / screen_w) - 1.0f;
+    ndc.y = 1.0f - ((2.0f * pos.y) / screen_h);
+    ndc.z = pos.z; // Assuming pos.z is already in the range [-1, 1]
+
+    return ndc;
+}
+
 V2 convert_to_uv_coordinates(V2 pos, int w, int h) {
 	V2 uv;
 	uv.x = pos.x / w;
@@ -774,7 +814,6 @@ int SDL_RenderDrawLine(SDL_Renderer* sdl_renderer, int x1, int y1, int x2, int y
 	vertices[1].pos = point_two;
 	vertices[1].color = c;
 	renderer->vertices.push_back(vertices[1]);
-
 
 	Command_Packet packet = {};
 	
@@ -983,8 +1022,8 @@ SDL_Texture* SDL_CreateTexture(SDL_Renderer* sdl_renderer, uint32_t format, int 
 	// Set the texture wrapping/filtering options (on the currently bound texture object)
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
 	// Generate the texture
 	// Just allocate the memory and give it data later
@@ -1907,8 +1946,11 @@ void prepare_to_draw_cube() {
 
 	glBindBuffer(GL_ARRAY_BUFFER, vbo);
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D), (void*)offsetof(Vertex_3D, pos));
+	glEnableVertexAttribArray(0);
 	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D), (void*)offsetof(Vertex_3D, color));
+	glEnableVertexAttribArray(1);
 	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D), (void*)offsetof(Vertex_3D, uv));
+	glEnableVertexAttribArray(2);
 	glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D), (void*)offsetof(Vertex_3D, normal));
 	glEnableVertexAttribArray(3);
 }
@@ -1931,6 +1973,36 @@ void draw_perlin_cube(SDL_Renderer* sdl_renderer, V3 pos, float perlin) {
 	mp_draw_cube(sdl_renderer, pos, result_texture);
 }
 
+void draw_cube_type(SDL_Renderer* sdl_renderer, V3 pos, Image_Type type) {
+	SDL_Texture* result = nullptr;
+
+	switch (type) {
+	case IT_Grass: {
+		result = images[type].texture;
+		break;
+	}
+	case IT_Dirt: {
+		result = images[type].texture;
+		break;
+	}
+	case IT_Cobblestone: {
+		result = images[type].texture;
+		break;
+	}
+	case IT_Air: {
+		result = nullptr;
+		break;
+	}
+	default: { // The default is just air 
+		break;
+	}
+	}
+
+	if (result != nullptr) {
+		mp_draw_cube(sdl_renderer, pos, result);
+	}
+}
+
 void mp_draw_cube(SDL_Renderer* sdl_renderer, V3 pos, SDL_Texture* texture) {
 	if (sdl_renderer == nullptr) {
 		log("ERROR: sdl_renderer is nullptr");
@@ -1942,10 +2014,10 @@ void mp_draw_cube(SDL_Renderer* sdl_renderer, V3 pos, SDL_Texture* texture) {
 
 	command_packet.command_type = CT_Draw_Call_3D;
 
-	command_packet.draw_call_3d_info.pos = pos;
-	command_packet.draw_call_3d_info.texture_handle = texture->handle;
+	command_packet.draw_call_3d_cube.pos = pos;
+	command_packet.draw_call_3d_cube.texture_handle = texture->handle;
 
-	renderer->command_packets_3d.push_back(command_packet);
+	renderer->command_packets_3d_cubes.push_back(command_packet);
 }
 
 typedef MX4 Matrix4;
@@ -2019,6 +2091,65 @@ void draw_cube(SDL_Renderer* sdl_renderer, V3 pos) {
 	glDrawArrays(GL_TRIANGLES, 0, ARRAYSIZE(cube));
 }
 
+Vertex_3D_Temp line[2] = { {0,-0.5,0}, {0,0.5,0} };
+
+// I don't need to upload the data every time I draw a cube
+void prepare_to_draw_lines() {
+	static GLuint vbo;
+	if (vbo == 0) {
+		glGenBuffers(1, &vbo);
+		glBindBuffer(GL_ARRAY_BUFFER, vbo);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(line), line, GL_STATIC_DRAW);
+	}
+
+	glBindBuffer(GL_ARRAY_BUFFER, vbo);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Temp), (void*)offsetof(Vertex_3D_Temp, pos));
+	glEnableVertexAttribArray(0);
+}
+
+void mp_draw_3d_line(SDL_Renderer* sdl_renderer, V3 pos, float angle_x_degrees, float angle_z_degrees) {
+    if (sdl_renderer == nullptr) {
+        log("ERROR: sdl_renderer is nullptr");
+        assert(false);
+    }
+	Renderer* renderer = (Renderer*)sdl_renderer;
+	
+	Command_Packet packet = {};
+
+	packet.draw_call_3d_line.pos = pos;
+	packet.draw_call_3d_line.angle_x_degrees = angle_x_degrees;
+	packet.draw_call_3d_line.angle_z_degrees = angle_z_degrees;
+
+	renderer->command_packets_3d_lines.push_back(packet);
+}
+
+void draw_line_3d(SDL_Renderer* sdl_renderer, V3 pos, float angle_x_degrees, float angle_z_degrees) {
+    if (sdl_renderer == nullptr) {
+        log("ERROR: sdl_renderer is nullptr");
+        assert(false);
+    }
+	Renderer* renderer = (Renderer*)sdl_renderer;
+
+    GLuint shader_program = shader_program_types[SPT_3D_Lines];
+    if (!shader_program) {
+        log("ERROR: Shader program not specified");
+        assert(false);
+    }
+    glUseProgram(shader_program);
+
+	prepare_to_draw_lines();
+
+	float angle_x_radians = angle_x_degrees * ((float)M_PI / 180.0f);
+	float angle_z_radians = angle_z_degrees * ((float)M_PI / 180.0f);
+	MX4 world_from_model = translation_matrix_mx_4(pos.x, pos.y, pos.z) * mat4_rotate_x(angle_x_radians) * mat4_rotate_z(angle_z_radians);
+    MX4 perspective_from_model = renderer->perspective_from_view * renderer->view_from_world * world_from_model;
+
+	GLuint perspective_from_model_location = glGetUniformLocation(shader_program, "perspective_from_model");
+	glUniformMatrix4fv(perspective_from_model_location, 1, GL_FALSE, perspective_from_model.e);
+
+    glDrawArrays(GL_LINES, 0, 2);
+}
+
 void execute_set_clip_rect_command(SDL_Renderer* sdl_renderer, Clip_Rect_Info info) {
     if (sdl_renderer == nullptr) {
         log("ERROR: sdl_renderer is nullptr");
@@ -2080,7 +2211,6 @@ void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
 		assert(false);
 	}
 	Renderer* renderer = (Renderer*)sdl_renderer;
-
 	glEnable(GL_CULL_FACE);
 	glFrontFace(GL_CCW);
 
@@ -2160,12 +2290,20 @@ void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
 	glEnable(GL_DEPTH_TEST);
 	glDepthFunc(GL_LESS);
 	prepare_to_draw_cube();
-	for (Command_Packet packet : renderer->command_packets_3d) {
-		glBindTexture(GL_TEXTURE_2D, packet.draw_call_3d_info.texture_handle);
-		draw_cube(sdl_renderer, packet.draw_call_3d_info.pos);
+	for (Command_Packet packet : renderer->command_packets_3d_cubes) {
+		if (packet.draw_call_3d_cube.texture_handle) {
+			glBindTexture(GL_TEXTURE_2D, packet.draw_call_3d_cube.texture_handle);
+		}
+		draw_cube(sdl_renderer, packet.draw_call_3d_cube.pos);
 	}
-	renderer->command_packets_3d.clear();
+	renderer->command_packets_3d_cubes.clear();
 	glDisable(GL_DEPTH_TEST);
+
+	prepare_to_draw_lines();
+	for (Command_Packet packet : renderer->command_packets_3d_lines) {
+		draw_line_3d(sdl_renderer, packet.draw_call_3d_line.pos, packet.draw_call_3d_line.angle_x_degrees, packet.draw_call_3d_line.angle_z_degrees);
+	}
+	renderer->command_packets_3d_lines.clear();
 
 	// This rebind may be pointless if I am only going with one vbo
 	glBindBuffer(GL_ARRAY_BUFFER, renderer->vbo);
@@ -2173,11 +2311,8 @@ void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, renderer->vertices_indices.size() * sizeof(Uint32), renderer->vertices_indices.data(), GL_STATIC_DRAW);
 
 	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos));
-	glEnableVertexAttribArray(0);
 	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, color));
-	glEnableVertexAttribArray(1);
 	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
-	glEnableVertexAttribArray(2);
 
 	// This could become the flush function
 	for (Command_Packet command_packet : renderer->command_packets) {

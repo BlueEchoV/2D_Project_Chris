@@ -5,6 +5,13 @@
 
 #include "Math.h"
 
+enum Color_Selector {
+    CS_Red,
+    CS_Green,
+    CS_Blue,
+    CS_Total
+};
+
 struct Key_State {
 	bool pressed_this_frame;
 	bool held_down;
@@ -250,6 +257,7 @@ enum Image_Type {
 	IT_Cobblestone,
 	IT_Dirt,
 	IT_Grass,
+    IT_Air,
 	IT_Total
 };
 
@@ -339,8 +347,12 @@ int SDL_RenderSetViewport(SDL_Renderer* sdl_renderer, const SDL_Rect* rect);
 void SDL_RenderGetViewport(SDL_Renderer* sdl_renderer, SDL_Rect* rect);
 
 void draw_debug_images(SDL_Renderer* sdl_renderer);
+void draw_cube_type(SDL_Renderer* sdl_renderer, V3 pos, Image_Type type);
 void mp_draw_cube(SDL_Renderer* sdl_renderer, V3 pos, SDL_Texture* texture);
 void draw_perlin_cube(SDL_Renderer* sdl_renderer, V3 pos, float perlin);
+
+void mp_draw_3d_line(SDL_Renderer* sdl_renderer, V3 pos, float angle_x_degrees, float angle_z_degrees);
+void mp_draw_cube_wire_frame();
 
 Image create_Image(SDL_Renderer* sdl_renderer, const char* file_Path);
 
