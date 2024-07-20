@@ -26,8 +26,20 @@ struct ExitScopeHelp
 	ExitScope<T> operator+(T t) { return t; }
 };
 
+template <typename T>
+T clamp(T value, T min, T max) {
+	if (value < min) {
+		return min;
+	}
+	if (value > max) {
+		return max;
+	}
+    return value;
+}
+
 #define _SG_CONCAT(a, b) a ## b
 #define SG_CONCAT(a, b) _SG_CONCAT(a, b)
 #define DEFER auto SG_CONCAT(defer__, __LINE__) = ExitScopeHelp() + [&]()
+#define REF(v) (void)v
 
 void log(const char* format, ...);

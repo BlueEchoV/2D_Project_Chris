@@ -5,6 +5,227 @@
 
 #include "Math.h"
 
+#include <stdio.h>
+#include <Windows.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <gl/GL.h>
+
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
+#define GL_VERTEX_SHADER                  0x8B31
+#define GL_COMPILE_STATUS                 0x8B81
+#define GL_FRAGMENT_SHADER                0x8B30
+#define GL_LINK_STATUS                    0x8B82
+#define GL_ARRAY_BUFFER                   0x8892
+#define GL_ELEMENT_ARRAY_BUFFER           0x8893
+#define GL_STATIC_DRAW                    0x88E4
+#define GL_STATIC_READ                    0x88E5
+#define GL_STATIC_COPY                    0x88E6
+#define GL_DYNAMIC_DRAW                   0x88E8
+#define GL_DYNAMIC_READ                   0x88E9
+#define GL_DYNAMIC_COPY                   0x88EA
+#define WGL_CONTEXT_MAJOR_VERSION_ARB     0x2091
+#define WGL_CONTEXT_MINOR_VERSION_ARB     0x2092
+#define WGL_CONTEXT_FLAGS_ARB             0x2094
+#define WGL_CONTEXT_DEBUG_BIT_ARB         0x00000001
+#define WGL_CONTEXT_PROFILE_MASK_ARB      0x9126
+#define WGL_CONTEXT_CORE_PROFILE_BIT_ARB  0x00000001
+
+#define GL_TEXTURE0                       0x84C0
+#define GL_TEXTURE1                       0x84C1
+
+#define GL_PROGRAM_POINT_SIZE             0x8642
+
+#define GL_FUNC_ADD                       0x8006
+
+typedef int64_t GLsizeiptr;
+
+typedef GLuint(*glCreateShaderFunc)(GLenum shaderType);
+glCreateShaderFunc glCreateShader = {};
+
+typedef char GLchar;
+
+typedef void(*glShaderSourceFunc)(GLuint shader, GLsizei count, const GLchar** string, const GLint* length);
+glShaderSourceFunc glShaderSource = {};
+
+typedef void(*glCompileShaderFunc)(GLuint shader);
+glCompileShaderFunc glCompileShader = {};
+
+typedef void(*glGetShaderivFunc)(GLuint shader, GLenum pname, GLint* params);
+glGetShaderivFunc glGetShaderiv = {};
+
+typedef void(*glGetShaderInfoLogFunc)(GLuint shader, GLsizei maxLength, GLsizei* length, GLchar* infoLog);
+glGetShaderInfoLogFunc glGetShaderInfoLog = {};
+
+typedef GLuint(*glCreateProgramFunc)(void);
+glCreateProgramFunc glCreateProgram = {};
+
+typedef void(*glDeleteProgramFunc)(GLuint program);
+glDeleteProgramFunc glDeleteProgram = {};
+
+typedef void(*glAttachShaderFunc)(GLuint program, GLuint shader);
+glAttachShaderFunc glAttachShader = {};
+
+typedef void(*glLinkProgramFunc)(GLuint program);
+glLinkProgramFunc glLinkProgram = {};
+
+typedef void(*glGetProgramivFunc)(GLuint program, GLenum pname, GLint* params);
+glGetProgramivFunc glGetProgramiv = {};
+
+typedef void(*glGetProgramInfoLogFunc)(GLuint program, GLsizei maxLength, GLsizei* length, GLchar* infoLog);
+glGetProgramInfoLogFunc glGetProgramInfoLog = {};
+
+typedef void(*glDetachShaderFunc)(GLuint program, GLuint shader);
+glDetachShaderFunc glDetachShader = {};
+
+typedef void(*glDeleteShaderFunc)(GLuint shader);
+glDeleteShaderFunc glDeleteShader = {};
+
+typedef void(*glUseProgramFunc)(GLuint program);
+glUseProgramFunc glUseProgram = {};
+
+typedef void(*glGenVertexArraysFunc)(GLsizei n, GLuint* arrays);
+glGenVertexArraysFunc glGenVertexArrays = {};
+
+typedef void(*glGenBuffersFunc)(GLsizei n, GLuint* buffers);
+glGenBuffersFunc glGenBuffers = {};
+
+typedef void(*glVertexAttribPointerFunc)(GLuint index, GLint size, GLenum type, GLboolean normalized, GLsizei stride, const void* pointer);
+glVertexAttribPointerFunc glVertexAttribPointer = {};
+
+typedef void(*glEnableVertexAttribArrayFunc)(GLuint index);
+glEnableVertexAttribArrayFunc glEnableVertexAttribArray = {};
+
+typedef void(*glDisableVertexAttribArrayFunc)(GLuint index);
+glDisableVertexAttribArrayFunc glDisableVertexAttribArray = {};
+
+typedef void(*glBindVertexArrayFunc)(GLuint array);
+glBindVertexArrayFunc glBindVertexArray = {};
+
+typedef void(*glBindBufferFunc)(GLenum target, GLuint buffer);
+glBindBufferFunc glBindBuffer = {};
+
+typedef void(*glBufferDataFunc)(GLenum target, GLsizeiptr size, const void* data, GLenum usage);
+glBufferDataFunc glBufferData = {};
+
+typedef GLuint(*glGetUniformLocationFunc)(GLuint program, const GLchar* name);
+glGetUniformLocationFunc glGetUniformLocation = {};
+
+typedef void(*glUniform1fFunc)(GLint location, GLfloat v0);
+glUniform1fFunc glUniform1f = {};
+
+typedef void (*glUniformMatrix4fvFunc)(GLint location, GLsizei count, GLboolean transpose, const GLfloat *value);
+glUniformMatrix4fvFunc glUniformMatrix4fv = {};
+
+typedef HGLRC(WINAPI* wglCreateContextAttribsARBFunc) (HDC hDC, HGLRC hShareContext, const int* attribList);
+wglCreateContextAttribsARBFunc wglCreateContextAttribsARB = {};
+
+typedef void(*glActiveTextureFunc)(GLenum texture);
+glActiveTextureFunc glActiveTexture = {};
+
+typedef void(*glUniform1iFunc)(GLint location, GLint v0);
+glUniform1iFunc glUniform1i = {};
+
+typedef void(*glBlendEquationFunc)(GLenum mode);
+glBlendEquationFunc glBlendEquation = {};
+
+void loadGLFunctions() {
+	glCreateShader = (glCreateShaderFunc)wglGetProcAddress("glCreateShader");
+	glShaderSource = (glShaderSourceFunc)wglGetProcAddress("glShaderSource");
+	glCompileShader = (glCompileShaderFunc)wglGetProcAddress("glCompileShader");
+	glGetShaderiv = (glGetShaderivFunc)wglGetProcAddress("glGetShaderiv");
+	glGetShaderInfoLog = (glGetShaderInfoLogFunc)wglGetProcAddress("glGetShaderInfoLog");
+
+	glCreateProgram = (glCreateProgramFunc)wglGetProcAddress("glCreateProgram");
+
+	glDeleteProgram = (glDeleteProgramFunc)wglGetProcAddress("glDeleteProgram");
+	glAttachShader = (glAttachShaderFunc)wglGetProcAddress("glAttachShader");
+	glLinkProgram = (glLinkProgramFunc)wglGetProcAddress("glLinkProgram");
+	glGetProgramiv = (glGetProgramivFunc)wglGetProcAddress("glGetProgramiv");
+	glGetProgramInfoLog = (glGetProgramInfoLogFunc)wglGetProcAddress("glGetProgramInfoLog");
+	glDetachShader = (glDetachShaderFunc)wglGetProcAddress("glDetachShader");
+	glDeleteShader = (glDeleteShaderFunc)wglGetProcAddress("glDeleteShader");
+	glUseProgram = (glUseProgramFunc)wglGetProcAddress("glUseProgram");
+
+	glGenVertexArrays = (glGenVertexArraysFunc)wglGetProcAddress("glGenVertexArrays");
+	glGenBuffers = (glGenBuffersFunc)wglGetProcAddress("glGenBuffers");
+	glVertexAttribPointer = (glVertexAttribPointerFunc)wglGetProcAddress("glVertexAttribPointer");
+	glEnableVertexAttribArray = (glEnableVertexAttribArrayFunc)wglGetProcAddress("glEnableVertexAttribArray");
+	glDisableVertexAttribArray = (glDisableVertexAttribArrayFunc)wglGetProcAddress("glDisableVertexAttribArray");
+	glBindVertexArray = (glBindVertexArrayFunc)wglGetProcAddress("glBindVertexArray");
+	glBindBuffer = (glBindBufferFunc)wglGetProcAddress("glBindBuffer");
+	glBufferData = (glBufferDataFunc)wglGetProcAddress("glBufferData");
+
+	glGetUniformLocation = (glGetUniformLocationFunc)wglGetProcAddress("glGetUniformLocation");
+	glUniform1f = (glUniform1fFunc)wglGetProcAddress("glUniform1f");
+	glUniform1i = (glUniform1iFunc)wglGetProcAddress("glUniform1i");
+	glUniformMatrix4fv = (glUniformMatrix4fvFunc)wglGetProcAddress("glUniformMatrix4fv");
+
+	wglCreateContextAttribsARB = (wglCreateContextAttribsARBFunc)wglGetProcAddress("wglCreateContextAttribsARB");
+
+	glActiveTexture = (glActiveTextureFunc)wglGetProcAddress("glActiveTexture");
+}
+
+ enum Shader_Program_Type {
+	SPT_COLOR,
+	SPT_TEXTURE,
+	SPT_3D,
+	SPT_3D_Lines,
+	SPT_Cube_Face,
+	SPT_TOTAL
+};
+
+ GLuint create_shader_program(const char* vertex_shader_file_path, const char* fragment_shader_file_path);
+ 
+// Set initialization list to 0
+static GLuint shader_program_types[SPT_TOTAL] = { 0 };
+
+void load_shaders() {
+	const char* color_vertex_shader_file_path = "Shaders\\vertex_shader_color.txt";
+	const char* color_fragment_shader_file_path = "Shaders\\fragment_shader_color.txt";
+	GLuint color_shader = create_shader_program(color_vertex_shader_file_path, color_fragment_shader_file_path);
+	shader_program_types[SPT_COLOR] = color_shader;
+
+	const char* texture_vertex_shader_file_path = "Shaders\\vertex_shader_texture.txt";
+	const char* texture_fragment_shader_file_path = "Shaders\\fragment_shader_texture.txt";
+	GLuint texture_shader = create_shader_program(texture_vertex_shader_file_path, texture_fragment_shader_file_path);
+	shader_program_types[SPT_TEXTURE] = texture_shader;
+
+	const char* three_d_vertex_shader_file_path = "Shaders\\vertex_shader_3d.txt";
+	const char* three_d_fragment_shader_file_path = "Shaders\\fragment_shader_3d.txt";
+	GLuint three_d_shader = create_shader_program(three_d_vertex_shader_file_path, three_d_fragment_shader_file_path);
+	shader_program_types[SPT_3D] = three_d_shader;
+
+	const char* three_d_lines_vertex_shader_file_path = "Shaders\\vertex_shader_3d_lines.txt";
+	const char* three_d_lines_fragment_shader_file_path = "Shaders\\fragment_shader_3d_lines.txt";
+	GLuint three_d_lines_shader = create_shader_program(three_d_lines_vertex_shader_file_path, three_d_lines_fragment_shader_file_path);
+	shader_program_types[SPT_3D_Lines] = three_d_lines_shader;
+
+	const char* v_cube_face_file_path = "Shaders\\v_cube_face.txt";
+	const char* f_cube_face_file_path = "Shaders\\f_cube_face.txt";
+	GLuint cube_face_shader = create_shader_program(v_cube_face_file_path, f_cube_face_file_path);
+	shader_program_types[SPT_Cube_Face] = cube_face_shader;
+}
+
+struct SDL_Texture;
+
+struct Image {
+	int width;
+	int height;
+	const char* file_Path;
+	SDL_Texture* texture;
+	unsigned char* pixel_Data;
+};
+
+struct MP_Rect_3D {
+    V3 top_left;
+    V3 top_right;
+    V3 bottom_right;
+    V3 bottom_left;
+};
+
 enum Color_Selector {
     CS_Red,
     CS_Green,
@@ -18,10 +239,6 @@ struct Key_State {
 };
 
 extern std::unordered_map<LPARAM, Key_State> key_states;
-
-struct V2 {
-	float x, y;
-};
 
 // Make a function that can return something and expose the variable over globals
 V2 get_mouse_delta();
@@ -242,35 +459,6 @@ typedef enum
         SDL_DEFINE_PIXELFOURCC('O', 'E', 'S', ' ')
 } SDL_PixelFormatEnum;
 
-struct SDL_Rect {
-	int x, y;
-	int w, h;
-};
-
-struct SDL_Point {
-	int x, y;
-};
-
-struct SDL_Texture;
-
-enum Image_Type {
-	IT_Cobblestone,
-	IT_Dirt,
-	IT_Grass,
-    IT_Air,
-	IT_Total
-};
-
-SDL_Texture* get_perlin_noise_texture(float perlin_noise);
-
-struct Image {
-	int width;
-	int height;
-	const char* file_Path;
-	SDL_Texture* texture;
-	unsigned char* pixel_Data;
-};
-
 typedef enum SDL_BlendMode
 {
     SDL_BLENDMODE_NONE = 0x00000000,     /**< no blending
@@ -302,6 +490,157 @@ typedef enum
     SDL_FLIP_HORIZONTAL = 0x00000001,    /**< flip horizontally */
     SDL_FLIP_VERTICAL = 0x00000002     /**< flip vertically */
 } SDL_RendererFlip;
+struct SDL_Rect {
+	int x, y;
+	int w, h;
+};
+
+struct SDL_Point {
+	int x, y;
+};
+
+struct Color_8 {
+	uint8_t r;
+	uint8_t g;
+	uint8_t b;
+	uint8_t a;
+};
+
+struct Color_f {
+	float r;
+	float g;
+	float b;
+	float a;
+};
+
+struct Vertex {
+	V2 pos;
+	Color_f color;
+	V2 uv;
+};
+
+struct Vertex_3D_Temp {
+	V3 pos;
+};
+
+struct Draw_Call_Info {
+	int total_vertices;
+	size_t starting_index;
+	Uint32 index_buffer_index;
+	int total_indices;
+	int draw_type;
+	Shader_Program_Type type;
+	GLuint texture_handle;
+	SDL_BlendMode blend_mode;
+};
+
+struct Clip_Rect_Info {
+	SDL_Rect* rect;
+	GLenum setting;
+};
+
+struct Viewport_Info {
+	SDL_Rect* rect;
+};
+
+struct Clear_Screen_Info {
+	Color_8 clear_draw_color;
+};
+
+struct Draw_Call_3D_Cube {
+	V3 pos;
+	GLuint texture_handle;
+};
+
+struct Draw_Call_3D_Line {
+	int total_vertices;
+	size_t starting_index;
+	Shader_Program_Type shader_type;
+};
+
+struct Draw_Call_3D_Cube_Face {
+	MP_Rect_3D rect;
+	V3 pos_ws;
+	GLuint texture_handle;
+
+	int total_vertices;
+	size_t starting_index;
+	Shader_Program_Type shader_type;
+};
+
+enum Command_Type {
+	CT_Set_Clip_Rect,
+	CT_Set_Viewport,
+	CT_Draw_Call,
+	CT_Draw_Call_3D,
+	CT_Draw_Call_3D_Lines,
+	CT_Draw_Call_3D_Cube_Face,
+	CT_Clear_Screen
+};
+
+struct Command_Packet {
+	Command_Type type;
+
+	// Filled based off the command 
+	// Chris isn't a huge fan of this naming convention ('info')
+	Draw_Call_Info draw_call_info;
+	Clip_Rect_Info clip_rect_info;
+	Clear_Screen_Info clear_screen_info;
+	Viewport_Info viewport_info;
+
+	Draw_Call_3D_Cube draw_call_3d_cube;
+	Draw_Call_3D_Line draw_call_3d_line;
+	Draw_Call_3D_Cube_Face draw_call_3d_cube_face;
+
+	// Draw color needs to be set for the flush 
+	Color_8 draw_color;
+};
+ 
+struct Vertex_3D {
+	V3 pos;
+	Color_f color;
+	V2 uv;
+	V3 normal;
+};
+
+
+struct Renderer {
+	HWND window;
+	HDC hdc;
+	Color_8 render_draw_color;
+	SDL_BlendMode blend_mode;
+
+	GLuint vao;
+	GLuint vbo;
+	std::vector<Vertex> vertices;
+	GLuint ebo;
+	std::vector<Uint32> vertices_indices;
+	std::vector<Command_Packet> command_packets;
+
+	std::vector<Vertex_3D_Temp> vertices_3d;
+
+	GLuint vbo_cube_faces;
+	std::vector<Vertex_3D> vertices_cube_faces;
+
+	bool clip_rect_set;
+	SDL_Rect clip_rect;
+
+	SDL_Rect viewport;
+
+	float time;
+	float player_speed;
+	V3 player_pos = { 0, 0, 0 };
+
+	// x or z axis (tbd)
+	float pitch;
+	float roll;
+	// y 
+	float yaw;
+
+	MX4 perspective_from_view;
+	MX4 view_from_world;
+};
+
 
 struct SDL_Renderer;
 SDL_Renderer* SDL_CreateRenderer(HWND window, int index, uint32_t flags);
@@ -332,6 +671,7 @@ int SDL_GetTextureAlphaMod(SDL_Texture* texture, Uint8* alpha);
 
 void SDL_UnlockTexture(SDL_Texture* texture);
 int SDL_LockTexture(SDL_Texture* texture, const SDL_Rect* rect, void **pixels, int *pitch);
+int SDL_SetTextureBlendMode(SDL_Texture* texture, SDL_BlendMode blendMode);
 SDL_Texture* SDL_CreateTexture(SDL_Renderer* sdl_renderer, uint32_t format, int access, int w, int h);
 int SDL_UpdateTexture(SDL_Texture* texture, const SDL_Rect* rect, const void *pixels, int pitch);
 void SDL_DestroyTexture(SDL_Texture* texture);
@@ -347,8 +687,8 @@ int SDL_RenderSetViewport(SDL_Renderer* sdl_renderer, const SDL_Rect* rect);
 void SDL_RenderGetViewport(SDL_Renderer* sdl_renderer, SDL_Rect* rect);
 
 void draw_debug_images(SDL_Renderer* sdl_renderer);
-void draw_cube_type(SDL_Renderer* sdl_renderer, V3 pos, Image_Type type);
 void mp_draw_cube(SDL_Renderer* sdl_renderer, V3 pos, SDL_Texture* texture);
+void mp_draw_cube_face(SDL_Renderer* sdl_renderer, MP_Rect_3D rect, SDL_Texture* texture);
 void draw_perlin_cube(SDL_Renderer* sdl_renderer, V3 pos, float perlin);
 
 void mp_draw_line_3d(SDL_Renderer* sdl_renderer, V3 pos_1, V3 pos_2);

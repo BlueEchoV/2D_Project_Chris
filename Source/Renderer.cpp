@@ -8,170 +8,7 @@
 #include <fstream>
 #include <sstream>
 #include <vector>
-
-#define STB_IMAGE_IMPLEMENTATION
-#include "stb_image.h"
-
-#include <stdio.h>
-#include <Windows.h>
-#include <stdint.h>
-#include <stdlib.h>
-#include <gl/GL.h>
-
-#define GL_VERTEX_SHADER                  0x8B31
-#define GL_COMPILE_STATUS                 0x8B81
-#define GL_FRAGMENT_SHADER                0x8B30
-#define GL_LINK_STATUS                    0x8B82
-#define GL_ARRAY_BUFFER                   0x8892
-#define GL_ELEMENT_ARRAY_BUFFER           0x8893
-#define GL_STATIC_DRAW                    0x88E4
-#define GL_STATIC_READ                    0x88E5
-#define GL_STATIC_COPY                    0x88E6
-#define GL_DYNAMIC_DRAW                   0x88E8
-#define GL_DYNAMIC_READ                   0x88E9
-#define GL_DYNAMIC_COPY                   0x88EA
-#define WGL_CONTEXT_MAJOR_VERSION_ARB     0x2091
-#define WGL_CONTEXT_MINOR_VERSION_ARB     0x2092
-#define WGL_CONTEXT_FLAGS_ARB             0x2094
-#define WGL_CONTEXT_DEBUG_BIT_ARB         0x00000001
-#define WGL_CONTEXT_PROFILE_MASK_ARB      0x9126
-#define WGL_CONTEXT_CORE_PROFILE_BIT_ARB  0x00000001
-
-#define GL_TEXTURE0                       0x84C0
-#define GL_TEXTURE1                       0x84C1
-
-#define GL_PROGRAM_POINT_SIZE             0x8642
-
-#define GL_FUNC_ADD                       0x8006
-
-typedef int64_t GLsizeiptr;
-
-typedef GLuint(*glCreateShaderFunc)(GLenum shaderType);
-glCreateShaderFunc glCreateShader = {};
-
-typedef char GLchar;
-
-typedef void(*glShaderSourceFunc)(GLuint shader, GLsizei count, const GLchar** string, const GLint* length);
-glShaderSourceFunc glShaderSource = {};
-
-typedef void(*glCompileShaderFunc)(GLuint shader);
-glCompileShaderFunc glCompileShader = {};
-
-typedef void(*glGetShaderivFunc)(GLuint shader, GLenum pname, GLint* params);
-glGetShaderivFunc glGetShaderiv = {};
-
-typedef void(*glGetShaderInfoLogFunc)(GLuint shader, GLsizei maxLength, GLsizei* length, GLchar* infoLog);
-glGetShaderInfoLogFunc glGetShaderInfoLog = {};
-
-typedef GLuint(*glCreateProgramFunc)(void);
-glCreateProgramFunc glCreateProgram = {};
-
-typedef void(*glDeleteProgramFunc)(GLuint program);
-glDeleteProgramFunc glDeleteProgram = {};
-
-typedef void(*glAttachShaderFunc)(GLuint program, GLuint shader);
-glAttachShaderFunc glAttachShader = {};
-
-typedef void(*glLinkProgramFunc)(GLuint program);
-glLinkProgramFunc glLinkProgram = {};
-
-typedef void(*glGetProgramivFunc)(GLuint program, GLenum pname, GLint* params);
-glGetProgramivFunc glGetProgramiv = {};
-
-typedef void(*glGetProgramInfoLogFunc)(GLuint program, GLsizei maxLength, GLsizei* length, GLchar* infoLog);
-glGetProgramInfoLogFunc glGetProgramInfoLog = {};
-
-typedef void(*glDetachShaderFunc)(GLuint program, GLuint shader);
-glDetachShaderFunc glDetachShader = {};
-
-typedef void(*glDeleteShaderFunc)(GLuint shader);
-glDeleteShaderFunc glDeleteShader = {};
-
-typedef void(*glUseProgramFunc)(GLuint program);
-glUseProgramFunc glUseProgram = {};
-
-typedef void(*glGenVertexArraysFunc)(GLsizei n, GLuint* arrays);
-glGenVertexArraysFunc glGenVertexArrays = {};
-
-typedef void(*glGenBuffersFunc)(GLsizei n, GLuint* buffers);
-glGenBuffersFunc glGenBuffers = {};
-
-typedef void(*glVertexAttribPointerFunc)(GLuint index, GLint size, GLenum type, GLboolean normalized, GLsizei stride, const void* pointer);
-glVertexAttribPointerFunc glVertexAttribPointer = {};
-
-typedef void(*glEnableVertexAttribArrayFunc)(GLuint index);
-glEnableVertexAttribArrayFunc glEnableVertexAttribArray = {};
-
-typedef void(*glDisableVertexAttribArrayFunc)(GLuint index);
-glDisableVertexAttribArrayFunc glDisableVertexAttribArray = {};
-
-typedef void(*glBindVertexArrayFunc)(GLuint array);
-glBindVertexArrayFunc glBindVertexArray = {};
-
-typedef void(*glBindBufferFunc)(GLenum target, GLuint buffer);
-glBindBufferFunc glBindBuffer = {};
-
-typedef void(*glBufferDataFunc)(GLenum target, GLsizeiptr size, const void* data, GLenum usage);
-glBufferDataFunc glBufferData = {};
-
-typedef GLuint(*glGetUniformLocationFunc)(GLuint program, const GLchar* name);
-glGetUniformLocationFunc glGetUniformLocation = {};
-
-typedef void(*glUniform1fFunc)(GLint location, GLfloat v0);
-glUniform1fFunc glUniform1f = {};
-
-typedef void (*glUniformMatrix4fvFunc)(GLint location, GLsizei count, GLboolean transpose, const GLfloat *value);
-glUniformMatrix4fvFunc glUniformMatrix4fv = {};
-
-typedef HGLRC(WINAPI* wglCreateContextAttribsARBFunc) (HDC hDC, HGLRC hShareContext, const int* attribList);
-wglCreateContextAttribsARBFunc wglCreateContextAttribsARB = {};
-
-typedef void(*glActiveTextureFunc)(GLenum texture);
-glActiveTextureFunc glActiveTexture = {};
-
-typedef void(*glUniform1iFunc)(GLint location, GLint v0);
-glUniform1iFunc glUniform1i = {};
-
-typedef void(*glBlendEquationFunc)(GLenum mode);
-glBlendEquationFunc glBlendEquation = {};
-
-void loadGLFunctions() {
-	glCreateShader = (glCreateShaderFunc)wglGetProcAddress("glCreateShader");
-	glShaderSource = (glShaderSourceFunc)wglGetProcAddress("glShaderSource");
-	glCompileShader = (glCompileShaderFunc)wglGetProcAddress("glCompileShader");
-	glGetShaderiv = (glGetShaderivFunc)wglGetProcAddress("glGetShaderiv");
-	glGetShaderInfoLog = (glGetShaderInfoLogFunc)wglGetProcAddress("glGetShaderInfoLog");
-
-	glCreateProgram = (glCreateProgramFunc)wglGetProcAddress("glCreateProgram");
-
-	glDeleteProgram = (glDeleteProgramFunc)wglGetProcAddress("glDeleteProgram");
-	glAttachShader = (glAttachShaderFunc)wglGetProcAddress("glAttachShader");
-	glLinkProgram = (glLinkProgramFunc)wglGetProcAddress("glLinkProgram");
-	glGetProgramiv = (glGetProgramivFunc)wglGetProcAddress("glGetProgramiv");
-	glGetProgramInfoLog = (glGetProgramInfoLogFunc)wglGetProcAddress("glGetProgramInfoLog");
-	glDetachShader = (glDetachShaderFunc)wglGetProcAddress("glDetachShader");
-	glDeleteShader = (glDeleteShaderFunc)wglGetProcAddress("glDeleteShader");
-	glUseProgram = (glUseProgramFunc)wglGetProcAddress("glUseProgram");
-
-	glGenVertexArrays = (glGenVertexArraysFunc)wglGetProcAddress("glGenVertexArrays");
-	glGenBuffers = (glGenBuffersFunc)wglGetProcAddress("glGenBuffers");
-	glVertexAttribPointer = (glVertexAttribPointerFunc)wglGetProcAddress("glVertexAttribPointer");
-	glEnableVertexAttribArray = (glEnableVertexAttribArrayFunc)wglGetProcAddress("glEnableVertexAttribArray");
-	glDisableVertexAttribArray = (glDisableVertexAttribArrayFunc)wglGetProcAddress("glDisableVertexAttribArray");
-	glBindVertexArray = (glBindVertexArrayFunc)wglGetProcAddress("glBindVertexArray");
-	glBindBuffer = (glBindBufferFunc)wglGetProcAddress("glBindBuffer");
-	glBufferData = (glBufferDataFunc)wglGetProcAddress("glBufferData");
-
-	glGetUniformLocation = (glGetUniformLocationFunc)wglGetProcAddress("glGetUniformLocation");
-	glUniform1f = (glUniform1fFunc)wglGetProcAddress("glUniform1f");
-	glUniform1i = (glUniform1iFunc)wglGetProcAddress("glUniform1i");
-	glUniformMatrix4fv = (glUniformMatrix4fvFunc)wglGetProcAddress("glUniformMatrix4fv");
-
-	wglCreateContextAttribsARB = (wglCreateContextAttribsARBFunc)wglGetProcAddress("wglCreateContextAttribsARB");
-
-	glActiveTexture = (glActiveTextureFunc)wglGetProcAddress("glActiveTexture");
-
-}
+#include <assert.h>
 
 #if 0
 std::string vertex_Shader =
@@ -255,24 +92,6 @@ void main()
 #endif
 // *********************************************************
 
-struct Color_f {
-	float r;
-	float g;
-	float b;
-	float a;
-};
-
-struct Vertex {
-	V2 pos;
-	Color_f color;
-	V2 uv;
-};
-
-struct Vertex_3D_Temp {
-	V3 pos;
-};
-
-
 
 GLuint create_shader(const std::string shader_file_path, GLenum shader_type) {
 	std::ifstream file(shader_file_path);
@@ -324,175 +143,6 @@ GLuint create_shader_program(const char* vertex_shader_file_path, const char* fr
 	return result;
 }
 
-struct Color_8 {
-	uint8_t r;
-	uint8_t g;
-	uint8_t b;
-	uint8_t a;
-};
-
- enum Shader_Program_Type {
-	SPT_COLOR,
-	SPT_TEXTURE,
-	SPT_3D,
-	SPT_3D_Lines,
-	SPT_TOTAL
-};
-
-struct Draw_Call_Info {
-	int total_vertices;
-	size_t starting_index;
-	Uint32 index_buffer_index;
-	int total_indices;
-	int draw_type;
-	Shader_Program_Type type;
-	GLuint texture_handle;
-	SDL_BlendMode blend_mode;
-};
-
-struct Clip_Rect_Info {
-	SDL_Rect* rect;
-	GLenum setting;
-};
-
-struct Viewport_Info {
-	SDL_Rect* rect;
-};
-
-struct Clear_Screen_Info {
-	Color_8 clear_draw_color;
-};
-
-struct Draw_Call_3D_Cube {
-	V3 pos;
-	GLuint texture_handle;
-};
-
-struct Draw_Call_3D_Line {
-	int total_vertices;
-	size_t starting_index;
-	Shader_Program_Type shader_type;
-};
-
-enum Command_Type {
-	CT_Set_Clip_Rect,
-	CT_Set_Viewport,
-	CT_Draw_Call,
-	CT_Draw_Call_3D,
-	CT_Clear_Screen
-};
-
-struct Command_Packet {
-	Command_Type command_type;
-
-	// Filled based off the command 
-	// Chris isn't a huge fan of this naming convention ('info')
-	Draw_Call_Info draw_call_info;
-	Clip_Rect_Info clip_rect_info;
-	Clear_Screen_Info clear_screen_info;
-	Viewport_Info viewport_info;
-
-	Draw_Call_3D_Cube draw_call_3d_cube;
-	Draw_Call_3D_Line draw_call_3d_line;
-
-	// Draw color needs to be set for the flush 
-	Color_8 draw_color;
-};
- 
-struct Renderer {
-	HWND window;
-	HDC hdc;
-	Color_8 render_draw_color;
-	SDL_BlendMode blend_mode;
-
-	GLuint vao;
-	GLuint vbo;
-	std::vector<Vertex> vertices;
-	GLuint ebo;
-	std::vector<Uint32> vertices_indices;
-	std::vector<Command_Packet> command_packets;
-	std::vector<Command_Packet> command_packets_3d_cubes;
-
-	std::vector<Vertex_3D_Temp> vertices_3d;
-	std::vector<Command_Packet> command_packets_3d_lines;
-
-	bool clip_rect_set;
-	SDL_Rect clip_rect;
-
-	SDL_Rect viewport;
-
-	float time;
-	float player_speed;
-	V3 player_pos = { 0, 0, 0 };
-
-	// x or z axis (tbd)
-	float pitch;
-	float roll;
-	// y 
-	float yaw;
-
-	MX4 perspective_from_view;
-	MX4 view_from_world;
-};
-
-// Set initialization list to 0
-static GLuint shader_program_types[SPT_TOTAL] = { 0 };
-void load_shaders() {
-	const char* color_vertex_shader_file_path = "Shaders\\vertex_shader_color.txt";
-	const char* color_fragment_shader_file_path = "Shaders\\fragment_shader_color.txt";
-	GLuint color_shader = create_shader_program(color_vertex_shader_file_path, color_fragment_shader_file_path);
-	shader_program_types[SPT_COLOR] = color_shader;
-
-	const char* texture_vertex_shader_file_path = "Shaders\\vertex_shader_texture.txt";
-	const char* texture_fragment_shader_file_path = "Shaders\\fragment_shader_texture.txt";
-	GLuint texture_shader = create_shader_program(texture_vertex_shader_file_path, texture_fragment_shader_file_path);
-	shader_program_types[SPT_TEXTURE] = texture_shader;
-
-	const char* three_d_vertex_shader_file_path = "Shaders\\vertex_shader_3d.txt";
-	const char* three_d_fragment_shader_file_path = "Shaders\\fragment_shader_3d.txt";
-	GLuint three_d_shader = create_shader_program(three_d_vertex_shader_file_path, three_d_fragment_shader_file_path);
-	shader_program_types[SPT_3D] = three_d_shader;
-
-	const char* three_d_lines_vertex_shader_file_path = "Shaders\\vertex_shader_3d_lines.txt";
-	const char* three_d_lines_fragment_shader_file_path = "Shaders\\fragment_shader_3d_lines.txt";
-	GLuint three_d_lines_shader = create_shader_program(three_d_lines_vertex_shader_file_path, three_d_lines_fragment_shader_file_path);
-	shader_program_types[SPT_3D_Lines] = three_d_lines_shader;
-}
-
-Image images[IT_Total] = {};
-
-SDL_Texture* get_perlin_noise_texture(float perlin_noise) {
-	Image_Type result;
-
-	if (perlin_noise > -0.05) {
-		result = IT_Cobblestone;
-	}
-	else if (perlin_noise > -0.15) {
-		result = IT_Dirt;
-	}
-	else if (perlin_noise > -0.25) {
-		result = IT_Grass;
-	} else {
-		return nullptr;
-	}
-
-	return images[result].texture;
-}
-
-void init_images(SDL_Renderer* sdl_renderer) {
-	if (sdl_renderer == nullptr) {
-		log("ERROR: sdl_renderer is nullptr");
-		assert(false);
-		return;
-	}
-
-	images[IT_Cobblestone] = create_Image(sdl_renderer, "assets\\cobblestone.png");
-	SDL_SetTextureBlendMode(images[IT_Cobblestone].texture, SDL_BLENDMODE_BLEND);
-	images[IT_Dirt] = create_Image(sdl_renderer, "assets\\dirt.png");
-	SDL_SetTextureBlendMode(images[IT_Dirt].texture, SDL_BLENDMODE_BLEND);
-	images[IT_Grass] = create_Image(sdl_renderer, "assets\\grass.png");
-	SDL_SetTextureBlendMode(images[IT_Grass].texture, SDL_BLENDMODE_BLEND);
-}
 
 #define REF(v) (void)v
 // Changing back to a SDL_Window when we transfer it back to other project
@@ -577,8 +227,6 @@ SDL_Renderer* SDL_CreateRenderer(HWND window, int index, uint32_t flags) {
 
 	load_shaders();
 
-	init_images((SDL_Renderer*)renderer);
-
 	renderer->clip_rect_set = false;
 
 	return (SDL_Renderer*)renderer;
@@ -653,7 +301,7 @@ int SDL_RenderClear(SDL_Renderer* sdl_renderer) {
 	Command_Packet packet = {};
 
 	packet.draw_color = renderer->render_draw_color;
-	packet.command_type = CT_Clear_Screen;
+	packet.type = CT_Clear_Screen;
 
 	packet.clear_screen_info.clear_draw_color = renderer->render_draw_color;
 
@@ -694,11 +342,8 @@ V3 convert_to_ndc_v3(SDL_Renderer* sdl_renderer, V3 pos) {
 
 	V3 ndc = {};
     ndc.x = ((2.0f * pos.x) / screen_w) - 1.0f;
-	log("x: %f", ndc.x);
     ndc.y = 1.0f - ((2.0f * pos.y) / screen_h);
-	log("y: %f", ndc.y);
 	ndc.z = ((2.0f * pos.z) / screen_w) - 1.0f;
-	log("z: %f", ndc.z);
 
     return ndc;
 }
@@ -768,7 +413,7 @@ int SDL_RenderFillRect(SDL_Renderer* sdl_renderer, const SDL_Rect* rect) {
 	Command_Packet packet = {};
 
 	packet.draw_color = renderer->render_draw_color;
-	packet.command_type = CT_Draw_Call;
+	packet.type = CT_Draw_Call;
 
 	// Store the number of vertices to be rendered for this group
 	packet.draw_call_info.draw_type = GL_TRIANGLES;
@@ -821,7 +466,7 @@ int SDL_RenderDrawLine(SDL_Renderer* sdl_renderer, int x1, int y1, int x2, int y
 	Command_Packet packet = {};
 	
 	packet.draw_color = renderer->render_draw_color;
-	packet.command_type = CT_Draw_Call;
+	packet.type = CT_Draw_Call;
 
 	packet.draw_call_info.draw_type = GL_LINES;
 	packet.draw_call_info.total_vertices = ARRAYSIZE(vertices);
@@ -1553,7 +1198,7 @@ int SDL_RenderCopy(SDL_Renderer* sdl_renderer, SDL_Texture* texture, const SDL_R
 	Command_Packet packet = {};
 
 	packet.draw_color = renderer->render_draw_color;
-	packet.command_type = CT_Draw_Call;
+	packet.type = CT_Draw_Call;
 
 	packet.draw_call_info.draw_type = GL_TRIANGLES;
 	packet.draw_call_info.total_vertices = ARRAYSIZE(vertices);
@@ -1692,7 +1337,7 @@ int SDL_RenderCopyEx(SDL_Renderer* sdl_renderer, SDL_Texture* texture, const SDL
 
     Command_Packet packet = {};
     packet.draw_color = renderer->render_draw_color;
-    packet.command_type = CT_Draw_Call;
+    packet.type = CT_Draw_Call;
     packet.draw_call_info.draw_type = GL_TRIANGLES;
     packet.draw_call_info.total_vertices = ARRAYSIZE(vertices);
     packet.draw_call_info.starting_index = renderer->vertices.size() - packet.draw_call_info.total_vertices;
@@ -1779,7 +1424,7 @@ int SDL_RenderSetClipRect(SDL_Renderer* sdl_renderer, const SDL_Rect* rect) {
 	Command_Packet packet = {};
 
 	packet.draw_color = renderer->render_draw_color;
-	packet.command_type = CT_Set_Clip_Rect;
+	packet.type = CT_Set_Clip_Rect;
 
 	packet.clip_rect_info.rect = (SDL_Rect*)rect;
 	packet.clip_rect_info.setting = GL_SCISSOR_TEST;
@@ -1831,7 +1476,7 @@ int SDL_RenderSetViewport(SDL_Renderer* sdl_renderer, const SDL_Rect* rect) {
 
 	Command_Packet packet = {};
 
-	packet.command_type = CT_Set_Viewport;
+	packet.type = CT_Set_Viewport;
 
 	packet.viewport_info.rect = (SDL_Rect*)rect;
 
@@ -1860,13 +1505,6 @@ void SDL_RenderGetViewport(SDL_Renderer* sdl_renderer, SDL_Rect* rect) {
 	rect->w = renderer->viewport.w;
 	rect->h = renderer->viewport.h;
 }
-
-struct Vertex_3D {
-	V3 pos;
-	Color_f color;
-	V2 uv;
-	V3 normal;
-};
 
 Color_f color_one = { 1.0f, 0.0f, 0.0f, 1.0f };
 Color_f color_two = { 0.0f, 1.0f, 0.0f, 1.0f };
@@ -1938,6 +1576,94 @@ MX4 mat4_perspective(float fovy, float aspect)
     return out;
 }
 
+void prepare_to_draw_cube_faces(SDL_Renderer* sdl_renderer) {
+	if (sdl_renderer == nullptr) {
+		log("ERROR: sdl_renderer is nullptr");
+		assert(false);
+	}
+	Renderer* renderer = (Renderer*)sdl_renderer;
+
+	if (renderer->vbo_cube_faces == 0) {
+		glGenBuffers(1, &renderer->vbo_cube_faces);
+		glBindBuffer(GL_ARRAY_BUFFER, renderer->vbo_cube_faces);
+		glBufferData(GL_ARRAY_BUFFER, renderer->vertices_cube_faces.size() * sizeof(Vertex_3D), renderer->vertices_cube_faces.data(), GL_STATIC_DRAW);
+	}
+
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D), (void*)offsetof(Vertex_3D, pos));
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D), (void*)offsetof(Vertex_3D, color));
+	glEnableVertexAttribArray(1);
+	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D), (void*)offsetof(Vertex_3D, uv));
+	glEnableVertexAttribArray(2);
+	glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D), (void*)offsetof(Vertex_3D, normal));
+	glEnableVertexAttribArray(3);
+}
+
+Vertex_3D vertices_face[6] = {
+	{ {-0.5, -0.5, 0}, {}, {}, {} }, // Bottom left 
+	{ {-0.5,  0.5, 0}, {}, {}, {} }, // Top left
+	{ { 0.5,  0.5, 0}, {}, {}, {} }, // Top right
+
+	{ {-0.5, -0.5, 0}, {}, {}, {} }, // Bottom left
+	{ { 0.5, -0.5, 0}, {}, {}, {} }, // Bottom right
+	{ { 0.5,  0.5, 0}, {}, {}, {} }  // Top right
+};
+
+
+void mp_draw_cube_face(SDL_Renderer* sdl_renderer, MP_Rect_3D rect_ws, SDL_Texture* texture) {
+	REF(texture);
+	REF(rect_ws);
+
+	if (sdl_renderer == nullptr) {
+		log("ERROR: sdl_renderer is nullptr");
+		assert(false);
+	}
+	Renderer* renderer = (Renderer*)sdl_renderer;
+
+	// I could store the scaling value here when I convert
+	// The model / local space of the vertices
+	V3 ndc_top_left = convert_to_ndc_v3(sdl_renderer, rect_ws.top_left);
+	V3 ndc_top_right = convert_to_ndc_v3(sdl_renderer, rect_ws.top_right);
+	V3 ndc_bottom_right = convert_to_ndc_v3(sdl_renderer, rect_ws.bottom_right);
+	V3 ndc_bottom_left = convert_to_ndc_v3(sdl_renderer, rect_ws.bottom_left);
+
+	// The model / local space of the vertices
+	Vertex_3D vertices[6] = {};
+	vertices[0].pos = vertices_face[0].pos;
+	renderer->vertices_cube_faces.push_back(vertices[0]);
+	vertices[1].pos = vertices_face[1].pos;
+	renderer->vertices_cube_faces.push_back(vertices[1]);
+	vertices[2].pos = vertices_face[2].pos;
+	renderer->vertices_cube_faces.push_back(vertices[2]);
+	vertices[3].pos = vertices_face[3].pos;
+	renderer->vertices_cube_faces.push_back(vertices[3]);
+	vertices[4].pos = vertices_face[4].pos;
+	renderer->vertices_cube_faces.push_back(vertices[4]);
+	vertices[5].pos = vertices_face[5].pos;
+	renderer->vertices_cube_faces.push_back(vertices[5]);
+
+	// Calculate the position of the face
+
+	Command_Packet packet = {};
+
+	packet.type = CT_Draw_Call_3D_Cube_Face;
+
+	packet.draw_call_3d_cube_face.rect = rect_ws;
+	// packet.draw_call_3d_cube_face.pos_ws = {
+	// 	rect_ws.top_right.x / 2,
+	// 	rect_ws.top_right.y / 2,
+	// 	rect_ws.top_right.z / 2,
+	// };
+	packet.draw_call_3d_cube_face.pos_ws = { 0, 0, 0 };
+	// packet.draw_call_3d_cube_face.texture_handle = texture->handle;
+	
+	packet.draw_call_3d_cube_face.total_vertices = ARRAYSIZE(vertices);
+	packet.draw_call_3d_cube_face.starting_index = renderer->vertices_cube_faces.size() - ARRAYSIZE(vertices);
+	packet.draw_call_3d_cube_face.shader_type = SPT_Cube_Face;
+
+	renderer->command_packets.push_back(packet);
+}
+
 // I don't need to upload the data every time I draw a cube
 void prepare_to_draw_cube() {
 	static GLuint vbo;
@@ -1958,54 +1684,6 @@ void prepare_to_draw_cube() {
 	glEnableVertexAttribArray(3);
 }
 
-void draw_perlin_cube(SDL_Renderer* sdl_renderer, V3 pos, float perlin) {
-	Image_Type result;
-
-	if (perlin > -0.1) {
-		result = IT_Grass;
-	}
-	else if (perlin > -0.35) {
-		result = IT_Dirt;
-	}
-	// Default
-	else {
-		result = IT_Cobblestone;
-	}
-
-	SDL_Texture* result_texture = images[result].texture;
-	mp_draw_cube(sdl_renderer, pos, result_texture);
-}
-
-void draw_cube_type(SDL_Renderer* sdl_renderer, V3 pos, Image_Type type) {
-	SDL_Texture* result = nullptr;
-
-	switch (type) {
-	case IT_Grass: {
-		result = images[type].texture;
-		break;
-	}
-	case IT_Dirt: {
-		result = images[type].texture;
-		break;
-	}
-	case IT_Cobblestone: {
-		result = images[type].texture;
-		break;
-	}
-	case IT_Air: {
-		result = nullptr;
-		break;
-	}
-	default: { // The default is just air 
-		break;
-	}
-	}
-
-	if (result != nullptr) {
-		mp_draw_cube(sdl_renderer, pos, result);
-	}
-}
-
 void mp_draw_cube(SDL_Renderer* sdl_renderer, V3 pos, SDL_Texture* texture) {
 	if (sdl_renderer == nullptr) {
 		log("ERROR: sdl_renderer is nullptr");
@@ -2015,12 +1693,12 @@ void mp_draw_cube(SDL_Renderer* sdl_renderer, V3 pos, SDL_Texture* texture) {
 
 	Command_Packet command_packet = {};
 
-	command_packet.command_type = CT_Draw_Call_3D;
+	command_packet.type = CT_Draw_Call_3D;
 
 	command_packet.draw_call_3d_cube.pos = pos;
 	command_packet.draw_call_3d_cube.texture_handle = texture->handle;
 
-	renderer->command_packets_3d_cubes.push_back(command_packet);
+	renderer->command_packets.push_back(command_packet);
 }
 
 typedef MX4 Matrix4;
@@ -2059,6 +1737,33 @@ Matrix4 mat4_rotate_z(float angle_radians)
     rot.col[1].x = -s;
     rot.col[1].y = c;
     return rot;
+}
+
+void draw_cube_face(SDL_Renderer* sdl_renderer, Draw_Call_3D_Cube_Face packet) {
+	if (sdl_renderer == nullptr) {
+		log("ERROR: sdl_renderer is nullptr");
+		assert(false);
+	}
+	Renderer* renderer = (Renderer*)sdl_renderer;
+
+	GLuint shader_program = shader_program_types[SPT_Cube_Face];
+	if (!shader_program) {
+		log("ERROR: Shader program not specified");
+		assert(false);
+	}
+	glUseProgram(shader_program);
+
+	// MX4 world_from_model = translation_matrix_mx_4(cos(x) * x_speed, sin(x) * y_speed, z_pos);
+	MX4 world_from_model = translation_matrix_mx_4(packet.pos_ws.x, packet.pos_ws.y, packet.pos_ws.z)/* * mat4_rotate_x(renderer->time)*/;
+
+	// When you take these three matrices and multiple them all together, 
+	// you get one matrix that has one transformation.
+	MX4 perspective_from_model = renderer->perspective_from_view * renderer->view_from_world * world_from_model;
+
+	GLuint perspective_from_model_loc = glGetUniformLocation(shader_program, "perspective_from_model");
+	glUniformMatrix4fv(perspective_from_model_loc, 1, GL_FALSE, perspective_from_model.e);
+
+	glDrawArrays(GL_TRIANGLES, (GLint)packet.starting_index, packet.total_vertices);
 }
 
 void draw_cube(SDL_Renderer* sdl_renderer, V3 pos) {
@@ -2133,7 +1838,7 @@ int SDL_RenderDrawLine(SDL_Renderer* sdl_renderer, int x1, int y1, int x2, int y
 	Command_Packet packet = {};
 	
 	packet.draw_color = renderer->render_draw_color;
-	packet.command_type = CT_Draw_Call;
+	packet.type = CT_Draw_Call;
 
 	packet.draw_call_info.draw_type = GL_LINES;
 	packet.draw_call_info.total_vertices = ARRAYSIZE(vertices);
@@ -2163,18 +1868,22 @@ void mp_draw_line_3d(SDL_Renderer* sdl_renderer, V3 pos_1, V3 pos_2) {
 	V3 p2 = convert_to_ndc_v3(sdl_renderer, pos_2);
 
 	Vertex_3D_Temp vertices[2];
+	// 10, 0, 0
 	vertices[0].pos = p1;
 	renderer->vertices_3d.push_back(vertices[0]);
+	// 15, 0, 0
 	vertices[1].pos = p2;
 	renderer->vertices_3d.push_back(vertices[1]);
 
 	Command_Packet packet = {};
 
+	packet.type = CT_Draw_Call_3D_Lines;
+
 	packet.draw_call_3d_line.total_vertices = ARRAYSIZE(vertices);
 	packet.draw_call_3d_line.starting_index = renderer->vertices_3d.size() - ARRAYSIZE(vertices);
 	packet.draw_call_3d_line.shader_type = SPT_3D_Lines;
 
-	renderer->command_packets_3d_lines.push_back(packet);
+	renderer->command_packets.push_back(packet);
 }
 
 void execute_draw_line_3d(SDL_Renderer* sdl_renderer, Draw_Call_3D_Line draw_call) {
@@ -2340,21 +2049,52 @@ void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
 	glEnable(GL_DEPTH_TEST);
 	glDepthFunc(GL_LESS);
 	prepare_to_draw_cube();
-	for (Command_Packet packet : renderer->command_packets_3d_cubes) {
-		if (packet.draw_call_3d_cube.texture_handle) {
-			glBindTexture(GL_TEXTURE_2D, packet.draw_call_3d_cube.texture_handle);
+	for (Command_Packet packet : renderer->command_packets) {
+		switch (packet.type) {
+		case CT_Draw_Call_3D: {
+			if (packet.draw_call_3d_cube.texture_handle) {
+				glBindTexture(GL_TEXTURE_2D, packet.draw_call_3d_cube.texture_handle);
+			}
+			draw_cube(sdl_renderer, packet.draw_call_3d_cube.pos);
+			break;
 		}
-		draw_cube(sdl_renderer, packet.draw_call_3d_cube.pos);
+		default: {
+			break;
+		}
+		}
 	}
-	renderer->command_packets_3d_cubes.clear();
+
+	prepare_to_draw_cube_faces(sdl_renderer);
+	for (Command_Packet packet : renderer->command_packets) {
+		switch (packet.type) {
+		case CT_Draw_Call_3D_Cube_Face: {
+			if (packet.draw_call_3d_cube_face.texture_handle) {
+				glBindTexture(GL_TEXTURE_2D, packet.draw_call_3d_cube_face.texture_handle);
+			}
+			draw_cube_face(sdl_renderer, packet.draw_call_3d_cube_face);
+			break;
+		}
+		default: {
+			break;
+		}
+		}
+	}
+	renderer->vertices_cube_faces.clear();
 	glDisable(GL_DEPTH_TEST);
 
 	prepare_to_draw_lines();
-	for (Command_Packet packet : renderer->command_packets_3d_lines) {
-		execute_draw_line_3d(sdl_renderer, packet.draw_call_3d_line);
+	for (Command_Packet packet : renderer->command_packets) {
+		switch (packet.type) {
+		case CT_Draw_Call_3D_Lines: {
+			execute_draw_line_3d(sdl_renderer, packet.draw_call_3d_line);
+			break;
+		}
+		default: {
+			break;
+		}
+		}
 	}
 	renderer->vertices_3d.clear();
-	renderer->command_packets_3d_lines.clear();
 
 	// This rebind may be pointless if I am only going with one vbo
 	glBindBuffer(GL_ARRAY_BUFFER, renderer->vbo);
@@ -2367,7 +2107,7 @@ void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
 
 	// This could become the flush function
 	for (Command_Packet command_packet : renderer->command_packets) {
-		switch (command_packet.command_type) {
+		switch (command_packet.type) {
 		case CT_Draw_Call: {
 			Draw_Call_Info info = command_packet.draw_call_info;
 			// Set the blend mode before I render all the vertices

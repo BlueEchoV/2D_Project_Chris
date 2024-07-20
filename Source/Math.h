@@ -2,6 +2,11 @@
 
 #define M_PI 3.1415926535897932384
 
+struct V2 {
+	float x;
+	float y;
+};
+
 struct V3 {
 	float x;
 	float y;

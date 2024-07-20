@@ -1,36 +1,297 @@
 #include <stdio.h>
-#include <Windows.h>
-#include <WindowsX.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string>
 #include <unordered_map>
 #include <algorithm>
-
 #include <errno.h>
 #include <string.h>
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <utility>
+#include <assert.h>
 
-#include "Utility.h"
-#include "Renderer.h"
-#include "Math.h"
 #define STB_PERLIN_IMPLEMENTATION
 #include "Perlin.h"
-#include <utility>
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+#include "Utility.h"
+#include "Math.h"
+#include "gl_renderer.h"
 
-#define REF(v) (void)v
+struct Open_GL {
+	GLuint vao;
+	GLuint vbo;
+};
 
-template <typename T>
-T clamp(T value, T min, T max) {
-	if (value < min) {
-		return min;
+struct GL_Renderer {
+	HWND window;
+	HDC hdc;
+
+	Open_GL open_gl;
+};
+
+void init_open_gl(GL_Renderer* gl_renderer) {
+	glGenVertexArrays(1, &gl_renderer->open_gl.vao);
+	glBindVertexArray(gl_renderer->open_gl.vao);
+
+	glGenBuffers(1, &gl_renderer->open_gl.vbo);
+	glBindBuffer(GL_ARRAY_BUFFER, gl_renderer->open_gl.vbo);
+
+}
+
+GL_Renderer* create_gl_renderer(HWND window) {
+	GL_Renderer* result = new GL_Renderer();
+
+	result->window = window;
+
+	PIXELFORMATDESCRIPTOR pfd =
+	{
+		sizeof(PIXELFORMATDESCRIPTOR),
+		1,
+		PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER,    // Flags
+		PFD_TYPE_RGBA,        // The kind of framebuffer. RGBA or palette.
+		32,                   // Colordepth of the framebuffer.
+		0, 0, 0, 0, 0, 0,
+		0,
+		0,
+		0,
+		0, 0, 0, 0,
+		24,                   // Number of bits for the depthbGuffer
+		8,                    // Number of bits for the stencilbuffer
+		0,                    // Number of Aux buffers in the framebuffer.
+		PFD_MAIN_PLANE,
+		0,
+		0, 0, 0
+	};
+
+	result->hdc = GetDC(window);
+
+	int pixelFormatIndex = ChoosePixelFormat(result->hdc, &pfd);
+
+	if (pixelFormatIndex == 0) {
+		log("Error: ChoosePixelFormat function returned 0");
+		return NULL;
 	}
-	if (value > max) {
-		return max;
+
+	if (!SetPixelFormat(result->hdc, pixelFormatIndex, &pfd)) {
+		log("Error: SetPixelFormat function returned false");
+		return NULL;
 	}
-    return value;
+
+	HGLRC temp_context = wglCreateContext(result->hdc);
+	wglMakeCurrent(result->hdc, temp_context);
+	loadGLFunctions();
+
+	init_open_gl(result);
+
+	load_shaders();
+
+	return result;
+}
+
+void gl_draw_line() {
+
+}
+
+/*
+struct GL_Texture {
+	GLuint handle;
+	uint32_t format;
+	int access;
+	int w, h;
+
+	int pitch;
+	// Locked if null
+	void* pixels;
+	SDL_Rect portion;
+};
+
+GL_Texture gl_create_texture(GL_Renderer* gl_renderer, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STREAMING, result.width, result.height) {
+	if (gl_renderer == nullptr) {
+		log("ERROR: gl_renderer is nullptr");
+		assert(false);
+	}
+
+	GL_Texture* result = new GL_Texture();
+	// One texture with one name
+	glGenTextures(1, &result->handle);
+	result->format = format;
+	result->access = access;
+	result->w = w;
+	result->h = h;
+
+	// Default value for textures
+	SDL_SetTextureBlendMode(result, SDL_BLENDMODE_NONE);
+
+	// If the pixels variable is null
+	result->pitch = 0;
+	result->pixels = NULL;
+
+	// Default color mod so the texture displays
+	SDL_SetTextureColorMod(result, 255, 255, 255);
+
+	// Default alpha mod
+	SDL_SetTextureAlphaMod(result, 255);
+
+	glBindTexture(GL_TEXTURE_2D, result->handle);
+	// Set the texture wrapping/filtering options (on the currently bound texture object)
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+	// Generate the texture
+	// Just allocate the memory and give it data later
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, result->w, result->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+
+	return result;
+}
+
+enum Image_Type {
+	IT_Cobblestone,
+	IT_Dirt,
+	IT_Grass,
+    IT_Air,
+	IT_Total
+};
+
+struct Image {
+	int width;
+	int height;
+	const char* file_Path;
+	GL_Texture* texture;
+	unsigned char* pixel_Data;
+};
+
+Image images[IT_Total] = {};
+
+Image create_Image(GL_Renderer* gl_renderer, const char* file_Path) {
+	if (gl_renderer == nullptr) {
+		log("Error: gl_rendererer == nullptr");
+		assert(false);
+	}
+
+	Image result = {};
+	result.file_Path = file_Path;
+
+	int width, height, channels;
+	unsigned char* data = stbi_load(file_Path, &width, &height, &channels, 4);
+
+	if (data == NULL) {
+		log("ERROR: stbi_load returned NULL");
+		return result;
+	}
+
+	result.pixel_Data = data;
+
+	result.width = width;
+	result.height = height;
+
+	DEFER{
+		// Freed at the end of main
+		// stbi_image_free(data);
+	};
+
+	GL_Texture* temp = gl_create_texture(gl_renderer, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STREAMING, result.width, result.height);
+
+	if (temp == NULL) {
+		log("ERROR: SDL_CreateTexture returned NULL");
+		return result;
+	}
+
+	if (SDL_SetTextureBlendMode(temp, SDL_BLENDMODE_BLEND) != 0) {
+		log("ERROR: SDL_SsetTextureBlendMode did not succeed: %s");
+	}
+
+	result.texture = temp;
+
+	void* pixels;
+	int pitch;
+	SDL_LockTexture(temp, NULL, &pixels, &pitch);
+
+	my_Memory_Copy(pixels, data, (result.width * result.height) * 4);
+
+	SDL_UnlockTexture(temp);
+
+	return result;
+}
+void init_images(GL_Renderer* gl_renderer) {
+	if (gl_renderer == nullptr) {
+		log("ERROR: gl_renderer is nullptr");
+		assert(false);
+		return;
+	}
+
+	images[IT_Cobblestone] = create_Image(sdl_renderer, "assets\\cobblestone.png");
+	SDL_SetTextureBlendMode(images[IT_Cobblestone].texture, SDL_BLENDMODE_BLEND);
+	images[IT_Dirt] = create_Image(sdl_renderer, "assets\\dirt.png");
+	SDL_SetTextureBlendMode(images[IT_Dirt].texture, SDL_BLENDMODE_BLEND);
+	images[IT_Grass] = create_Image(sdl_renderer, "assets\\grass.png");
+	SDL_SetTextureBlendMode(images[IT_Grass].texture, SDL_BLENDMODE_BLEND);
+}
+
+SDL_Texture* get_image(Image_Type type) {
+	SDL_Texture* result = nullptr;
+
+	switch (type) {
+	case IT_Grass: {
+		result = images[type].texture;
+		break;
+	}
+	case IT_Dirt: {
+		result = images[type].texture;
+		break;
+	}
+	case IT_Cobblestone: {
+		result = images[type].texture;
+		break;
+	}
+	case IT_Air: {
+		result = nullptr;
+		break;
+	}
+	default: { // The default is just air 
+		break;
+	}
+	}
+
+	return result;
+}
+
+void draw_perlin_cube(SDL_Renderer* sdl_renderer, V3 pos, float perlin) {
+	Image_Type result;
+
+	if (perlin > -0.1) {
+		result = IT_Grass;
+	}
+	else if (perlin > -0.35) {
+		result = IT_Dirt;
+	}
+	// Default
+	else {
+		result = IT_Cobblestone;
+	}
+
+	SDL_Texture* result_texture = images[result].texture;
+	mp_draw_cube(sdl_renderer, pos, result_texture);
+}
+
+void draw_cube_face_type(SDL_Renderer* sdl_renderer, MP_Rect_3D rect, Image_Type type) {
+	SDL_Texture* result = get_image(type);
+	
+	if (result != nullptr) {
+		mp_draw_cube_face(sdl_renderer, rect, result);
+	}
+}
+
+void draw_cube_type(SDL_Renderer* sdl_renderer, V3 pos, Image_Type type) {
+	SDL_Texture* result = get_image(type);
+
+	if (result != nullptr) {
+		mp_draw_cube(sdl_renderer, pos, result);
+	}
 }
 
 struct Cube {
@@ -42,9 +303,9 @@ struct Chunk {
 	Cube cubes[CHUNK_SIZE][CHUNK_SIZE][CHUNK_SIZE] = {};
 };
 
-const int WORLD_SIZE_WIDTH = 2;
-const int WORLD_SIZE_LENGTH = 2;
-const int WORLD_SIZE_HEIGHT = 1;
+const int WORLD_SIZE_WIDTH = 10;
+const int WORLD_SIZE_LENGTH = 10;
+const int WORLD_SIZE_HEIGHT = 5;
 Chunk world_chunks[WORLD_SIZE_WIDTH][WORLD_SIZE_HEIGHT][WORLD_SIZE_LENGTH] = {};
 
 int height_map[(WORLD_SIZE_WIDTH * CHUNK_SIZE)][(WORLD_SIZE_LENGTH * CHUNK_SIZE)] = {};
@@ -130,7 +391,21 @@ void draw_chunk(SDL_Renderer* sdl_renderer, int world_space_x, int world_space_y
 	for (int x = 0; x < CHUNK_SIZE; x++) {
 		for (int y = 0; y < CHUNK_SIZE; y++) {
 			for (int z = 0; z < CHUNK_SIZE; z++) {
+				// Voxel index
 				Cube* cube = &chunk->cubes[x][y][z];
+
+				// Loop through that faces 
+				for (int face = 0; face < 6; face++) {
+					// Air next to the voxels determines if the cubes should be drawn
+
+					// If we renderer, we want to emit 4 vertex and 6 indices to the element buffer
+
+					// NOTE: Generate the whole chunk
+					// NOTE: Do texturing later
+					// MP_Rect_3D rect;
+					// mp_draw_cube_face(sdl_renderer, )
+				}
+
 				V3 cube_pos;
 				//														Center the world 
 				cube_pos.x = (float)(x) - ((float)WORLD_SIZE_WIDTH); // * (float)CHUNK_SIZE) / 2.0f;
@@ -158,6 +433,15 @@ void draw_chunks(SDL_Renderer* sdl_renderer) {
 	}
 }
 
+void swap_back_buffer(SDL_Renderer* sdl_renderer) {
+	if (sdl_renderer == nullptr) {
+		log("Error: SDL_Renderer is nullptr");
+		assert(false);
+		return;
+	}
+	Renderer* renderer = 
+}
+*/
 #if 0
 void draw_wire_frame(SDL_Renderer* sdl_renderer, V3 pos, float width, float length, float height) {
 	REF(length);
@@ -186,6 +470,12 @@ void draw_wire_frame(SDL_Renderer* sdl_renderer, V3 pos, float width, float leng
 }
 #endif
 
+struct Key_State {
+	bool pressed_this_frame;
+	bool held_down;
+};
+
+extern std::unordered_map<LPARAM, Key_State> key_states;
 std::unordered_map<LPARAM, Key_State> key_states;
 
 V2 last_mouse_position;
@@ -263,14 +553,17 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 
 	ShowWindow(window, SW_SHOW);
 	
-	SDL_Renderer* renderer = SDL_CreateRenderer(window, 0, 0);
+	GL_Renderer* gl_renderer = create_gl_renderer(window);
 
+	/*
 	Image castle_infernal_image = create_Image(renderer, "assets\\castle_Infernal.png");
 	SDL_SetTextureBlendMode(castle_infernal_image.texture, SDL_BLENDMODE_BLEND);
 	Image azir_image = create_Image(renderer, "assets\\azir.jpg");
 	SDL_SetTextureBlendMode(azir_image.texture, SDL_BLENDMODE_BLEND);
+	init_images(renderer);
 
 	generate_world_chunks(20);
+	*/
 
 	bool running = true;
 	while (running) {
@@ -287,63 +580,10 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 			
 		}
 
-		// 1 0 0 1
-		// 0 1 0 3
-		// 0 0 1 5
-		// 0 0 0 1
-		MX4 mx_one = translation_matrix_mx_4(1, 3, 5);
-		// 1 0 0 7 
-		// 0 1 0 9 
-		// 0 0 1 11
-		// 0 0 0 1
-		MX4 mx_two = translation_matrix_mx_4(7, 9, 11);
 
-		// 1 0 0 7   *   1 0 0 1    =    1 0 1 8
-		// 0 1 0 9       0 1 0 3         0 1 0 12
-		// 0 0 1 11      0 0 1 5         0 0 1 16
-		// 0 0 0 1       0 0 0 1         0 0 0 1
-		MX4 result_mx = mx_one * mx_two;
-
-		V4 vec_one = { 2, 4, 6, 1 };
-
-		V4 result_v4 = result_mx * vec_one;
-
-		// RECT rect_temp = {};
-		// GetClientRect(window, &rect_temp);
-
-		SDL_SetRenderDrawColor(renderer, 100, 100, 100, 255);
-		// SDL_RenderClear(renderer);
-
-		SDL_Rect clip_rect = { 100, 10, 500, 500 };
-		// SDL_SetRenderDrawColor(renderer, 0, 100, 100, 255);
-		// SDL_RenderFillRect(renderer, &clip_rect);
-		// SDL_RenderSetClipRect(renderer, &clip_rect);
-
-		SDL_Rect viewport_rect = { 100, 10, 500, 500 };
-		// SDL_RenderSetViewport(renderer, &clip_rect);
-		
-		// draw_debug_images(renderer);
-
-		// SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
-
-		SDL_Rect castle_rect = { 100,400,200,200 };
-		SDL_SetTextureAlphaMod(castle_infernal_image.texture, 155);
-		// SDL_RenderCopy(renderer, castle_infernal_image.texture, NULL, &castle_rect);
-
-		SDL_Rect azir_rect = { 200,400,200,200 };
-		SDL_SetTextureColorMod(azir_image.texture, 255, 255, 255);
-		SDL_SetTextureAlphaMod(azir_image.texture, 155);
-		// SDL_RenderCopy(renderer, azir_image.texture, NULL, &azir_rect);
-
-		draw_chunks(renderer);
-
-		// draw_wire_frame(renderer, { 0,0,0 }, 2, 1, 1);
-		mp_draw_line_3d(renderer, { 0,0,0 }, { 1000, 1000, 1000});
-
-		SDL_RenderPresent(renderer);
+		SwapBuffers(gl_renderer->hdc);
 
 		Sleep(1);
-
 	}
 	// TODO: Clean up shaders
 	#if 0
@@ -353,11 +593,75 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		glGetProgramInfoLog();
 		glUseProgram();
 	#endif
-	SDL_DestroyRenderer(renderer);
+	// SDL_DestroyRenderer(renderer);
 	return 0;
 }
 
 // Archived for now
+#if 0 
+
+	// 1 0 0 1
+	// 0 1 0 3
+	// 0 0 1 5
+	// 0 0 0 1
+	MX4 mx_one = translation_matrix_mx_4(1, 3, 5);
+	// 1 0 0 7 
+	// 0 1 0 9 
+	// 0 0 1 11
+	// 0 0 0 1
+	MX4 mx_two = translation_matrix_mx_4(7, 9, 11);
+
+	// 1 0 0 7   *   1 0 0 1    =    1 0 1 8
+	// 0 1 0 9       0 1 0 3         0 1 0 12
+	// 0 0 1 11      0 0 1 5         0 0 1 16
+	// 0 0 0 1       0 0 0 1         0 0 0 1
+	MX4 result_mx = mx_one * mx_two;
+
+	V4 vec_one = { 2, 4, 6, 1 };
+
+	V4 result_v4 = result_mx * vec_one;
+
+	// RECT rect_temp = {};
+	// GetClientRect(window, &rect_temp);
+
+	SDL_SetRenderDrawColor(renderer, 100, 100, 100, 255);
+	// SDL_RenderClear(renderer);
+
+	SDL_Rect clip_rect = { 100, 10, 500, 500 };
+	// SDL_SetRenderDrawColor(renderer, 0, 100, 100, 255);
+	// SDL_RenderFillRect(renderer, &clip_rect);
+	// SDL_RenderSetClipRect(renderer, &clip_rect);
+
+	SDL_Rect viewport_rect = { 100, 10, 500, 500 };
+	// SDL_RenderSetViewport(renderer, &clip_rect);
+	
+	// draw_debug_images(renderer);
+
+	// SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+
+	SDL_Rect castle_rect = { 100,400,200,200 };
+	SDL_SetTextureAlphaMod(castle_infernal_image.texture, 155);
+	// SDL_RenderCopy(renderer, castle_infernal_image.texture, NULL, &castle_rect);
+
+	SDL_Rect azir_rect = { 200,400,200,200 };
+	SDL_SetTextureColorMod(azir_image.texture, 255, 255, 255);
+	SDL_SetTextureAlphaMod(azir_image.texture, 155);
+	// SDL_RenderCopy(renderer, azir_image.texture, NULL, &azir_rect);
+
+	draw_chunks(renderer);
+
+	// draw_wire_frame(renderer, { 0,0,0 }, 2, 1, 1);
+	mp_draw_line_3d(renderer, { 0,0,0 }, { 1000, 1000, 1000});
+
+	MP_Rect_3D rect;
+	rect.bottom_left = { 0,0,0 };
+	rect.bottom_right = { 10,0,0 };
+	rect.top_right = { 10,10,0 };
+	rect.top_left = { 10,0,0 };
+	// mp_draw_cube_face(renderer, rect, nullptr);
+
+	SDL_RenderPresent(renderer);
+#endif
 
 // Before while loop
 #if 0
