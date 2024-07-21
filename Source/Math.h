@@ -22,6 +22,13 @@ struct V4 {
 	float w;
 };
 
+struct Color_f {
+	float r;
+	float g;
+	float b;
+	float a;
+};
+
 struct MX3 {
 	float e[9];
 };

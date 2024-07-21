@@ -43,3 +43,5 @@ T clamp(T value, T min, T max) {
 #define REF(v) (void)v
 
 void log(const char* format, ...);
+
+void my_Memory_Copy(void* dest, const void* src, size_t count);

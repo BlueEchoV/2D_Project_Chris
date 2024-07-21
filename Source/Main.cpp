@@ -54,10 +54,16 @@ struct GL_Rect_3D {
 struct Open_GL {
 	GLuint vao;
 	GLuint vbo_lines;
+	GLuint vbo_cubes;
 };
 
-struct Vertex_3D {
+struct Vertex_3D_Line {
 	V3 pos;
+};
+
+struct Cube {
+	V3 pos_ws;
+	GLuint texture_handle;
 };
 
 struct GL_Renderer {
@@ -65,7 +71,8 @@ struct GL_Renderer {
 	HDC hdc;
 
 	Open_GL open_gl = {};
-	std::vector<Vertex_3D> lines_vertices;
+	std::vector<Vertex_3D_Line> lines_vertices;
+	std::vector<Cube> cubes;
 
 	float time;
 	float player_speed;
@@ -248,13 +255,32 @@ void gl_draw_line(GL_Renderer* gl_renderer, V3 p1, V3 p2) {
 		return;
 	}
 
-	Vertex_3D vertices[2] = {};
+	Vertex_3D_Line vertices[2] = {};
 	// World positions
 	vertices[0].pos = p1;
 	gl_renderer->lines_vertices.push_back(vertices[0]);
 	vertices[1].pos = p2;
 	gl_renderer->lines_vertices.push_back(vertices[1]);
+}
 
+void draw_square_with_lines(GL_Renderer* gl_renderer) {
+	// Front face
+	gl_draw_line(gl_renderer, { 0, 0, 0 }, { 50, 0, 0 }); // Bottom edge
+	gl_draw_line(gl_renderer, { 50, 0, 0 }, { 50, 50, 0 }); // Right edge
+	gl_draw_line(gl_renderer, { 50, 50, 0 }, { 0, 50, 0 }); // Top edge
+	gl_draw_line(gl_renderer, { 0, 50, 0 }, { 0, 0, 0 }); // Left edge
+
+	// Back face
+	gl_draw_line(gl_renderer, { 0, 0, 50 }, { 50, 0, 50 }); // Bottom edge
+	gl_draw_line(gl_renderer, { 50, 0, 50 }, { 50, 50, 50 }); // Right edge
+	gl_draw_line(gl_renderer, { 50, 50, 50 }, { 0, 50, 50 }); // Top edge
+	gl_draw_line(gl_renderer, { 0, 50, 50 }, { 0, 0, 50 }); // Left edge
+
+	// Connecting edges
+	gl_draw_line(gl_renderer, { 0, 0, 0 }, { 0, 0, 50 }); // Bottom left edge
+	gl_draw_line(gl_renderer, { 50, 0, 0 }, { 50, 0, 50 }); // Bottom right edge
+	gl_draw_line(gl_renderer, { 50, 50, 0 }, { 50, 50, 50 }); // Top right edge
+	gl_draw_line(gl_renderer, { 0, 50, 0 }, { 0, 50, 50 }); // Top left edge
 }
 
 void gl_upload_and_draw_lines_vbo(GL_Renderer* gl_renderer) {
@@ -266,12 +292,12 @@ void gl_upload_and_draw_lines_vbo(GL_Renderer* gl_renderer) {
 	glBindBuffer(GL_ARRAY_BUFFER, gl_renderer->open_gl.vbo_lines);
 	glBufferData(
 		GL_ARRAY_BUFFER, 
-		gl_renderer->lines_vertices.size() * sizeof(Vertex_3D), 
+		gl_renderer->lines_vertices.size() * sizeof(Vertex_3D_Line), 
 		gl_renderer->lines_vertices.data(), 
 		GL_STATIC_DRAW
 	);
 
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D), (void*)offsetof(Vertex_3D, pos));
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Line), (void*)offsetof(Vertex_3D_Line, pos));
 	glEnableVertexAttribArray(0);
 
     GLuint shader_program = shader_program_types[SPT_3D_Lines];
@@ -286,52 +312,51 @@ void gl_upload_and_draw_lines_vbo(GL_Renderer* gl_renderer) {
 	glUniformMatrix4fv(perspective_from_world_location, 1, GL_FALSE, perspective_from_world.e);
 
 	int index = 0;
-	for (Vertex_3D vertex : gl_renderer->lines_vertices) {
+	for (Vertex_3D_Line vertex : gl_renderer->lines_vertices) {
 		glDrawArrays(GL_LINES, index, 2);
 		index += 2;
 	}
+	gl_renderer->lines_vertices.clear();
 }
 
-/*
+struct MP_Rect_2D {
+	int x, y;
+	int w, h;
+};
+
 struct GL_Texture {
 	GLuint handle;
-	uint32_t format;
-	int access;
 	int w, h;
 
 	int pitch;
 	// Locked if null
 	void* pixels;
-	SDL_Rect portion;
+	MP_Rect_2D portion;
 };
 
-GL_Texture gl_create_texture(GL_Renderer* gl_renderer, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STREAMING, result.width, result.height) {
+GL_Texture* gl_create_texture(GL_Renderer* gl_renderer, int w, int h) {
 	if (gl_renderer == nullptr) {
 		log("ERROR: gl_renderer is nullptr");
 		assert(false);
 	}
 
 	GL_Texture* result = new GL_Texture();
-	// One texture with one name
-	glGenTextures(1, &result->handle);
-	result->format = format;
-	result->access = access;
 	result->w = w;
 	result->h = h;
-
-	// Default value for textures
-	SDL_SetTextureBlendMode(result, SDL_BLENDMODE_NONE);
-
-	// If the pixels variable is null
 	result->pitch = 0;
 	result->pixels = NULL;
 
 	// Default color mod so the texture displays
-	SDL_SetTextureColorMod(result, 255, 255, 255);
+	// SDL_SetTextureColorMod(result, 255, 255, 255);
 
 	// Default alpha mod
-	SDL_SetTextureAlphaMod(result, 255);
+	// SDL_SetTextureAlphaMod(result, 255);
 
+	// This is a STATE SETTING
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+	glGenTextures(1, &result->handle);
 	glBindTexture(GL_TEXTURE_2D, result->handle);
 	// Set the texture wrapping/filtering options (on the currently bound texture object)
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
@@ -346,13 +371,75 @@ GL_Texture gl_create_texture(GL_Renderer* gl_renderer, SDL_PIXELFORMAT_RGBA32, S
 	return result;
 }
 
-enum Image_Type {
-	IT_Cobblestone,
-	IT_Dirt,
-	IT_Grass,
-    IT_Air,
-	IT_Total
-};
+int gl_lock_texture(GL_Texture* texture, const MP_Rect_2D* rect, void **pixels, int *pitch) {
+	if (texture == NULL) {
+		log("ERROR: Invalid texture");
+		return -1;
+	}
+
+	if (texture->pixels != NULL) {
+		log("ERROR: Texture is already locked");
+		return -1;
+	}
+
+	MP_Rect_2D full_rect = { 0, 0, texture->w, texture->h };
+	if (rect == NULL) {
+		texture->portion = full_rect;
+	}
+	else {
+		texture->portion = *rect;
+	}
+
+	if (texture->portion.x < 0 || 
+		texture->portion.y < 0 || 
+		texture->portion.x + texture->portion.w > texture->w || 
+		texture->portion.y + texture->portion.h > texture->h) {
+		log("ERROR: Lock area out of bounds");
+		return -1;
+	}
+
+	// RGBA = 8 + 8 + 8 + 8 = 32 bits = 8 bytes
+	int bytes_per_pixel = 8;
+	int buffer_size = texture->portion.w * texture->portion.h * bytes_per_pixel;
+	uint8_t* buffer = new uint8_t[buffer_size];
+	if (buffer == NULL) {
+		log("ERROR: Memory allocation failed");
+		return -1;
+	}
+
+	*pixels = buffer;
+	*pitch = texture->portion.w * bytes_per_pixel;
+	texture->pixels = *pixels;
+
+	return 0;
+}
+
+// Uploading the texture to the GPU
+// Just changing the pixels
+void gl_unlock_texture(GL_Texture* texture) {
+	glBindTexture(GL_TEXTURE_2D, texture->handle);
+
+	if (texture->pixels == NULL) {
+		log("ERROR: Pixels == NULL");
+		assert(false);
+		return;
+	} 
+
+	glTexSubImage2D(
+		GL_TEXTURE_2D,
+		0,
+		texture->portion.x,
+		texture->portion.y,
+		texture->portion.w,
+		texture->portion.h,
+		GL_RGBA,
+		GL_UNSIGNED_BYTE,
+		texture->pixels
+	);
+
+	delete texture->pixels;
+	texture->pixels = nullptr;
+}
 
 struct Image {
 	int width;
@@ -361,8 +448,6 @@ struct Image {
 	GL_Texture* texture;
 	unsigned char* pixel_Data;
 };
-
-Image images[IT_Total] = {};
 
 Image create_Image(GL_Renderer* gl_renderer, const char* file_Path) {
 	if (gl_renderer == nullptr) {
@@ -391,29 +476,35 @@ Image create_Image(GL_Renderer* gl_renderer, const char* file_Path) {
 		// stbi_image_free(data);
 	};
 
-	GL_Texture* temp = gl_create_texture(gl_renderer, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STREAMING, result.width, result.height);
+	GL_Texture* texture = gl_create_texture(gl_renderer, result.width, result.height);
 
-	if (temp == NULL) {
+	if (texture == NULL) {
 		log("ERROR: SDL_CreateTexture returned NULL");
 		return result;
 	}
 
-	if (SDL_SetTextureBlendMode(temp, SDL_BLENDMODE_BLEND) != 0) {
-		log("ERROR: SDL_SsetTextureBlendMode did not succeed: %s");
-	}
-
-	result.texture = temp;
+	result.texture = texture;
 
 	void* pixels;
 	int pitch;
-	SDL_LockTexture(temp, NULL, &pixels, &pitch);
-
+	gl_lock_texture(texture, NULL, &pixels, &pitch);
 	my_Memory_Copy(pixels, data, (result.width * result.height) * 4);
-
-	SDL_UnlockTexture(temp);
+	gl_unlock_texture(texture);
 
 	return result;
 }
+
+enum Image_Type {
+	IT_Cobblestone,
+	IT_Dirt,
+	IT_Grass,
+    IT_Air,
+
+	IT_Total
+};
+
+Image images[IT_Total] = {};
+
 void init_images(GL_Renderer* gl_renderer) {
 	if (gl_renderer == nullptr) {
 		log("ERROR: gl_renderer is nullptr");
@@ -421,14 +512,128 @@ void init_images(GL_Renderer* gl_renderer) {
 		return;
 	}
 
-	images[IT_Cobblestone] = create_Image(sdl_renderer, "assets\\cobblestone.png");
-	SDL_SetTextureBlendMode(images[IT_Cobblestone].texture, SDL_BLENDMODE_BLEND);
-	images[IT_Dirt] = create_Image(sdl_renderer, "assets\\dirt.png");
-	SDL_SetTextureBlendMode(images[IT_Dirt].texture, SDL_BLENDMODE_BLEND);
-	images[IT_Grass] = create_Image(sdl_renderer, "assets\\grass.png");
-	SDL_SetTextureBlendMode(images[IT_Grass].texture, SDL_BLENDMODE_BLEND);
+	images[IT_Cobblestone] = create_Image(gl_renderer, "assets\\cobblestone.png");
+	images[IT_Dirt] = create_Image(gl_renderer, "assets\\dirt.png");
+	images[IT_Grass] = create_Image(gl_renderer, "assets\\grass.png");
 }
 
+struct Vertex_3D_Cube {
+	V3 pos;
+	Color_f color;
+	V2 uv;
+	V3 normal;
+};
+
+Color_f color_one = { 1.0f, 0.0f, 0.0f, 1.0f };
+Color_f color_two = { 0.0f, 1.0f, 0.0f, 1.0f };
+Color_f color_three = { 0.0f, 0.0f, 1.0f, 1.0f };
+
+Vertex_3D_Cube cube[36] = {
+    // Front face
+	{{-0.5, -0.5,  0.5}, color_one, {0, 0}, {0, 0, 1}}, 
+	{{ 0.5, -0.5,  0.5}, color_one, {1, 0}, {0, 0, 1}},
+	{{ 0.5,  0.5,  0.5}, color_one, {1, 1}, {0, 0, 1}},
+    {{-0.5, -0.5,  0.5}, color_one, {0, 0}, {0, 0, 1}},
+	{{ 0.5,  0.5,  0.5}, color_one, {1, 1}, {0, 0, 1}},
+	{{-0.5,  0.5,  0.5}, color_one, {0, 1}, {0, 0, 1}},
+
+    // Back face
+	{{-0.5, -0.5, -0.5}, color_one, {1, 0}, {0, 0, -1}},
+	{{-0.5,  0.5, -0.5}, color_one, {1, 1}, {0, 0, -1}},
+	{{ 0.5,  0.5, -0.5}, color_one, {0, 1}, {0, 0, -1}},
+    {{-0.5, -0.5, -0.5}, color_one, {1, 0}, {0, 0, -1}}, 
+	{{ 0.5,  0.5, -0.5}, color_one, {0, 1}, {0, 0, -1}}, 
+	{{ 0.5, -0.5, -0.5}, color_one, {0, 0}, {0, 0, -1}},
+
+    // Left face
+	{{-0.5, -0.5, -0.5}, color_two, {0, 0}, {-1, 0, 0}},
+	{{-0.5, -0.5,  0.5}, color_two, {1, 0}, {-1, 0, 0}}, 
+	{{-0.5,  0.5,  0.5}, color_two, {1, 1}, {-1, 0, 0}},
+    {{-0.5, -0.5, -0.5}, color_two, {0, 0}, {-1, 0, 0}}, 
+	{{-0.5,  0.5,  0.5}, color_two, {1, 1}, {-1, 0, 0}}, 
+	{{-0.5,  0.5, -0.5}, color_two, {0, 1}, {-1, 0, 0}},
+
+    // Right face
+	{{0.5, -0.5, -0.5}, color_two, {1, 0}, {1, 0, 0}},
+	{{0.5,  0.5, -0.5}, color_two, {1, 1}, {1, 0, 0}}, 
+	{{0.5,  0.5,  0.5}, color_two, {0, 1}, {1, 0, 0}},
+    {{0.5, -0.5, -0.5}, color_two, {1, 0}, {1, 0, 0}}, 
+	{{0.5,  0.5,  0.5}, color_two, {0, 1}, {1, 0, 0}}, 
+	{{0.5, -0.5,  0.5}, color_two, {0, 0}, {1, 0, 0}},
+
+    // Top face
+	{{-0.5,  0.5, -0.5}, color_three, {0, 1}, {0, 1, 0}},
+	{{-0.5,  0.5,  0.5}, color_three, {0, 0}, {0, 1, 0}}, 
+	{{ 0.5,  0.5,  0.5}, color_three, {1, 0}, {0, 1, 0}},
+    {{-0.5,  0.5, -0.5}, color_three, {0, 1}, {0, 1, 0}}, 
+	{{ 0.5,  0.5,  0.5}, color_three, {1, 0}, {0, 1, 0}}, 
+	{{ 0.5,  0.5, -0.5}, color_three, {1, 1}, {0, 1, 0}},
+
+    // Bottom face
+	{{-0.5, -0.5, -0.5}, color_three, {0, 0}, {0, -1, 0}},
+	{{ 0.5, -0.5, -0.5}, color_three, {1, 0}, {0, -1, 0}}, 
+	{{ 0.5, -0.5,  0.5}, color_three, {1, 1}, {0, -1, 0}},
+    {{-0.5, -0.5, -0.5}, color_three, {0, 0}, {0, -1, 0}}, 
+	{{ 0.5, -0.5,  0.5}, color_three, {1, 1}, {0, -1, 0}}, 
+	{{-0.5, -0.5,  0.5}, color_three, {0, 1}, {0, -1, 0}}
+};
+
+void gl_upload_cube_vbo(GL_Renderer* gl_renderer) {
+	if (gl_renderer->open_gl.vbo_cubes == 0) {
+		glGenBuffers(1, &gl_renderer->open_gl.vbo_cubes);
+		glBindBuffer(GL_ARRAY_BUFFER, gl_renderer->open_gl.vbo_cubes);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(cube), cube, GL_STATIC_DRAW);
+	}
+
+	glBindBuffer(GL_ARRAY_BUFFER, gl_renderer->open_gl.vbo_cubes);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Cube), (void*)offsetof(Vertex_3D_Cube, pos));
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Cube), (void*)offsetof(Vertex_3D_Cube, color));
+	glEnableVertexAttribArray(1);
+	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Cube), (void*)offsetof(Vertex_3D_Cube, uv));
+	glEnableVertexAttribArray(2);
+	glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Cube), (void*)offsetof(Vertex_3D_Cube, normal));
+	glEnableVertexAttribArray(3);
+}
+
+void draw_cube(GL_Renderer* gl_renderer, V3 pos, GL_Texture* texture) {
+	Cube result;
+
+	result.pos_ws = pos;
+	result.texture_handle = texture->handle;
+
+	gl_renderer->cubes.push_back(result);
+}
+
+void gl_draw_cubes(GL_Renderer* gl_renderer) {
+	for (Cube current_cube : gl_renderer->cubes) {
+		glBindTexture(GL_TEXTURE_2D, current_cube.texture_handle);
+
+		GLuint shader_program = shader_program_types[SPT_3D];
+		if (!shader_program) {
+			log("ERROR: Shader program not specified");
+			assert(false);
+		}
+		glUseProgram(shader_program);
+
+		// MX4 world_from_model = translation_matrix_mx_4(cos(x) * x_speed, sin(x) * y_speed, z_pos);
+		MX4 world_from_model = translation_matrix_mx_4(current_cube.pos_ws.x, current_cube.pos_ws.y, current_cube.pos_ws.z)/* * mat4_rotate_x(renderer->time)*/;
+		GLuint world_from_model_loc = glGetUniformLocation(shader_program, "world_from_model");
+		glUniformMatrix4fv(world_from_model_loc, 1, GL_FALSE, world_from_model.e);
+
+		MX4 perspective_from_world = gl_renderer->perspective_from_view * gl_renderer->view_from_world;
+		GLuint perspective_from_world_loc = glGetUniformLocation(shader_program, "perspective_from_world");
+		glUniformMatrix4fv(perspective_from_world_loc, 1, GL_FALSE, perspective_from_world.e);
+
+		GLuint time_loc = glGetUniformLocation(shader_program, "u_time");
+		glUniform1f(time_loc, gl_renderer->time);
+
+		glDrawArrays(GL_TRIANGLES, 0, ARRAYSIZE(cube));
+	}
+	gl_renderer->cubes.clear();
+}
+
+/*
 SDL_Texture* get_image(Image_Type type) {
 	SDL_Texture* result = nullptr;
 
@@ -629,15 +834,6 @@ void draw_chunks(SDL_Renderer* sdl_renderer) {
 		}
 	}
 }
-
-void swap_back_buffer(SDL_Renderer* sdl_renderer) {
-	if (sdl_renderer == nullptr) {
-		log("Error: SDL_Renderer is nullptr");
-		assert(false);
-		return;
-	}
-	Renderer* renderer = 
-}
 */
 #if 0
 void draw_wire_frame(SDL_Renderer* sdl_renderer, V3 pos, float width, float length, float height) {
@@ -733,10 +929,11 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 	SDL_SetTextureBlendMode(castle_infernal_image.texture, SDL_BLENDMODE_BLEND);
 	Image azir_image = create_Image(renderer, "assets\\azir.jpg");
 	SDL_SetTextureBlendMode(azir_image.texture, SDL_BLENDMODE_BLEND);
-	init_images(renderer);
 
 	generate_world_chunks(20);
 	*/
+
+	init_images(gl_renderer);
 
 	bool running = true;
 	while (running) {
@@ -762,25 +959,21 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		// to handle occlusion correctly.
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-		// Front face
-		gl_draw_line(gl_renderer, { 0, 0, 0 }, { 50, 0, 0 }); // Bottom edge
-		gl_draw_line(gl_renderer, { 50, 0, 0 }, { 50, 50, 0 }); // Right edge
-		gl_draw_line(gl_renderer, { 50, 50, 0 }, { 0, 50, 0 }); // Top edge
-		gl_draw_line(gl_renderer, { 0, 50, 0 }, { 0, 0, 0 }); // Left edge
-
-		// Back face
-		gl_draw_line(gl_renderer, { 0, 0, 50 }, { 50, 0, 50 }); // Bottom edge
-		gl_draw_line(gl_renderer, { 50, 0, 50 }, { 50, 50, 50 }); // Right edge
-		gl_draw_line(gl_renderer, { 50, 50, 50 }, { 0, 50, 50 }); // Top edge
-		gl_draw_line(gl_renderer, { 0, 50, 50 }, { 0, 0, 50 }); // Left edge
-
-		// Connecting edges
-		gl_draw_line(gl_renderer, { 0, 0, 0 }, { 0, 0, 50 }); // Bottom left edge
-		gl_draw_line(gl_renderer, { 50, 0, 0 }, { 50, 0, 50 }); // Bottom right edge
-		gl_draw_line(gl_renderer, { 50, 50, 0 }, { 50, 50, 50 }); // Top right edge
-		gl_draw_line(gl_renderer, { 0, 50, 0 }, { 0, 50, 50 }); // Top left edge
-
+		// **************Drawing 3D lines****************
+		draw_square_with_lines(gl_renderer);
 		gl_upload_and_draw_lines_vbo(gl_renderer);
+		// **********************************************
+
+		// **************Drawing 3D Cubes****************
+		// glEnable(GL_DEPTH_TEST);
+		// glDepthFunc(GL_LESS);
+		gl_upload_cube_vbo(gl_renderer);
+
+		draw_cube(gl_renderer, { 0,0,0 }, images[IT_Dirt].texture);
+
+		gl_draw_cubes(gl_renderer);
+		// glDisable(GL_DEPTH_TEST);
+		// ***********************************************
 
 		gl_update_renderer(gl_renderer);
 		SwapBuffers(gl_renderer->hdc);

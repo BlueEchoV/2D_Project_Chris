@@ -1381,7 +1381,7 @@ Image create_Image(SDL_Renderer* sdl_renderer, const char* file_Path) {
 	}
 
 	if (SDL_SetTextureBlendMode(temp, SDL_BLENDMODE_BLEND) != 0) {
-		log("ERROR: SDL_SsetTextureBlendMode did not succeed: %s");
+		log("ERROR: SDL_SetTextureBlendMode did not succeed: %s");
 	}
 
 	result.texture = temp;
