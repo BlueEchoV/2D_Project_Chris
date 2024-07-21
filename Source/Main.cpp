@@ -61,7 +61,7 @@ struct Vertex_3D_Line {
 	V3 pos;
 };
 
-struct Cube {
+struct Cube_Draw {
 	V3 pos_ws;
 	GLuint texture_handle;
 };
@@ -72,7 +72,7 @@ struct GL_Renderer {
 
 	Open_GL open_gl = {};
 	std::vector<Vertex_3D_Line> lines_vertices;
-	std::vector<Cube> cubes;
+	std::vector<Cube_Draw> cubes;
 
 	float time;
 	float player_speed;
@@ -597,7 +597,7 @@ void gl_upload_cube_vbo(GL_Renderer* gl_renderer) {
 }
 
 void draw_cube(GL_Renderer* gl_renderer, V3 pos, GL_Texture* texture) {
-	Cube result;
+	Cube_Draw result;
 
 	result.pos_ws = pos;
 	result.texture_handle = texture->handle;
@@ -606,7 +606,7 @@ void draw_cube(GL_Renderer* gl_renderer, V3 pos, GL_Texture* texture) {
 }
 
 void gl_draw_cubes(GL_Renderer* gl_renderer) {
-	for (Cube current_cube : gl_renderer->cubes) {
+	for (Cube_Draw current_cube : gl_renderer->cubes) {
 		glBindTexture(GL_TEXTURE_2D, current_cube.texture_handle);
 
 		GLuint shader_program = shader_program_types[SPT_3D];
@@ -633,9 +633,8 @@ void gl_draw_cubes(GL_Renderer* gl_renderer) {
 	gl_renderer->cubes.clear();
 }
 
-/*
-SDL_Texture* get_image(Image_Type type) {
-	SDL_Texture* result = nullptr;
+GL_Texture* get_image(Image_Type type) {
+	GL_Texture* result = nullptr;
 
 	switch (type) {
 	case IT_Grass: {
@@ -662,37 +661,21 @@ SDL_Texture* get_image(Image_Type type) {
 	return result;
 }
 
-void draw_perlin_cube(SDL_Renderer* sdl_renderer, V3 pos, float perlin) {
-	Image_Type result;
-
-	if (perlin > -0.1) {
-		result = IT_Grass;
-	}
-	else if (perlin > -0.35) {
-		result = IT_Dirt;
-	}
-	// Default
-	else {
-		result = IT_Cobblestone;
-	}
-
-	SDL_Texture* result_texture = images[result].texture;
-	mp_draw_cube(sdl_renderer, pos, result_texture);
-}
-
-void draw_cube_face_type(SDL_Renderer* sdl_renderer, MP_Rect_3D rect, Image_Type type) {
-	SDL_Texture* result = get_image(type);
+/*
+void draw_cube_face_type(GL_Renderer* gl_renderer, MP_Rect_3D rect, Image_Type type) {
+	GL_Texture* result = get_image(type);
 	
 	if (result != nullptr) {
-		mp_draw_cube_face(sdl_renderer, rect, result);
+		draw_cube_face(sdl_renderer, rect, result);
 	}
 }
+*/
 
-void draw_cube_type(SDL_Renderer* sdl_renderer, V3 pos, Image_Type type) {
-	SDL_Texture* result = get_image(type);
+void draw_cube_type(GL_Renderer* gl_renderer, V3 pos, Image_Type type) {
+	GL_Texture* result = get_image(type);
 
 	if (result != nullptr) {
-		mp_draw_cube(sdl_renderer, pos, result);
+		draw_cube(gl_renderer, pos, result);
 	}
 }
 
@@ -788,13 +771,13 @@ void generate_world_chunks(float noise) {
 	}
 }
 
-void draw_chunk(SDL_Renderer* sdl_renderer, int world_space_x, int world_space_y, int world_space_z) {
+void draw_chunk(GL_Renderer* gl_renderer, int world_space_x, int world_space_y, int world_space_z) {
 	Chunk* chunk = &world_chunks[world_space_x][world_space_y][world_space_z];
 	for (int x = 0; x < CHUNK_SIZE; x++) {
 		for (int y = 0; y < CHUNK_SIZE; y++) {
 			for (int z = 0; z < CHUNK_SIZE; z++) {
 				// Voxel index
-				Cube* cube = &chunk->cubes[x][y][z];
+				Cube* current_cube = &chunk->cubes[x][y][z];
 
 				// Loop through that faces 
 				for (int face = 0; face < 6; face++) {
@@ -818,23 +801,23 @@ void draw_chunk(SDL_Renderer* sdl_renderer, int world_space_x, int world_space_y
 				cube_pos.y += (world_space_y * CHUNK_SIZE);
 				cube_pos.z += (world_space_z * CHUNK_SIZE);
 
-				draw_cube_type(sdl_renderer, cube_pos, cube->type);
+				draw_cube_type(gl_renderer, cube_pos, current_cube->type);
 			}
 		}
 	}
 
 }
 
-void draw_chunks(SDL_Renderer* sdl_renderer) {
+void draw_chunks(GL_Renderer* gl_renderer) {
 	for (int x = 0; x < WORLD_SIZE_WIDTH; x++) {
 		for (int y = 0; y < WORLD_SIZE_HEIGHT; y++) {
 			for (int z = 0; z < WORLD_SIZE_LENGTH; z++) {
-				draw_chunk(sdl_renderer, x, y, z);
+				draw_chunk(gl_renderer, x, y, z);
 			}
 		}
 	}
 }
-*/
+
 #if 0
 void draw_wire_frame(SDL_Renderer* sdl_renderer, V3 pos, float width, float length, float height) {
 	REF(length);
@@ -924,16 +907,11 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 	
 	GL_Renderer* gl_renderer = create_gl_renderer(window);
 
-	/*
-	Image castle_infernal_image = create_Image(renderer, "assets\\castle_Infernal.png");
-	SDL_SetTextureBlendMode(castle_infernal_image.texture, SDL_BLENDMODE_BLEND);
-	Image azir_image = create_Image(renderer, "assets\\azir.jpg");
-	SDL_SetTextureBlendMode(azir_image.texture, SDL_BLENDMODE_BLEND);
-
-	generate_world_chunks(20);
-	*/
+	Image castle_infernal_image = create_Image(gl_renderer, "assets\\castle_Infernal.png");
+	Image azir_image = create_Image(gl_renderer, "assets\\azir.jpg");
 
 	init_images(gl_renderer);
+	generate_world_chunks(20);
 
 	bool running = true;
 	while (running) {
@@ -965,14 +943,15 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		// **********************************************
 
 		// **************Drawing 3D Cubes****************
-		// glEnable(GL_DEPTH_TEST);
-		// glDepthFunc(GL_LESS);
+		glEnable(GL_DEPTH_TEST);
+		glDepthFunc(GL_LESS);
 		gl_upload_cube_vbo(gl_renderer);
 
-		draw_cube(gl_renderer, { 0,0,0 }, images[IT_Dirt].texture);
+		// draw_cube(gl_renderer, { 0,0,0 }, images[IT_Dirt].texture);
+		draw_chunks(gl_renderer);
 
 		gl_draw_cubes(gl_renderer);
-		// glDisable(GL_DEPTH_TEST);
+		glDisable(GL_DEPTH_TEST);
 		// ***********************************************
 
 		gl_update_renderer(gl_renderer);
