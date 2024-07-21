@@ -140,3 +140,73 @@ MX4 scaling_matrix_mx_4(float scale_x, float scale_y, float scale_z) {
     scale.e[15] = 1.0f;
     return scale;
 }
+
+Matrix4 mat4_rotate_x(float angle_radians)
+{
+    float c = cosf(angle_radians);
+    float s = sinf(angle_radians);
+    Matrix4 rot = identity_mx_4();
+    rot.col[1].y = c;
+    rot.col[1].z = s;
+    rot.col[2].y = -s;
+    rot.col[2].z = c;
+    return rot;
+}
+
+Matrix4 mat4_rotate_y(float angle_radians)
+{
+    float c = cosf(angle_radians);
+    float s = sinf(angle_radians);
+    Matrix4 rot = identity_mx_4();
+    rot.col[0].x = c;
+    rot.col[0].z = -s;
+    rot.col[2].x = s;
+    rot.col[2].z = c;
+    return rot;
+}
+
+Matrix4 mat4_rotate_z(float angle_radians)
+{
+    float c = cosf(angle_radians);
+    float s = sinf(angle_radians);
+    Matrix4 rot = identity_mx_4();
+    rot.col[0].x = c;
+    rot.col[0].y = s;
+    rot.col[1].x = -s;
+    rot.col[1].y = c;
+    return rot;
+}
+
+// Frustum
+MX4 mat4_perspective(float fovy, float aspect)
+{
+    float z_near = 0.01f;
+    float z_far  = 1000.0f;
+
+    float tan_half_fovy = tanf(0.5f * fovy);
+    MX4 out = {};
+    out.col[0].x = 1.0f / (aspect * tan_half_fovy);
+    out.col[1].y = 1.0f / (tan_half_fovy);
+    out.col[2].z = -(z_far + z_near) / (z_far - z_near);
+    out.col[2].w = -1.0f;
+    out.col[3].z = -2.0f * z_far * z_near / (z_far - z_near);
+    return out;
+}
+
+V3 calculate_forward(float yaw, float rotation_offset) {
+    V3 forward;
+	float yaw_temp = yaw - (rotation_offset * ((float)M_PI / 180.0f));
+    forward.x = (float)cos(yaw_temp);
+    forward.y = 0;
+	forward.z = (float)sin(yaw_temp);
+    return forward;
+}
+
+V3 normalize(const V3& v) {
+    float length = (float)sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+	V3 result = {};
+    if (length != 0.0f) {
+        result = {v.x / length, v.y / length, v.z / length};
+    }
+	return result;
+}

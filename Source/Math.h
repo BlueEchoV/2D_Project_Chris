@@ -1,6 +1,8 @@
 #pragma once
 
-#define M_PI 3.1415926535897932384
+#include <Math.h>
+
+#define M_PI 3.1415926535897932384626
 
 struct V2 {
 	float x;
@@ -50,3 +52,14 @@ MX4 identity_mx_4();
 // the translation matrix.
 MX4 translation_matrix_mx_4(float x, float y, float z);
 MX4 scaling_matrix_mx_4(float scale_x, float scale_y, float scale_z);
+
+typedef MX4 Matrix4;
+typedef V3 Vector3;
+Matrix4 mat4_rotate_x(float angle_radians);
+Matrix4 mat4_rotate_y(float angle_radians);
+Matrix4 mat4_rotate_z(float angle_radians);
+
+MX4 mat4_perspective(float fovy, float aspect);
+
+V3 calculate_forward(float yaw, float rotation_offset);
+V3 normalize(const V3& v);

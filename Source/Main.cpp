@@ -20,14 +20,58 @@
 #include "Math.h"
 #include "gl_renderer.h"
 
+struct Key_State {
+	bool pressed_this_frame;
+	bool held_down;
+};
+
+extern std::unordered_map<LPARAM, Key_State> key_states;
+std::unordered_map<LPARAM, Key_State> key_states;
+
+V2 last_mouse_position;
+V2 current_mouse_position;
+
+V2 get_mouse_delta() {
+	V2 frame_mouse_delta;
+	frame_mouse_delta.x = current_mouse_position.x - last_mouse_position.x;
+	frame_mouse_delta.y = current_mouse_position.y - last_mouse_position.y;
+	return frame_mouse_delta;
+}
+
+void reset_Pressed_This_Frame() {
+	for (auto& key_State : key_states) {
+		key_states[key_State.first].pressed_this_frame = false;
+	}
+}
+
+struct GL_Rect_3D {
+    V3 top_left;
+    V3 top_right;
+    V3 bottom_right;
+    V3 bottom_left;
+};
+
 struct Open_GL {
 	GLuint vao;
-	GLuint vbo;
+	GLuint vbo_lines;
 };
 
 struct GL_Renderer {
 	HWND window;
 	HDC hdc;
+
+	float time;
+	float player_speed;
+	V3 player_pos = { 0, 0, 0 };
+
+	// x or z axis (tbd)
+	float pitch;
+	float roll;
+	// y 
+	float yaw;
+
+	MX4 perspective_from_view;
+	MX4 view_from_world;
 
 	Open_GL open_gl;
 };
@@ -36,9 +80,8 @@ void init_open_gl(GL_Renderer* gl_renderer) {
 	glGenVertexArrays(1, &gl_renderer->open_gl.vao);
 	glBindVertexArray(gl_renderer->open_gl.vao);
 
-	glGenBuffers(1, &gl_renderer->open_gl.vbo);
-	glBindBuffer(GL_ARRAY_BUFFER, gl_renderer->open_gl.vbo);
-
+	glGenBuffers(1, &gl_renderer->open_gl.vbo_lines);
+	glBindBuffer(GL_ARRAY_BUFFER, gl_renderer->open_gl.vbo_lines);
 }
 
 GL_Renderer* create_gl_renderer(HWND window) {
@@ -84,6 +127,28 @@ GL_Renderer* create_gl_renderer(HWND window) {
 	wglMakeCurrent(result->hdc, temp_context);
 	loadGLFunctions();
 
+	int attrib_list[] = {
+		WGL_CONTEXT_MAJOR_VERSION_ARB, 3,
+		WGL_CONTEXT_MINOR_VERSION_ARB, 3,
+#if _DEBUG
+		WGL_CONTEXT_FLAGS_ARB, WGL_CONTEXT_DEBUG_BIT_ARB, //WGL_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB,
+#endif
+		WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
+		0, 0
+	};
+
+	HGLRC glRendereringContext = wglCreateContextAttribsARB(result->hdc, 0, attrib_list);
+	// Make the new context current
+	wglMakeCurrent(result->hdc, glRendereringContext);
+	// Delete the garbage context
+	wglDeleteContext(temp_context);
+
+	if (glRendereringContext == NULL) {
+		log("Error: wglCreateContext function returned false");
+		return NULL;
+	}
+	
+
 	init_open_gl(result);
 
 	load_shaders();
@@ -91,8 +156,133 @@ GL_Renderer* create_gl_renderer(HWND window) {
 	return result;
 }
 
-void gl_draw_line() {
+struct Vertex_3D {
+	V3 pos;
+};
 
+void get_window_size(HWND window, int& w, int& h) {
+	RECT rect = {};
+	if (GetClientRect(window, &rect) != 0) {
+		w = rect.right - rect.left;
+		h = rect.bottom - rect.top;
+	} else {
+		w = 0;
+		h = 0;
+		log("Window width and height are 0");
+	}
+}
+
+#define VK_W 0x57
+#define VK_S 0x53
+#define VK_A 0x41
+#define VK_D 0x44
+
+void update_gl_renderer(GL_Renderer* gl_renderer) {
+    if (gl_renderer == nullptr) {
+        log("Error: gl_renderer is nullptr");
+        assert(false);
+		return;
+    }
+
+	gl_renderer->time += 0.01f;
+
+	V2 mouse_delta = get_mouse_delta();
+	mouse_delta.x *= 0.01f;
+	mouse_delta.y *= 0.01f;
+	gl_renderer->yaw += mouse_delta.x;
+	gl_renderer->pitch += mouse_delta.y;
+
+    // Calculate the forward vector
+    V3 forward = calculate_forward(gl_renderer->yaw, 90.0f);    
+	// Normalize the vectors
+    forward = normalize(forward);
+
+	V3 right = calculate_forward(gl_renderer->yaw, 180.0f);
+
+	// TODO: There is a bug with holding down the keys simultaneously and 
+	// the player moving faster diagonally. 
+	if (key_states[VK_SHIFT].pressed_this_frame || key_states[VK_SHIFT].held_down) {
+		gl_renderer->player_speed = 0.40f;
+	} else {
+		gl_renderer->player_speed = 0.20f;
+	}
+	if (key_states[VK_S].pressed_this_frame || key_states[VK_S].held_down) {
+        gl_renderer->player_pos.x -= forward.x * gl_renderer->player_speed;
+        gl_renderer->player_pos.y -= forward.y * gl_renderer->player_speed;
+        gl_renderer->player_pos.z -= forward.z * gl_renderer->player_speed;
+	} 
+	if (key_states[VK_W].pressed_this_frame || key_states[VK_W].held_down) {
+        gl_renderer->player_pos.x += forward.x * gl_renderer->player_speed;
+        gl_renderer->player_pos.y += forward.y * gl_renderer->player_speed;
+        gl_renderer->player_pos.z += forward.z * gl_renderer->player_speed;
+    } 
+	if (key_states[VK_D].pressed_this_frame || key_states[VK_D].held_down) {
+		gl_renderer->player_pos.x -= right.x * gl_renderer->player_speed;
+        gl_renderer->player_pos.y -= right.y * gl_renderer->player_speed;
+        gl_renderer->player_pos.z -= right.z * gl_renderer->player_speed;
+	}
+	if (key_states[VK_A].pressed_this_frame || key_states[VK_A].held_down) {
+		gl_renderer->player_pos.x += right.x * gl_renderer->player_speed;
+        gl_renderer->player_pos.y += right.y * gl_renderer->player_speed;
+        gl_renderer->player_pos.z += right.z * gl_renderer->player_speed;
+	}
+	if (key_states[VK_SPACE].pressed_this_frame || key_states[VK_SPACE].held_down) {
+		gl_renderer->player_pos.y += gl_renderer->player_speed;
+	}
+	if (key_states[VK_CONTROL].pressed_this_frame || key_states[VK_CONTROL].held_down) {
+		gl_renderer->player_pos.y -= gl_renderer->player_speed;
+	}
+
+	int window_width = 0;
+	int window_height = 0;
+	get_window_size(gl_renderer->window, window_width, window_height);
+	glViewport(0, 0, window_width, window_height);
+
+	// The perspective is gotten from the frustum
+	gl_renderer->perspective_from_view = mat4_perspective((float)M_PI / 2.0f, (float)window_width / (float)window_height);
+
+	// This is my camera
+	// Move the camera by the same amount of the player but do the negation
+	// Doing the multiplication before the translation rotates the view first.
+	gl_renderer->view_from_world = mat4_rotate_y(gl_renderer->yaw) /** mat4_rotate_x(renderer->pitch)*/ * translation_matrix_mx_4(
+		-gl_renderer->player_pos.x, 
+		-gl_renderer->player_pos.y, 
+		-gl_renderer->player_pos.z);
+}
+
+void gl_draw_line(GL_Renderer* gl_renderer, V3 p1, V3 p2) {
+	if (gl_renderer == nullptr) {
+		log("Error: gl_renderer is nullptr");
+		assert(false);
+		return;
+	}
+
+	Vertex_3D vertices[2] = {};
+	// World positions
+	vertices[0].pos = p1;
+	vertices[1].pos = p2;
+
+	// Calculate the vertices here
+
+	glBindBuffer(GL_ARRAY_BUFFER, gl_renderer->open_gl.vbo_lines);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D), (void*)offsetof(Vertex_3D, pos));
+	glEnableVertexAttribArray(0);
+
+    GLuint shader_program = shader_program_types[SPT_3D_Lines];
+    if (!shader_program) {
+        log("Error: Shader program not specified");
+        assert(false);
+    }
+    glUseProgram(shader_program);
+
+	// NOTE: Upload the world position of the lines as the vertex pos
+    MX4 perspective_from_world = gl_renderer->perspective_from_view * gl_renderer->view_from_world;
+	GLuint perspective_from_world_location = glGetUniformLocation(shader_program, "perspective_from_world");
+	glUniformMatrix4fv(perspective_from_world_location, 1, GL_FALSE, perspective_from_world.e);
+
+	glDrawArrays(GL_LINES, 0, 2);
 }
 
 /*
@@ -470,30 +660,6 @@ void draw_wire_frame(SDL_Renderer* sdl_renderer, V3 pos, float width, float leng
 }
 #endif
 
-struct Key_State {
-	bool pressed_this_frame;
-	bool held_down;
-};
-
-extern std::unordered_map<LPARAM, Key_State> key_states;
-std::unordered_map<LPARAM, Key_State> key_states;
-
-V2 last_mouse_position;
-V2 current_mouse_position;
-
-V2 get_mouse_delta() {
-	V2 frame_mouse_delta;
-	frame_mouse_delta.x = current_mouse_position.x - last_mouse_position.x;
-	frame_mouse_delta.y = current_mouse_position.y - last_mouse_position.y;
-	return frame_mouse_delta;
-}
-
-void reset_Pressed_This_Frame() {
-	for (auto& key_State : key_states) {
-		key_states[key_State.first].pressed_this_frame = false;
-	}
-}
-
 LRESULT windowProcedure(HWND windowHandle, UINT messageType, WPARAM wParam, LPARAM lParam)
 {
 	LRESULT result = {};
@@ -580,234 +746,28 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 			
 		}
 
+		glEnable(GL_CULL_FACE);
+		glFrontFace(GL_CCW);
+		// GL_COLOR_BUFFER_BIT: This clears the color buffer, which is responsible for holding the color 
+		// information of the pixels. Clearing this buffer sets all the pixels to the color specified by glClearColor.
+		// GL_DEPTH_BUFFER_BIT: This clears the depth buffer, which is responsible for holding the depth 
+		// information of the pixels. The depth buffer keeps track of the distance from the camera to each pixel
+		// to handle occlusion correctly.
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+		gl_draw_line(gl_renderer, { 5, 0, 0 }, { 5,5,0 });
+
+		update_gl_renderer(gl_renderer);
 		SwapBuffers(gl_renderer->hdc);
 
 		Sleep(1);
 	}
 	// TODO: Clean up shaders
-	#if 0
-		glDeleteShader(vertex_shader);
-		glDeleteShader(fragment_shader);
-		glDeleteProgram();
-		glGetProgramInfoLog();
-		glUseProgram();
-	#endif
-	// SDL_DestroyRenderer(renderer);
+	//      glDeleteShader(vertex_shader);
+	//      glDeleteShader(fragment_shader);
+	//      glDeleteProgram();
+	//      glGetProgramInfoLog();
+	//      glUseProgram();
+	// TODO: Destroy the renderer
 	return 0;
 }
-
-// Archived for now
-#if 0 
-
-	// 1 0 0 1
-	// 0 1 0 3
-	// 0 0 1 5
-	// 0 0 0 1
-	MX4 mx_one = translation_matrix_mx_4(1, 3, 5);
-	// 1 0 0 7 
-	// 0 1 0 9 
-	// 0 0 1 11
-	// 0 0 0 1
-	MX4 mx_two = translation_matrix_mx_4(7, 9, 11);
-
-	// 1 0 0 7   *   1 0 0 1    =    1 0 1 8
-	// 0 1 0 9       0 1 0 3         0 1 0 12
-	// 0 0 1 11      0 0 1 5         0 0 1 16
-	// 0 0 0 1       0 0 0 1         0 0 0 1
-	MX4 result_mx = mx_one * mx_two;
-
-	V4 vec_one = { 2, 4, 6, 1 };
-
-	V4 result_v4 = result_mx * vec_one;
-
-	// RECT rect_temp = {};
-	// GetClientRect(window, &rect_temp);
-
-	SDL_SetRenderDrawColor(renderer, 100, 100, 100, 255);
-	// SDL_RenderClear(renderer);
-
-	SDL_Rect clip_rect = { 100, 10, 500, 500 };
-	// SDL_SetRenderDrawColor(renderer, 0, 100, 100, 255);
-	// SDL_RenderFillRect(renderer, &clip_rect);
-	// SDL_RenderSetClipRect(renderer, &clip_rect);
-
-	SDL_Rect viewport_rect = { 100, 10, 500, 500 };
-	// SDL_RenderSetViewport(renderer, &clip_rect);
-	
-	// draw_debug_images(renderer);
-
-	// SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
-
-	SDL_Rect castle_rect = { 100,400,200,200 };
-	SDL_SetTextureAlphaMod(castle_infernal_image.texture, 155);
-	// SDL_RenderCopy(renderer, castle_infernal_image.texture, NULL, &castle_rect);
-
-	SDL_Rect azir_rect = { 200,400,200,200 };
-	SDL_SetTextureColorMod(azir_image.texture, 255, 255, 255);
-	SDL_SetTextureAlphaMod(azir_image.texture, 155);
-	// SDL_RenderCopy(renderer, azir_image.texture, NULL, &azir_rect);
-
-	draw_chunks(renderer);
-
-	// draw_wire_frame(renderer, { 0,0,0 }, 2, 1, 1);
-	mp_draw_line_3d(renderer, { 0,0,0 }, { 1000, 1000, 1000});
-
-	MP_Rect_3D rect;
-	rect.bottom_left = { 0,0,0 };
-	rect.bottom_right = { 10,0,0 };
-	rect.top_right = { 10,10,0 };
-	rect.top_left = { 10,0,0 };
-	// mp_draw_cube_face(renderer, rect, nullptr);
-
-	SDL_RenderPresent(renderer);
-#endif
-
-// Before while loop
-#if 0
-	Vertex vertices[6];
-	// ***First Square - Left side***
-	// First Triangle
-	// Bottom Left
-	vertices[0].pos = { -0.8f, -0.5f }; 
-	vertices[0].color = { 1.0f, 0.0f, 0.0f, 1.0f };
-	vertices[0].uv = { 0.0f, 0.0f };
-	// Top Left
-	vertices[1].pos = { -0.8f, 0.5f }; 
-	vertices[1].color = { 0.0f, 1.0f, 0.0f, 1.0f };
-	vertices[1].uv = { 0.0f, 1.0f };
-	// Top Right
-	vertices[2].pos = { -0.2f, 0.5f };
-	vertices[2].color = { 0.0f, 0.0f, 1.0f, 1.0f };
-	vertices[2].uv = { 1.0f, 1.0f };
-
-	// Second Triangle
-	// Bottom Left
-	vertices[3].pos = { -0.8f, -0.5f };
-	vertices[3].color = { 1.0f, 0.0f, 0.0f, 1.0f };
-	vertices[3].uv = { 0.0f, 0.0f };
-	// Bottom Right
-	vertices[4].pos = { -0.2f, -0.5f };
-	vertices[4].color = { 0.0f, 1.0f, 0.0f, 1.0f };
-	vertices[4].uv = { 1.0f, 0.0f };
-	// Top Right
-	vertices[5].pos = { -0.2f, 0.5f };
-	vertices[5].color = { 0.0f, 0.0f, 1.0f, 1.0f };
-	vertices[5].uv = { 1.0f, 1.0f };
-
-	GLuint vbo, vao;
-	glGenVertexArrays(1, &vao);
-    glBindVertexArray(vao);
-
-    glGenBuffers(1, &vbo);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, 6 * sizeof(Vertex), vertices, GL_STATIC_DRAW);
-
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos));
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, color));
-    glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
-
-	Vertex vertices_two[6];
-	// ***Second Square - Right side***
-	// First Triangle
-	// Bottom Left
-	vertices_two[0].pos = { 0.2f, -0.5f }; 
-	vertices_two[0].color = { 1.0f, 0.0f, 0.0f, 1.0f };
-	vertices_two[0].uv = { 0.0f, 0.0f };
-	// Top Left
-	vertices_two[1].pos = { 0.2f, 0.5f }; 
-	vertices_two[1].color = { 0.0f, 1.0f, 0.0f, 1.0f };
-	vertices_two[1].uv = { 0.0f, 1.0f };
-	// Top Right
-	vertices_two[2].pos = { 0.8f, 0.5f };
-	vertices_two[2].color = { 0.0f, 0.0f, 1.0f, 1.0f };
-	vertices_two[2].uv = { 1.0f, 1.0f };
-
-	// Second Triangle
-	// Bottom Left
-	vertices_two[3].pos = { 0.2f, -0.5f }; 
-	vertices_two[3].color = { 1.0f, 0.0f, 0.0f, 1.0f };
-	vertices_two[3].uv = { 0.0f, 0.0f };
-	// Bottom Right
-	vertices_two[4].pos = { 0.8f, -0.5f };
-	vertices_two[4].color = { 0.0f, 1.0f, 0.0f, 1.0f };
-	vertices_two[4].uv = { 1.0f, 0.0f };
-	// Top Right
-	vertices_two[5].pos = { 0.8f, 0.5f };
-	vertices_two[5].color = { 0.0f, 0.0f, 1.0f, 1.0f };
-	vertices_two[5].uv = { 1.0f, 1.0f };
-
-	GLuint vbo_two;
-    glGenBuffers(1, &vbo_two);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo_two);
-    glBufferData(GL_ARRAY_BUFFER, 6 * sizeof(Vertex), vertices_two, GL_STATIC_DRAW);
-
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos));
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, color));
-    glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
-
-	const char* vertex_shader_file_path = "Shaders\\vertex_shader.txt";
-	const char* fragment_shader_file_path = "Shaders\\fragment_shader.txt";
-	GLuint shader_program = create_shader_program(vertex_shader_file_path, fragment_shader_file_path);
-	
-	glUseProgram(shader_program);
-	GLint tex_Diffuse_Location = glGetUniformLocation(shader_program, "texDiffuse");
-	if (tex_Diffuse_Location != -1) {
-		glUniform1i(tex_Diffuse_Location, 0);
-	}
-	GLint tex_Diffuse_2_Location = glGetUniformLocation(shader_program, "texDiffuse_2");
-	if (tex_Diffuse_2_Location != -1) {
-		glUniform1i(tex_Diffuse_2_Location, 1);
-	}
-	Texture temp = load_Texture_Data("assets\\azir.jpg");
-	Texture temp_2 = load_Texture_Data("assets\\smolder.jpg");
-
-	Texture castle_Infernal = load_Texture_Data("assets\\castle_Infernal.png");
-	Texture water_Sprite = load_Texture_Data("assets\\water_Sprite.jpg");
-
-	glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-#endif
-	
-// In main loop
-#if 0
-		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-		glClear(GL_COLOR_BUFFER_BIT);
-
-		glActiveTexture(GL_TEXTURE0);
-		glBindTexture(GL_TEXTURE_2D, castle_Infernal.handle);
-		glActiveTexture(GL_TEXTURE1);
-		glBindTexture(GL_TEXTURE_2D, water_Sprite.handle);
-
-		GLint offset_X_Location = glGetUniformLocation(shader_program, "u_uv_Offset_X");
-		GLint offset_Y_Location = glGetUniformLocation(shader_program, "u_uv_Offset_Y");
-		if (offset_X_Location != -1 && offset_Y_Location != -1) {
-			static float x = 0;
-			static float y = 0;
-			x += 0.01f;
-			y += 0.02f;
-			glUniform1f(offset_X_Location, x);
-			glUniform1f(offset_Y_Location, y);
-		}
-
-		glBindVertexArray(vao);
-		glBindBuffer(GL_ARRAY_BUFFER, vbo);
-		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos));
-		glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, color));
-		glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
-		glDrawArrays(GL_TRIANGLES, 0, 6);
-
-		glBindBuffer(GL_ARRAY_BUFFER, vbo_two);
-		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos));
-		glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, color));
-		glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
-		glDrawArrays(GL_TRIANGLES, 0, 6);
-
-		SwapBuffers(hdc);
-#endif
