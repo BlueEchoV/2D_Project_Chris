@@ -56,33 +56,28 @@ struct Open_GL {
 	GLuint vbo_lines;
 };
 
+struct Vertex_3D {
+	V3 pos;
+};
+
 struct GL_Renderer {
 	HWND window;
 	HDC hdc;
+
+	Open_GL open_gl = {};
+	std::vector<Vertex_3D> lines_vertices;
 
 	float time;
 	float player_speed;
 	V3 player_pos = { 0, 0, 0 };
 
-	// x or z axis (tbd)
 	float pitch;
 	float roll;
-	// y 
 	float yaw;
 
 	MX4 perspective_from_view;
 	MX4 view_from_world;
-
-	Open_GL open_gl;
 };
-
-void init_open_gl(GL_Renderer* gl_renderer) {
-	glGenVertexArrays(1, &gl_renderer->open_gl.vao);
-	glBindVertexArray(gl_renderer->open_gl.vao);
-
-	glGenBuffers(1, &gl_renderer->open_gl.vbo_lines);
-	glBindBuffer(GL_ARRAY_BUFFER, gl_renderer->open_gl.vbo_lines);
-}
 
 GL_Renderer* create_gl_renderer(HWND window) {
 	GL_Renderer* result = new GL_Renderer();
@@ -147,18 +142,14 @@ GL_Renderer* create_gl_renderer(HWND window) {
 		log("Error: wglCreateContext function returned false");
 		return NULL;
 	}
-	
 
-	init_open_gl(result);
+	glGenVertexArrays(1, &result->open_gl.vao);
+	glBindVertexArray(result->open_gl.vao);
 
 	load_shaders();
 
 	return result;
 }
-
-struct Vertex_3D {
-	V3 pos;
-};
 
 void get_window_size(HWND window, int& w, int& h) {
 	RECT rect = {};
@@ -177,7 +168,7 @@ void get_window_size(HWND window, int& w, int& h) {
 #define VK_A 0x41
 #define VK_D 0x44
 
-void update_gl_renderer(GL_Renderer* gl_renderer) {
+void gl_update_renderer(GL_Renderer* gl_renderer) {
     if (gl_renderer == nullptr) {
         log("Error: gl_renderer is nullptr");
         assert(false);
@@ -260,12 +251,25 @@ void gl_draw_line(GL_Renderer* gl_renderer, V3 p1, V3 p2) {
 	Vertex_3D vertices[2] = {};
 	// World positions
 	vertices[0].pos = p1;
+	gl_renderer->lines_vertices.push_back(vertices[0]);
 	vertices[1].pos = p2;
+	gl_renderer->lines_vertices.push_back(vertices[1]);
 
-	// Calculate the vertices here
+}
+
+void gl_upload_and_draw_lines_vbo(GL_Renderer* gl_renderer) {
+	if (gl_renderer->open_gl.vbo_lines == 0) {
+		glGenBuffers(1, &gl_renderer->open_gl.vbo_lines);
+		glBindBuffer(GL_ARRAY_BUFFER, gl_renderer->open_gl.vbo_lines);
+	}
 
 	glBindBuffer(GL_ARRAY_BUFFER, gl_renderer->open_gl.vbo_lines);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+	glBufferData(
+		GL_ARRAY_BUFFER, 
+		gl_renderer->lines_vertices.size() * sizeof(Vertex_3D), 
+		gl_renderer->lines_vertices.data(), 
+		GL_STATIC_DRAW
+	);
 
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D), (void*)offsetof(Vertex_3D, pos));
 	glEnableVertexAttribArray(0);
@@ -277,12 +281,15 @@ void gl_draw_line(GL_Renderer* gl_renderer, V3 p1, V3 p2) {
     }
     glUseProgram(shader_program);
 
-	// NOTE: Upload the world position of the lines as the vertex pos
     MX4 perspective_from_world = gl_renderer->perspective_from_view * gl_renderer->view_from_world;
 	GLuint perspective_from_world_location = glGetUniformLocation(shader_program, "perspective_from_world");
 	glUniformMatrix4fv(perspective_from_world_location, 1, GL_FALSE, perspective_from_world.e);
 
-	glDrawArrays(GL_LINES, 0, 2);
+	int index = 0;
+	for (Vertex_3D vertex : gl_renderer->lines_vertices) {
+		glDrawArrays(GL_LINES, index, 2);
+		index += 2;
+	}
 }
 
 /*
@@ -755,9 +762,27 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		// to handle occlusion correctly.
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-		gl_draw_line(gl_renderer, { 5, 0, 0 }, { 5,5,0 });
+		// Front face
+		gl_draw_line(gl_renderer, { 0, 0, 0 }, { 50, 0, 0 }); // Bottom edge
+		gl_draw_line(gl_renderer, { 50, 0, 0 }, { 50, 50, 0 }); // Right edge
+		gl_draw_line(gl_renderer, { 50, 50, 0 }, { 0, 50, 0 }); // Top edge
+		gl_draw_line(gl_renderer, { 0, 50, 0 }, { 0, 0, 0 }); // Left edge
 
-		update_gl_renderer(gl_renderer);
+		// Back face
+		gl_draw_line(gl_renderer, { 0, 0, 50 }, { 50, 0, 50 }); // Bottom edge
+		gl_draw_line(gl_renderer, { 50, 0, 50 }, { 50, 50, 50 }); // Right edge
+		gl_draw_line(gl_renderer, { 50, 50, 50 }, { 0, 50, 50 }); // Top edge
+		gl_draw_line(gl_renderer, { 0, 50, 50 }, { 0, 0, 50 }); // Left edge
+
+		// Connecting edges
+		gl_draw_line(gl_renderer, { 0, 0, 0 }, { 0, 0, 50 }); // Bottom left edge
+		gl_draw_line(gl_renderer, { 50, 0, 0 }, { 50, 0, 50 }); // Bottom right edge
+		gl_draw_line(gl_renderer, { 50, 50, 0 }, { 50, 50, 50 }); // Top right edge
+		gl_draw_line(gl_renderer, { 0, 50, 0 }, { 0, 50, 50 }); // Top left edge
+
+		gl_upload_and_draw_lines_vbo(gl_renderer);
+
+		gl_update_renderer(gl_renderer);
 		SwapBuffers(gl_renderer->hdc);
 
 		Sleep(1);
