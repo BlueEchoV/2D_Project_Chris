@@ -263,24 +263,24 @@ void gl_draw_line(GL_Renderer* gl_renderer, V3 p1, V3 p2) {
 	gl_renderer->lines_vertices.push_back(vertices[1]);
 }
 
-void draw_square_with_lines(GL_Renderer* gl_renderer) {
-	// Front face
-	gl_draw_line(gl_renderer, { 0, 0, 0 }, { 50, 0, 0 }); // Bottom edge
-	gl_draw_line(gl_renderer, { 50, 0, 0 }, { 50, 50, 0 }); // Right edge
-	gl_draw_line(gl_renderer, { 50, 50, 0 }, { 0, 50, 0 }); // Top edge
-	gl_draw_line(gl_renderer, { 0, 50, 0 }, { 0, 0, 0 }); // Left edge
+void draw_cube_with_lines(GL_Renderer* gl_renderer, int w, int l, int h, V3 pos) {
+    // Front face
+    gl_draw_line(gl_renderer, { pos.x, pos.y, pos.z }, { pos.x + w, pos.y, pos.z });				 // Bottom edge
+    gl_draw_line(gl_renderer, { pos.x + w, pos.y, pos.z }, { pos.x + w, pos.y + h, pos.z });		 // Right edge
+    gl_draw_line(gl_renderer, { pos.x + w, pos.y + h, pos.z }, { pos.x, pos.y + h, pos.z });		 // Top edge
+    gl_draw_line(gl_renderer, { pos.x, pos.y + h, pos.z }, { pos.x, pos.y, pos.z });				 // Left edge
 
-	// Back face
-	gl_draw_line(gl_renderer, { 0, 0, 50 }, { 50, 0, 50 }); // Bottom edge
-	gl_draw_line(gl_renderer, { 50, 0, 50 }, { 50, 50, 50 }); // Right edge
-	gl_draw_line(gl_renderer, { 50, 50, 50 }, { 0, 50, 50 }); // Top edge
-	gl_draw_line(gl_renderer, { 0, 50, 50 }, { 0, 0, 50 }); // Left edge
+    // Back face
+    gl_draw_line(gl_renderer, { pos.x, pos.y, pos.z + l }, { pos.x + w, pos.y, pos.z + l });		 // Bottom edge
+    gl_draw_line(gl_renderer, { pos.x + w, pos.y, pos.z + l }, { pos.x + w, pos.y + h, pos.z + l }); // Right edge
+    gl_draw_line(gl_renderer, { pos.x + w, pos.y + h, pos.z + l }, { pos.x, pos.y + h, pos.z + l }); // Top edge
+    gl_draw_line(gl_renderer, { pos.x, pos.y + h, pos.z + l }, { pos.x, pos.y, pos.z + l });		 // Left edge
 
-	// Connecting edges
-	gl_draw_line(gl_renderer, { 0, 0, 0 }, { 0, 0, 50 }); // Bottom left edge
-	gl_draw_line(gl_renderer, { 50, 0, 0 }, { 50, 0, 50 }); // Bottom right edge
-	gl_draw_line(gl_renderer, { 50, 50, 0 }, { 50, 50, 50 }); // Top right edge
-	gl_draw_line(gl_renderer, { 0, 50, 0 }, { 0, 50, 50 }); // Top left edge
+    // Connecting edges
+    gl_draw_line(gl_renderer, { pos.x, pos.y, pos.z }, { pos.x, pos.y, pos.z + l });				 // Bottom left edge
+    gl_draw_line(gl_renderer, { pos.x + w, pos.y, pos.z }, { pos.x + w, pos.y, pos.z + l });		 // Bottom right edge
+    gl_draw_line(gl_renderer, { pos.x + w, pos.y + h, pos.z }, { pos.x + w, pos.y + h, pos.z + l }); // Top right edge
+    gl_draw_line(gl_renderer, { pos.x, pos.y + h, pos.z }, { pos.x, pos.y + h, pos.z + l });		 // Top left edge
 }
 
 void gl_upload_and_draw_lines_vbo(GL_Renderer* gl_renderer) {
@@ -683,14 +683,15 @@ struct Cube {
 	Image_Type type;
 };
 
-const int CHUNK_SIZE = 5;
+const int CHUNK_SIZE = 10;
 struct Chunk {
+	// NOTE: This is NOT the world space position. It's the position in world chunk grid. 
 	Cube cubes[CHUNK_SIZE][CHUNK_SIZE][CHUNK_SIZE] = {};
 };
 
-const int WORLD_SIZE_WIDTH = 10;
-const int WORLD_SIZE_LENGTH = 10;
-const int WORLD_SIZE_HEIGHT = 5;
+const int WORLD_SIZE_WIDTH = 3;
+const int WORLD_SIZE_LENGTH = 3;
+const int WORLD_SIZE_HEIGHT = 3;
 Chunk world_chunks[WORLD_SIZE_WIDTH][WORLD_SIZE_HEIGHT][WORLD_SIZE_LENGTH] = {};
 
 int height_map[(WORLD_SIZE_WIDTH * CHUNK_SIZE)][(WORLD_SIZE_LENGTH * CHUNK_SIZE)] = {};
@@ -708,17 +709,17 @@ void generate_height_map(float noise) {
 }
 
 void generate_world_chunk(int x_arr_pos, int y_arr_pos, int z_arr_pos, float noise) {
-	int final_arr_pos_x = clamp(x_arr_pos, 0, WORLD_SIZE_WIDTH);
-	int final_arr_pos_y = clamp(y_arr_pos, 0, WORLD_SIZE_HEIGHT);
-	int final_arr_pos_z = clamp(z_arr_pos, 0, WORLD_SIZE_LENGTH);
+	int final_x_arr_pos = clamp(x_arr_pos, 0, WORLD_SIZE_WIDTH);
+	int final_y_arr_pos = clamp(y_arr_pos, 0, WORLD_SIZE_HEIGHT);
+	int final_z_arr_pos = clamp(z_arr_pos, 0, WORLD_SIZE_LENGTH);
 
 	Chunk new_chunk = {};
 	for (int x = 0; x < CHUNK_SIZE; x++) {
 		for (int y = 0; y < CHUNK_SIZE; y++) {
 			for (int z = 0; z < CHUNK_SIZE; z++) {
-				float world_space_x = x + (float)final_arr_pos_x * CHUNK_SIZE;
-				float world_space_y = y + (float)final_arr_pos_y * CHUNK_SIZE;
-				float world_space_z = z + (float)final_arr_pos_z * CHUNK_SIZE;
+				float world_space_x = x + (float)final_x_arr_pos * CHUNK_SIZE;
+				float world_space_y = y + (float)final_y_arr_pos * CHUNK_SIZE;
+				float world_space_z = z + (float)final_z_arr_pos * CHUNK_SIZE;
 				float perlin_result = stb_perlin_noise3(
 					(float)world_space_x / (float)noise, 
 					(float)world_space_y / (float)noise,
@@ -739,8 +740,7 @@ void generate_world_chunk(int x_arr_pos, int y_arr_pos, int z_arr_pos, float noi
 						result = IT_Dirt;
 					} else if (world_space_y < height - 4 && world_space_y >= height - 8) {
 						result = IT_Cobblestone;
-					} 
-					else {
+					} else {
 						if (perlin_result > -0.3) {
 							result = IT_Cobblestone;
 						} else {
@@ -757,7 +757,7 @@ void generate_world_chunk(int x_arr_pos, int y_arr_pos, int z_arr_pos, float noi
 		}
 	}
 
-	world_chunks[final_arr_pos_x][final_arr_pos_y][final_arr_pos_z] = new_chunk;
+	world_chunks[final_x_arr_pos][final_y_arr_pos][final_z_arr_pos] = new_chunk;
 }
 
 void generate_world_chunks(float noise) {
@@ -771,13 +771,20 @@ void generate_world_chunks(float noise) {
 	}
 }
 
-void draw_chunk(GL_Renderer* gl_renderer, int world_space_x, int world_space_y, int world_space_z) {
-	Chunk* chunk = &world_chunks[world_space_x][world_space_y][world_space_z];
-	for (int x = 0; x < CHUNK_SIZE; x++) {
-		for (int y = 0; y < CHUNK_SIZE; y++) {
-			for (int z = 0; z < CHUNK_SIZE; z++) {
+void draw_chunk(GL_Renderer* gl_renderer, int chunk_size, int x_arr_pos, int y_arr_pos, int z_arr_pos) {
+	int final_x_arr_pos = clamp(x_arr_pos, 0, WORLD_SIZE_WIDTH);
+	int final_y_arr_pos = clamp(y_arr_pos, 0, WORLD_SIZE_HEIGHT);
+	int final_z_arr_pos = clamp(z_arr_pos, 0, WORLD_SIZE_LENGTH);
+	Chunk* chunk = &world_chunks[final_x_arr_pos][final_y_arr_pos][final_z_arr_pos];
+
+	for (int x = 0; x < chunk_size; x++) {
+		for (int y = 0; y < chunk_size; y++) {
+			for (int z = 0; z < chunk_size; z++) {
 				// Voxel index
 				Cube* current_cube = &chunk->cubes[x][y][z];
+				float world_space_x = x + (float)final_x_arr_pos * CHUNK_SIZE;
+				float world_space_y = y + (float)final_y_arr_pos * CHUNK_SIZE;
+				float world_space_z = z + (float)final_z_arr_pos * CHUNK_SIZE;
 
 				// Loop through that faces 
 				for (int face = 0; face < 6; face++) {
@@ -791,28 +798,68 @@ void draw_chunk(GL_Renderer* gl_renderer, int world_space_x, int world_space_y, 
 					// mp_draw_cube_face(sdl_renderer, )
 				}
 
-				V3 cube_pos;
-				//														Center the world 
-				cube_pos.x = (float)(x) - ((float)WORLD_SIZE_WIDTH); // * (float)CHUNK_SIZE) / 2.0f;
-				cube_pos.y = (float)(y) - ((float)WORLD_SIZE_HEIGHT); // * (float)CHUNK_SIZE) / 2.0f;
-				cube_pos.z = (float)(z) - ((float)WORLD_SIZE_LENGTH); // * (float)CHUNK_SIZE) / 2.0f;
+				V3 cube_ws_pos = { world_space_x, world_space_y, world_space_z };
+				// cube_pos.x = (float)(x) - ((float)WORLD_SIZE_WIDTH); // * (float)CHUNK_SIZE) / 2.0f;
+				// cube_pos.y = (float)(y) - ((float)WORLD_SIZE_HEIGHT); // * (float)CHUNK_SIZE) / 2.0f;
+				// cube_pos.z = (float)(z) - ((float)WORLD_SIZE_LENGTH); // * (float)CHUNK_SIZE) / 2.0f;
 
-				cube_pos.x += (world_space_x * CHUNK_SIZE);
-				cube_pos.y += (world_space_y * CHUNK_SIZE);
-				cube_pos.z += (world_space_z * CHUNK_SIZE);
+				 // cube_pos.x += (world_space_x * CHUNK_SIZE);
+				 // cube_pos.y += (world_space_y * CHUNK_SIZE);
+				 // cube_pos.z += (world_space_z * CHUNK_SIZE);
 
-				draw_cube_type(gl_renderer, cube_pos, current_cube->type);
+				draw_cube_type(gl_renderer, cube_ws_pos, current_cube->type);
 			}
 		}
 	}
-
 }
 
 void draw_chunks(GL_Renderer* gl_renderer) {
 	for (int x = 0; x < WORLD_SIZE_WIDTH; x++) {
 		for (int y = 0; y < WORLD_SIZE_HEIGHT; y++) {
 			for (int z = 0; z < WORLD_SIZE_LENGTH; z++) {
-				draw_chunk(gl_renderer, x, y, z);
+				draw_chunk(gl_renderer, CHUNK_SIZE, x, y, z);
+			}
+		}
+	}
+}
+
+void draw_wire_frames(GL_Renderer* gl_renderer, int chunk_w, int chunk_l, int chunk_h){
+	for (int x = 0; x < WORLD_SIZE_WIDTH; x++) {
+		for (int y = 0; y < WORLD_SIZE_HEIGHT; y++) {
+			for (int z = 0; z < WORLD_SIZE_LENGTH; z++) {
+				// This is the corner position of the chunk. 
+				// This is the position I'm drawing from.
+				V3 chunk_ws_pos = {(float)x * CHUNK_SIZE, (float)y * CHUNK_SIZE, (float)z * CHUNK_SIZE};
+
+				// The points draw in the center of the cube. Need to offset them.
+				V3 p1 = chunk_ws_pos;
+				p1.x -= 0.5f;
+				p1.y -= 0.5f;
+				p1.z -= 0.5f;
+				V3 p2 = chunk_ws_pos;
+				p2.x -= 0.5f;
+				p2.y -= 0.5f;
+				p2.z -= 0.5f;
+
+				int w = chunk_w;
+				int l = chunk_l;
+				int h = chunk_h;
+
+				// Left face
+				gl_draw_line(gl_renderer, { p1.x,	  p1.y,     p1.z }, { p2.x + w, p2.y,     p2.z }); 
+				gl_draw_line(gl_renderer, { p1.x + w, p1.y,     p1.z }, { p2.x + w, p2.y + h, p2.z }); 
+				gl_draw_line(gl_renderer, { p1.x + w, p1.y + h, p1.z }, { p2.x,     p2.y + h, p2.z }); 
+				gl_draw_line(gl_renderer, { p1.x,	  p1.y + h, p1.z }, { p2.x,     p2.y,     p2.z }); 
+				// Right face
+				gl_draw_line(gl_renderer, { p1.x,	  p1.y,     p1.z + l }, { p2.x + w, p2.y,     p2.z + l});
+				gl_draw_line(gl_renderer, { p1.x + w, p1.y,     p1.z + l }, { p2.x + w, p2.y + h, p2.z + l}); 
+				gl_draw_line(gl_renderer, { p1.x + w, p1.y + h, p1.z + l }, { p2.x,     p2.y + h, p2.z + l}); 
+				gl_draw_line(gl_renderer, { p1.x,	  p1.y + h, p1.z + l }, { p2.x,     p2.y,     p2.z + l}); 
+				// Connect the squares
+				gl_draw_line(gl_renderer, { p1.x,	  p1.y,     p1.z }, { p2.x,		p2.y,     p2.z + l});
+				gl_draw_line(gl_renderer, { p1.x + w, p1.y,     p1.z }, { p2.x + w, p2.y,     p2.z + l}); 
+				gl_draw_line(gl_renderer, { p1.x + w, p1.y + h, p1.z }, { p2.x + w, p2.y + h, p2.z + l}); 
+				gl_draw_line(gl_renderer, { p1.x,	  p1.y + h, p1.z }, { p2.x,     p2.y + h, p2.z + l}); 
 			}
 		}
 	}
@@ -937,22 +984,22 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		// to handle occlusion correctly.
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+		glEnable(GL_DEPTH_TEST);
+		glDepthFunc(GL_LESS);
 		// **************Drawing 3D lines****************
-		draw_square_with_lines(gl_renderer);
+		draw_wire_frames(gl_renderer, CHUNK_SIZE, CHUNK_SIZE, CHUNK_SIZE);
 		gl_upload_and_draw_lines_vbo(gl_renderer);
 		// **********************************************
 
 		// **************Drawing 3D Cubes****************
-		glEnable(GL_DEPTH_TEST);
-		glDepthFunc(GL_LESS);
 		gl_upload_cube_vbo(gl_renderer);
 
 		// draw_cube(gl_renderer, { 0,0,0 }, images[IT_Dirt].texture);
 		draw_chunks(gl_renderer);
 
 		gl_draw_cubes(gl_renderer);
-		glDisable(GL_DEPTH_TEST);
 		// ***********************************************
+		glDisable(GL_DEPTH_TEST);
 
 		gl_update_renderer(gl_renderer);
 		SwapBuffers(gl_renderer->hdc);
