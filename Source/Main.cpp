@@ -688,14 +688,14 @@ struct Cube {
 	Image_Type type = IT_Air;
 };
 
-const int CHUNK_SIZE = 5;
+const int CHUNK_SIZE = 25;
 struct Chunk {
 	Cube cubes[CHUNK_SIZE][CHUNK_SIZE][CHUNK_SIZE] = {};
 };
 
 const int WORLD_SIZE_WIDTH = 2;
 const int WORLD_SIZE_LENGTH = 2;
-const int WORLD_SIZE_HEIGHT = 2;
+const int WORLD_SIZE_HEIGHT = 1;
 Chunk world_chunks[WORLD_SIZE_WIDTH][WORLD_SIZE_HEIGHT][WORLD_SIZE_LENGTH] = {};
 
 int height_map[(WORLD_SIZE_WIDTH * CHUNK_SIZE)][(WORLD_SIZE_LENGTH * CHUNK_SIZE)] = {};
@@ -803,6 +803,8 @@ void generate_chunk_vbo(GL_Renderer* gl_renderer, V3 chunk_arr_pos) {
 					Cube left_cube = {};
 
 					// Loop over the faces
+					// This currently doesn't take into account adjacent chunks when 
+					// drawing the faces
 					if ((chunk_ws_pos.x + x + 1) < CHUNK_SIZE * WORLD_SIZE_WIDTH) {
 						back_cube = chunk->cubes[x + 1][y][z];
 					}
@@ -812,14 +814,20 @@ void generate_chunk_vbo(GL_Renderer* gl_renderer, V3 chunk_arr_pos) {
 					if ((chunk_ws_pos.z + z + 1) < CHUNK_SIZE * WORLD_SIZE_LENGTH) {
 						right_cube = chunk->cubes[x][y][z + 1];
 					}
-					if ((chunk_ws_pos.x + x - 1) > CHUNK_SIZE * WORLD_SIZE_WIDTH) {
-						front_cube = chunk->cubes[x - 1][y][z];
+					if ((chunk_ws_pos.x + x - 1) > 0) {
+						if (x > 0) {
+							front_cube = chunk->cubes[x - 1][y][z];
+						}
 					}
-					if ((chunk_ws_pos.y + y - 1) > CHUNK_SIZE * WORLD_SIZE_HEIGHT) {
-						bottom_cube = chunk->cubes[x][y - 1][z];
+					if ((chunk_ws_pos.y + y - 1) > 0) {
+						if (y > 0) {
+							bottom_cube = chunk->cubes[x][y - 1][z];
+						}
 					}
-					if ((chunk_ws_pos.z + z - 1) > CHUNK_SIZE * WORLD_SIZE_LENGTH) {
-						left_cube = chunk->cubes[x][y][z - 1];
+					if ((chunk_ws_pos.z + z - 1) > 0) {
+						if (z > 0) {
+							left_cube = chunk->cubes[x][y][z - 1];
+						}
 					}
 
 					// NOTE: The cube is draw from the center. I might just 
