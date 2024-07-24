@@ -142,6 +142,7 @@ enum Shader_Program_Type {
 	SPT_3D,
 	SPT_3D_Lines,
 	SPT_Cube_Face,
+	SPT_String,
 	SPT_TOTAL
 };
 

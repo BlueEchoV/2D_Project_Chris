@@ -62,6 +62,7 @@ struct Open_GL {
 	GLuint vbo_lines;
 	GLuint vbo_cubes;
 	GLuint vbo_cube_faces;
+	GLuint vbo_strings;
 
 	std::vector<Chunk_Vbo> chunk_vbos;
 };
@@ -81,6 +82,11 @@ struct Cube_Face {
 	GLuint texture_handle;
 };
 
+struct Vertex_String {
+	V2 pos;
+	V2 uv;
+};
+
 struct GL_Renderer {
 	HWND window;
 	HDC hdc;
@@ -88,6 +94,7 @@ struct GL_Renderer {
 	Open_GL open_gl = {};
 	std::vector<Vertex_3D_Line> lines_vertices;
 	std::vector<Cube_Draw> cubes;
+	std::vector<Vertex_String> strings;
 
 	float time;
 	float player_speed;
@@ -326,17 +333,20 @@ void gl_upload_and_draw_lines_vbo(GL_Renderer* gl_renderer) {
 	GLuint perspective_from_world_location = glGetUniformLocation(shader_program, "perspective_from_world");
 	glUniformMatrix4fv(perspective_from_world_location, 1, GL_FALSE, perspective_from_world.e);
 
-	int index = 0;
-	for (Vertex_3D_Line vertex : gl_renderer->lines_vertices) {
-		glDrawArrays(GL_LINES, index, 2);
-		index += 2;
-	}
+	glDrawArrays(GL_LINES, 0, (GLsizei)gl_renderer->lines_vertices.size());
 	gl_renderer->lines_vertices.clear();
 }
 
 struct MP_Rect_2D {
 	int x, y;
 	int w, h;
+};
+
+struct Color_8 {
+	uint8_t r;
+	uint8_t g;
+	uint8_t b;
+	uint8_t a;
 };
 
 struct GL_Texture {
@@ -347,6 +357,8 @@ struct GL_Texture {
 	// Locked if null
 	void* pixels;
 	MP_Rect_2D portion;
+
+	Color_8 mod = { 255, 255, 255, 255 };
 };
 
 GL_Texture* gl_create_texture(GL_Renderer* gl_renderer, int w, int h) {
@@ -530,6 +542,204 @@ void init_images(GL_Renderer* gl_renderer) {
 	images[IT_Cobblestone] = create_Image(gl_renderer, "assets\\cobblestone.png");
 	images[IT_Dirt] = create_Image(gl_renderer, "assets\\dirt.png");
 	images[IT_Grass] = create_Image(gl_renderer, "assets\\grass.png");
+}
+
+struct Font {
+	int image_w;
+	int image_h;
+	int char_w;
+	int char_h;
+
+	GL_Texture* texture;
+};
+
+Font load_font(GL_Renderer* gl_renderer, const char* file_name) {
+	int width, height, channels;
+	unsigned char* data = stbi_load(file_name, &width, &height, &channels, 4);
+	if (data == NULL) {
+		log("Error: stbi_load() returned null");
+		assert(false);
+	}
+	DEFER{
+		stbi_image_free(data);
+	};
+
+	Font result;
+	result.image_w = width;
+	result.image_h = height;
+	result.char_w = width / 18;
+	result.char_h = width / 7;
+	
+	for (int x = 0; x < width; x++) {
+		for (int y = 0; y < height; y++) {
+			int index = 0;
+			index = (4 * ((y * width) + x));
+			if (data[index] == 0 && data[index + 1] == 0 && data[index + 2] == 0) {
+				data[index + 3] = 0;
+			}
+		}
+	}
+
+	GL_Texture* texture = gl_create_texture(gl_renderer, width, height);
+	if (texture == NULL) {
+		log("Error: gl_create_texture returned null");
+		assert(false);
+	}
+
+	result.texture = texture;
+
+	void* pixels;
+	int pitch;
+	gl_lock_texture(texture, NULL, &pixels, &pitch);
+	my_Memory_Copy(pixels, data, (width * height) * 4);
+	gl_unlock_texture(texture);
+
+	return result;
+}
+
+V2 convert_to_ndc(GL_Renderer* gl_renderer, V2 pos) {
+	if (gl_renderer == nullptr) {
+		log("Error: gl_renderer is nullptr");
+		assert(false);
+	}
+
+	int screen_w, screen_h;
+	get_window_size(gl_renderer->window, screen_w, screen_h);
+
+	V2 ndc;
+	ndc.x = ((2.0f * pos.x) / screen_w) - 1.0f;
+	ndc.y = (1.0f - ((2.0f * pos.y) / screen_h));
+	return ndc;
+}
+
+V2 convert_to_ndc(GL_Renderer* gl_renderer, int x, int y) {
+	return convert_to_ndc(gl_renderer, { (float)x, (float)y });
+}
+
+V2 convert_to_uv_coordinates(V2 pos, int w, int h) {
+	V2 uv;
+	uv.x = pos.x / w;
+	uv.y = pos.y / h;
+	return uv;
+}
+
+void draw_character(GL_Renderer* gl_renderer, Font* font, char character, int pos_x, int pos_y, int size) {
+    int ascii_dec = (int)character - (int)' ';
+    int chars_per_row = (font->image_w / font->char_w);
+
+    MP_Rect_2D src = {};
+	// Position in the row
+    src.x = (ascii_dec % chars_per_row) * font->char_w;
+	// Which row we are in
+    src.y = (ascii_dec / chars_per_row) * font->char_h;
+    src.w = font->char_w;
+    src.h = font->char_h;
+
+    // Position of the character on the screen
+    MP_Rect_2D dst = {};
+    dst.x = pos_x;
+    dst.y = pos_y;
+    dst.w = (int)(font->char_w * size);
+    dst.h = (int)(font->char_h * size);
+
+    V2 bottom_left_src = { (float)src.x, (float)src.y + src.h };
+    V2 bottom_right_src = { (float)(src.x + src.w), (float)(src.y + src.h) };
+    V2 top_right_src = { (float)(src.x + src.w), (float)src.y };
+    V2 top_left_src = { (float)src.x, (float)src.y };
+
+    V2 bottom_left_uv = convert_to_uv_coordinates(bottom_left_src, font->texture->w, font->texture->h);
+    V2 bottom_right_uv = convert_to_uv_coordinates(bottom_right_src, font->texture->w, font->texture->h);
+    V2 top_right_uv = convert_to_uv_coordinates(top_right_src, font->texture->w, font->texture->h);
+    V2 top_left_uv = convert_to_uv_coordinates(top_left_src, font->texture->w, font->texture->h);
+
+    V2 top_left_dst = { (float)dst.x, (float)dst.y };
+    V2 top_right_dst = { (float)(dst.x + dst.w), (float)dst.y };
+    V2 bottom_right_dst = { (float)(dst.x + dst.w), (float)(dst.y + dst.h) };
+    V2 bottom_left_dst = { (float)dst.x, (float)(dst.y + dst.h) };
+
+    V2 top_left_ndc = convert_to_ndc(gl_renderer, top_left_dst);
+    V2 top_right_ndc = convert_to_ndc(gl_renderer, top_right_dst);
+    V2 bottom_right_ndc = convert_to_ndc(gl_renderer, bottom_right_dst);
+    V2 bottom_left_ndc = convert_to_ndc(gl_renderer, bottom_left_dst);
+
+	Vertex_String vertices[6];
+
+	vertices[0].pos = bottom_left_ndc;
+	vertices[0].uv = bottom_left_uv;
+	gl_renderer->strings.push_back(vertices[0]);
+
+	vertices[1].pos = top_left_ndc;
+	vertices[1].uv = top_left_uv;
+	gl_renderer->strings.push_back(vertices[1]);
+
+	vertices[2].pos = top_right_ndc;
+	vertices[2].uv= top_right_uv;
+	gl_renderer->strings.push_back(vertices[2]);
+
+	vertices[3].pos = top_right_ndc;
+	vertices[3].uv= top_right_uv;
+	gl_renderer->strings.push_back(vertices[3]);
+
+	vertices[4].pos = bottom_right_ndc;
+	vertices[4].uv = bottom_right_uv;
+	gl_renderer->strings.push_back(vertices[4]);
+
+	vertices[5].pos = bottom_left_ndc;
+	vertices[5].uv = bottom_left_uv;
+	gl_renderer->strings.push_back(vertices[5]);
+}
+
+void draw_string(GL_Renderer* gl_renderer, Font* font, const char* str, int pos_x, int pos_y, int size, bool center) {
+    int off_x = 0;
+    int index = 0;
+    char iterator = str[index];
+    size_t len_pixels = strlen(str);
+    len_pixels *= font->char_w * size;
+
+    int char_pos_x = 0;
+    int char_pos_y = 0;
+    if (center) {
+        char_pos_x = (pos_x - (int)(len_pixels / 2));
+        char_pos_y = (pos_y - ((font->char_h * size) / 2));
+    }
+    else {
+        char_pos_x = pos_x;
+        char_pos_y = pos_y;
+    }
+
+    while (iterator != '\0') {
+        char_pos_x += off_x;
+        draw_character(gl_renderer, font, iterator, char_pos_x, char_pos_y, size);
+        off_x = font->char_w * size;
+        index++;
+        iterator = str[index];
+    }
+}
+
+void gl_upload_and_draw_2d_string(GL_Renderer* gl_renderer, Font* font) {
+	if (gl_renderer->open_gl.vbo_strings == 0) {
+		glGenBuffers(1, &gl_renderer->open_gl.vbo_strings);
+		glBindBuffer(GL_ARRAY_BUFFER, gl_renderer->open_gl.vbo_strings);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(Vertex_String) * gl_renderer->strings.size(), gl_renderer->strings.data(), GL_STATIC_DRAW);
+	}
+
+	glBindBuffer(GL_ARRAY_BUFFER, gl_renderer->open_gl.vbo_strings);
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex_String), (void*)offsetof(Vertex_String, pos));
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex_String), (void*)offsetof(Vertex_String, uv));
+	glEnableVertexAttribArray(1);
+
+	glBindTexture(GL_TEXTURE_2D, font->texture->handle);
+
+	GLuint shader_program = shader_program_types[SPT_String];
+	if (!shader_program) {
+		log("ERROR: Shader program not specified");
+		assert(false);
+	}
+	glUseProgram(shader_program);
+
+	glDrawArrays(GL_TRIANGLES, 0, (GLsizei)gl_renderer->strings.size());
+	gl_renderer->strings.clear();
 }
 
 struct Vertex_3D_Cube {
@@ -805,29 +1015,23 @@ void generate_chunk_vbo(GL_Renderer* gl_renderer, V3 chunk_arr_pos) {
 					// Loop over the faces
 					// This currently doesn't take into account adjacent chunks when 
 					// drawing the faces
-					if ((chunk_ws_pos.x + x + 1) < CHUNK_SIZE * WORLD_SIZE_WIDTH) {
+					if (x + 1 < CHUNK_SIZE) {
 						back_cube = chunk->cubes[x + 1][y][z];
 					}
-					if ((chunk_ws_pos.y + y + 1) < CHUNK_SIZE * WORLD_SIZE_HEIGHT) {
+					if (y + 1 < CHUNK_SIZE) {
 						top_cube = chunk->cubes[x][y + 1][z];
 					}
-					if ((chunk_ws_pos.z + z + 1) < CHUNK_SIZE * WORLD_SIZE_LENGTH) {
+					if (z + 1 < CHUNK_SIZE) {
 						right_cube = chunk->cubes[x][y][z + 1];
 					}
-					if ((chunk_ws_pos.x + x - 1) > 0) {
-						if (x > 0) {
-							front_cube = chunk->cubes[x - 1][y][z];
-						}
+					if (x > 0) {
+						front_cube = chunk->cubes[x - 1][y][z];
 					}
-					if ((chunk_ws_pos.y + y - 1) > 0) {
-						if (y > 0) {
-							bottom_cube = chunk->cubes[x][y - 1][z];
-						}
+					if (y > 0) {
+						bottom_cube = chunk->cubes[x][y - 1][z];
 					}
-					if ((chunk_ws_pos.z + z - 1) > 0) {
-						if (z > 0) {
-							left_cube = chunk->cubes[x][y][z - 1];
-						}
+					if (z > 0) {
+						left_cube = chunk->cubes[x][y][z - 1];
 					}
 
 					// NOTE: The cube is draw from the center. I might just 
@@ -1154,9 +1358,9 @@ void generate_chunk_vbo(GL_Renderer* gl_renderer, V3 chunk_arr_pos) {
 	faces_vertices.clear();
 };
 
-void draw_cube_faces_vbo(GL_Renderer* gl_renderer) {
+void gl_draw_cube_faces_vbo(GL_Renderer* gl_renderer) {
 	const int vertices_per_face = 6;
-	for (Chunk_Vbo chunk_vbo : gl_renderer->open_gl.chunk_vbos) {
+	for (const Chunk_Vbo& chunk_vbo : gl_renderer->open_gl.chunk_vbos) {
 		int current_index = 0;
 		glBindBuffer(GL_ARRAY_BUFFER, chunk_vbo.vbo);
 		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Faces), (void*)offsetof(Vertex_3D_Faces, pos));
@@ -1164,7 +1368,7 @@ void draw_cube_faces_vbo(GL_Renderer* gl_renderer) {
 		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Faces), (void*)offsetof(Vertex_3D_Faces, uv));
 		glEnableVertexAttribArray(1);
 
-		for (GLuint texture_handle : chunk_vbo.texture_handles) {
+		for (const GLuint& texture_handle : chunk_vbo.texture_handles) {
 			glBindTexture(GL_TEXTURE_2D, texture_handle);
 
 			GLuint shader_program = shader_program_types[SPT_Cube_Face];
@@ -1312,7 +1516,7 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 	wndClass.cbWndExtra = 0;
 	wndClass.hInstance = hInstance;
 	wndClass.hIcon = NULL;
-	wndClass.hCursor = LoadCursor(NULL, IDC_ARROW);
+	wndClass.hCursor = LoadCursor(NULL, IDC_ARROW); 
 	wndClass.hbrBackground = NULL;
 	wndClass.lpszMenuName = nullptr;
 	wndClass.lpszClassName = "MyClassName";
@@ -1330,10 +1534,11 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 	Image castle_infernal_image = create_Image(gl_renderer, "assets\\castle_Infernal.png");
 	Image azir_image = create_Image(gl_renderer, "assets\\azir.jpg");
 
+	Font font = load_font(gl_renderer, "assets\\font_1.png");
+
 	init_images(gl_renderer);
 
 	generate_world_chunks(gl_renderer, 20);
-
 
 	bool running = true;
 	while (running) {
@@ -1367,7 +1572,7 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		// **********************************************
 
 		// **************Drawing 3D Cubes****************
-		gl_upload_cube_vbo(gl_renderer);
+		// gl_upload_cube_vbo(gl_renderer);
 
 		// draw_cube(gl_renderer, { 0,0,0 }, images[IT_Dirt].texture);
 		// draw_chunks(gl_renderer);
@@ -1375,10 +1580,16 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		// gl_draw_cubes(gl_renderer);
 		// ***********************************************
 
-		// **************Generating VBO Chunks****************
-		draw_cube_faces_vbo(gl_renderer);
+		// **************Generating Face VBO Chunks****************
+		gl_draw_cube_faces_vbo(gl_renderer);
 		// ***********************************************
 		glDisable(GL_DEPTH_TEST);
+		glDisable(GL_CULL_FACE);
+
+		// **************Drawing Strings****************
+		draw_string(gl_renderer, &font, "Testing", 500, 500, 5, true);
+		gl_upload_and_draw_2d_string(gl_renderer, &font);
+		// **********************************************
 
 		gl_update_renderer(gl_renderer);
 		SwapBuffers(gl_renderer->hdc);

@@ -143,5 +143,10 @@ void load_shaders() {
 	const char* f_cube_face_file_path = "Shaders\\f_cube_face.txt";
 	GLuint cube_face_shader = create_shader_program(v_cube_face_file_path, f_cube_face_file_path);
 	shader_program_types[SPT_Cube_Face] = cube_face_shader;
+
+	const char* v_string_file_path = "Shaders\\v_string.txt";
+	const char* f_string_file_path = "Shaders\\f_string.txt";
+	GLuint string_shader = create_shader_program(v_string_file_path, f_string_file_path);
+	shader_program_types[SPT_String] = string_shader;
 }
 
