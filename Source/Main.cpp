@@ -51,11 +51,19 @@ struct GL_Rect_3D {
     V3 bottom_left;
 };
 
+struct Chunk_Vbo {
+	GLuint vbo;
+
+	std::vector<GLuint> texture_handles;
+};
+
 struct Open_GL {
 	GLuint vao;
 	GLuint vbo_lines;
 	GLuint vbo_cubes;
 	GLuint vbo_cube_faces;
+
+	std::vector<Chunk_Vbo> chunk_vbos;
 };
 
 struct Vertex_3D_Line {
@@ -80,7 +88,6 @@ struct GL_Renderer {
 	Open_GL open_gl = {};
 	std::vector<Vertex_3D_Line> lines_vertices;
 	std::vector<Cube_Draw> cubes;
-	std::vector<Cube_Face> cube_faces;
 
 	float time;
 	float player_speed;
@@ -681,14 +688,14 @@ struct Cube {
 	Image_Type type = IT_Air;
 };
 
-const int CHUNK_SIZE = 1;
+const int CHUNK_SIZE = 5;
 struct Chunk {
 	Cube cubes[CHUNK_SIZE][CHUNK_SIZE][CHUNK_SIZE] = {};
 };
 
-const int WORLD_SIZE_WIDTH = 1;
-const int WORLD_SIZE_LENGTH = 1;
-const int WORLD_SIZE_HEIGHT = 1;
+const int WORLD_SIZE_WIDTH = 2;
+const int WORLD_SIZE_LENGTH = 2;
+const int WORLD_SIZE_HEIGHT = 2;
 Chunk world_chunks[WORLD_SIZE_WIDTH][WORLD_SIZE_HEIGHT][WORLD_SIZE_LENGTH] = {};
 
 int height_map[(WORLD_SIZE_WIDTH * CHUNK_SIZE)][(WORLD_SIZE_LENGTH * CHUNK_SIZE)] = {};
@@ -715,7 +722,6 @@ void generate_world_chunk(int x_arr_pos, int y_arr_pos, int z_arr_pos, float noi
 	for (int x = 0; x < CHUNK_SIZE; x++) {
 		for (int y = 0; y < CHUNK_SIZE; y++) {
 			for (int z = 0; z < CHUNK_SIZE; z++) {
-#if 0 
 				float world_space_x = x + (float)final_x_arr_pos * CHUNK_SIZE;
 				float world_space_y = y + (float)final_y_arr_pos * CHUNK_SIZE;
 				float world_space_z = z + (float)final_z_arr_pos * CHUNK_SIZE;
@@ -750,8 +756,6 @@ void generate_world_chunk(int x_arr_pos, int y_arr_pos, int z_arr_pos, float noi
 				} else {
 					result = IT_Air;
 				}
-#endif
-				Image_Type result = IT_Grass;
 
 				new_chunk.cubes[x][y][z].type = result;
 			}
@@ -774,6 +778,7 @@ void generate_chunk_vbo(GL_Renderer* gl_renderer, V3 chunk_arr_pos) {
 
 	// Generate the data to be sent to the GPU
 	std::vector<Vertex_3D_Faces> faces_vertices = {};
+	Chunk_Vbo chunk_vbo = {};
 
 	for (int x = 0; x < CHUNK_SIZE; x++) {
 		for (int y = 0; y < CHUNK_SIZE; y++) {
@@ -786,6 +791,7 @@ void generate_chunk_vbo(GL_Renderer* gl_renderer, V3 chunk_arr_pos) {
 
 				Cube* current_cube = &chunk->cubes[x][y][z];
 				if (current_cube->type != IT_Air) {
+					GLuint texture_handle = get_image(current_cube->type)->handle;
 
 					// The cubes around the current cube
 					Cube back_cube = {};
@@ -873,7 +879,7 @@ void generate_chunk_vbo(GL_Renderer* gl_renderer, V3 chunk_arr_pos) {
 						vertex.uv = { 0, 0 };
 						faces_vertices.push_back(vertex);
 
-						gl_renderer->cube_faces.push_back(face);
+						chunk_vbo.texture_handles.push_back(texture_handle);
 					}
 
 					if (top_cube.type == IT_Air) {
@@ -926,7 +932,7 @@ void generate_chunk_vbo(GL_Renderer* gl_renderer, V3 chunk_arr_pos) {
 						vertex.uv = { 0, 0 };
 						faces_vertices.push_back(vertex);
 
-						gl_renderer->cube_faces.push_back(face);
+						chunk_vbo.texture_handles.push_back(texture_handle);
 					}
 
 					if (right_cube.type == IT_Air) {
@@ -979,7 +985,7 @@ void generate_chunk_vbo(GL_Renderer* gl_renderer, V3 chunk_arr_pos) {
 						vertex.uv = { 0, 0 };
 						faces_vertices.push_back(vertex);
 
-						gl_renderer->cube_faces.push_back(face);
+						chunk_vbo.texture_handles.push_back(texture_handle);
 					}
 
 					if (front_cube.type == IT_Air) {
@@ -1028,7 +1034,7 @@ void generate_chunk_vbo(GL_Renderer* gl_renderer, V3 chunk_arr_pos) {
 						vertex.uv = { 0, 0 };
 						faces_vertices.push_back(vertex);
 
-						gl_renderer->cube_faces.push_back(face);
+						chunk_vbo.texture_handles.push_back(texture_handle);
 					}
 
 					if (bottom_cube.type == IT_Air) {
@@ -1077,7 +1083,7 @@ void generate_chunk_vbo(GL_Renderer* gl_renderer, V3 chunk_arr_pos) {
 						vertex.uv = { 0, 0 };
 						faces_vertices.push_back(vertex);
 
-						gl_renderer->cube_faces.push_back(face);
+						chunk_vbo.texture_handles.push_back(texture_handle);
 					}
 
 					if (left_cube.type == IT_Air) {
@@ -1126,54 +1132,57 @@ void generate_chunk_vbo(GL_Renderer* gl_renderer, V3 chunk_arr_pos) {
 						vertex.uv = { 0, 0 };
 						faces_vertices.push_back(vertex);
 
-						gl_renderer->cube_faces.push_back(face);
+						chunk_vbo.texture_handles.push_back(texture_handle);
 					}
 				}
 			}
 		}
 	}
 
-	if (gl_renderer->open_gl.vbo_cube_faces == 0) {
-		glGenBuffers(1, &gl_renderer->open_gl.vbo_cubes);
-		glBindBuffer(GL_ARRAY_BUFFER, gl_renderer->open_gl.vbo_cubes);
-		glBufferData(GL_ARRAY_BUFFER, sizeof(Vertex_3D_Faces) * faces_vertices.size(), faces_vertices.data(), GL_STATIC_DRAW);
-	}
+	glGenBuffers(1, &chunk_vbo.vbo);
+	glBindBuffer(GL_ARRAY_BUFFER, chunk_vbo.vbo);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(Vertex_3D_Faces) * faces_vertices.size(), faces_vertices.data(), GL_STATIC_DRAW);
+	gl_renderer->open_gl.chunk_vbos.push_back(chunk_vbo);
+	faces_vertices.clear();
 };
 
 void draw_cube_faces_vbo(GL_Renderer* gl_renderer) {
-	glBindBuffer(GL_ARRAY_BUFFER, gl_renderer->open_gl.vbo_cubes);
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Faces), (void*)offsetof(Vertex_3D_Faces, pos));
-	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Faces), (void*)offsetof(Vertex_3D_Faces, uv));
-	glEnableVertexAttribArray(1);
-
 	const int vertices_per_face = 6;
-	int current_index = 0;
-	for (Cube_Face face : gl_renderer->cube_faces) {
-		glBindTexture(GL_TEXTURE_2D, face.texture_handle);
+	for (Chunk_Vbo chunk_vbo : gl_renderer->open_gl.chunk_vbos) {
+		int current_index = 0;
+		glBindBuffer(GL_ARRAY_BUFFER, chunk_vbo.vbo);
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Faces), (void*)offsetof(Vertex_3D_Faces, pos));
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Faces), (void*)offsetof(Vertex_3D_Faces, uv));
+		glEnableVertexAttribArray(1);
 
-		GLuint shader_program = shader_program_types[SPT_Cube_Face];
-		if (!shader_program) {
-			log("ERROR: Shader program not specified");
-			assert(false);
+		for (GLuint texture_handle : chunk_vbo.texture_handles) {
+			glBindTexture(GL_TEXTURE_2D, texture_handle);
+
+			GLuint shader_program = shader_program_types[SPT_Cube_Face];
+			if (!shader_program) {
+				log("ERROR: Shader program not specified");
+				assert(false);
+			}
+			glUseProgram(shader_program);
+
+			MX4 perspective_from_world = gl_renderer->perspective_from_view * gl_renderer->view_from_world;
+			GLuint perspective_from_world_loc = glGetUniformLocation(shader_program, "perspective_from_world");
+			glUniformMatrix4fv(perspective_from_world_loc, 1, GL_FALSE, perspective_from_world.e);
+
+			glDrawArrays(GL_TRIANGLES, current_index, vertices_per_face);
+			current_index += vertices_per_face;
 		}
-		glUseProgram(shader_program);
-
-		MX4 perspective_from_world = gl_renderer->perspective_from_view * gl_renderer->view_from_world;
-		GLuint perspective_from_world_loc = glGetUniformLocation(shader_program, "perspective_from_world");
-		glUniformMatrix4fv(perspective_from_world_loc, 1, GL_FALSE, perspective_from_world.e);
-
-		glDrawArrays(GL_TRIANGLES, current_index, vertices_per_face);
-		current_index += vertices_per_face;
 	}
 }
 
-void generate_world_chunks(float noise) {
+void generate_world_chunks(GL_Renderer* gl_renderer, float noise) {
 	generate_height_map(noise);
 	for (int x = 0; x < WORLD_SIZE_WIDTH; x++) {
 		for (int y = 0; y < WORLD_SIZE_HEIGHT; y++) {
 			for (int z = 0; z < WORLD_SIZE_LENGTH; z++) {
 				generate_world_chunk(x, y, z, noise);
+				generate_chunk_vbo(gl_renderer, { (float)x, (float)y, (float)z });
 			}
 		}
 	}
@@ -1222,14 +1231,8 @@ void draw_wire_frames(GL_Renderer* gl_renderer){
 
 				// The points draw in the center of the cube. Need to offset them.
 				V3 p1 = chunk_ws_pos;
-				p1.x -= 0.5f;
-				p1.y -= 0.5f;
-				p1.z -= 0.5f;
 
 				V3 p2 = chunk_ws_pos;
-				p2.x -= 0.5f;
-				p2.y -= 0.5f;
-				p2.z -= 0.5f;
 
 				int w = CHUNK_SIZE;
 				int l = CHUNK_SIZE;
@@ -1321,9 +1324,8 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 
 	init_images(gl_renderer);
 
-	generate_world_chunks(20);
+	generate_world_chunks(gl_renderer, 20);
 
-	generate_chunk_vbo(gl_renderer, { 0, 0, 0 });
 
 	bool running = true;
 	while (running) {
@@ -1352,7 +1354,7 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		glEnable(GL_DEPTH_TEST);
 		glDepthFunc(GL_LESS);
 		// **************Drawing 3D lines****************
-		// draw_wire_frames(gl_renderer);
+		draw_wire_frames(gl_renderer);
 		gl_upload_and_draw_lines_vbo(gl_renderer);
 		// **********************************************
 
