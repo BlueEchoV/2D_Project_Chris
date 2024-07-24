@@ -55,6 +55,7 @@ struct Open_GL {
 	GLuint vao;
 	GLuint vbo_lines;
 	GLuint vbo_cubes;
+	GLuint vbo_cube_faces;
 };
 
 struct Vertex_3D_Line {
@@ -66,6 +67,12 @@ struct Cube_Draw {
 	GLuint texture_handle;
 };
 
+struct Cube_Face {
+	// World space positions
+	V3 p1, p2, p3, p4;
+	GLuint texture_handle;
+};
+
 struct GL_Renderer {
 	HWND window;
 	HDC hdc;
@@ -73,6 +80,7 @@ struct GL_Renderer {
 	Open_GL open_gl = {};
 	std::vector<Vertex_3D_Line> lines_vertices;
 	std::vector<Cube_Draw> cubes;
+	std::vector<Cube_Face> cube_faces;
 
 	float time;
 	float player_speed;
@@ -495,10 +503,10 @@ Image create_Image(GL_Renderer* gl_renderer, const char* file_Path) {
 }
 
 enum Image_Type {
+    IT_Air,
 	IT_Cobblestone,
 	IT_Dirt,
 	IT_Grass,
-    IT_Air,
 
 	IT_Total
 };
@@ -661,16 +669,6 @@ GL_Texture* get_image(Image_Type type) {
 	return result;
 }
 
-/*
-void draw_cube_face_type(GL_Renderer* gl_renderer, MP_Rect_3D rect, Image_Type type) {
-	GL_Texture* result = get_image(type);
-	
-	if (result != nullptr) {
-		draw_cube_face(sdl_renderer, rect, result);
-	}
-}
-*/
-
 void draw_cube_type(GL_Renderer* gl_renderer, V3 pos, Image_Type type) {
 	GL_Texture* result = get_image(type);
 
@@ -680,18 +678,17 @@ void draw_cube_type(GL_Renderer* gl_renderer, V3 pos, Image_Type type) {
 }
 
 struct Cube {
-	Image_Type type;
+	Image_Type type = IT_Air;
 };
 
-const int CHUNK_SIZE = 10;
+const int CHUNK_SIZE = 1;
 struct Chunk {
-	// NOTE: This is NOT the world space position. It's the position in world chunk grid. 
 	Cube cubes[CHUNK_SIZE][CHUNK_SIZE][CHUNK_SIZE] = {};
 };
 
-const int WORLD_SIZE_WIDTH = 3;
-const int WORLD_SIZE_LENGTH = 3;
-const int WORLD_SIZE_HEIGHT = 3;
+const int WORLD_SIZE_WIDTH = 1;
+const int WORLD_SIZE_LENGTH = 1;
+const int WORLD_SIZE_HEIGHT = 1;
 Chunk world_chunks[WORLD_SIZE_WIDTH][WORLD_SIZE_HEIGHT][WORLD_SIZE_LENGTH] = {};
 
 int height_map[(WORLD_SIZE_WIDTH * CHUNK_SIZE)][(WORLD_SIZE_LENGTH * CHUNK_SIZE)] = {};
@@ -709,6 +706,7 @@ void generate_height_map(float noise) {
 }
 
 void generate_world_chunk(int x_arr_pos, int y_arr_pos, int z_arr_pos, float noise) {
+	REF(noise);
 	int final_x_arr_pos = clamp(x_arr_pos, 0, WORLD_SIZE_WIDTH);
 	int final_y_arr_pos = clamp(y_arr_pos, 0, WORLD_SIZE_HEIGHT);
 	int final_z_arr_pos = clamp(z_arr_pos, 0, WORLD_SIZE_LENGTH);
@@ -717,6 +715,7 @@ void generate_world_chunk(int x_arr_pos, int y_arr_pos, int z_arr_pos, float noi
 	for (int x = 0; x < CHUNK_SIZE; x++) {
 		for (int y = 0; y < CHUNK_SIZE; y++) {
 			for (int z = 0; z < CHUNK_SIZE; z++) {
+#if 0 
 				float world_space_x = x + (float)final_x_arr_pos * CHUNK_SIZE;
 				float world_space_y = y + (float)final_y_arr_pos * CHUNK_SIZE;
 				float world_space_z = z + (float)final_z_arr_pos * CHUNK_SIZE;
@@ -751,6 +750,8 @@ void generate_world_chunk(int x_arr_pos, int y_arr_pos, int z_arr_pos, float noi
 				} else {
 					result = IT_Air;
 				}
+#endif
+				Image_Type result = IT_Grass;
 
 				new_chunk.cubes[x][y][z].type = result;
 			}
@@ -758,6 +759,413 @@ void generate_world_chunk(int x_arr_pos, int y_arr_pos, int z_arr_pos, float noi
 	}
 
 	world_chunks[final_x_arr_pos][final_y_arr_pos][final_z_arr_pos] = new_chunk;
+}
+
+struct Vertex_3D_Faces {
+	V3 pos;
+	V2 uv;
+};
+
+const int CUBE_SIZE = 1;
+
+void generate_chunk_vbo(GL_Renderer* gl_renderer, V3 chunk_arr_pos) {
+	V3 chunk_ws_pos = {chunk_arr_pos.x * CHUNK_SIZE, chunk_arr_pos.y * CHUNK_SIZE, chunk_arr_pos.z * CHUNK_SIZE};
+	Chunk* chunk = &world_chunks[(int)chunk_arr_pos.x][(int)chunk_arr_pos.y][(int)chunk_arr_pos.z];
+
+	// Generate the data to be sent to the GPU
+	std::vector<Vertex_3D_Faces> faces_vertices = {};
+
+	for (int x = 0; x < CHUNK_SIZE; x++) {
+		for (int y = 0; y < CHUNK_SIZE; y++) {
+			for (int z = 0; z < CHUNK_SIZE; z++) {
+				// Grab the cube I want
+				V3 cube_ws_pos = chunk_ws_pos;
+				cube_ws_pos.x += x;
+				cube_ws_pos.y += y;
+				cube_ws_pos.z += z;
+
+				Cube* current_cube = &chunk->cubes[x][y][z];
+				if (current_cube->type != IT_Air) {
+
+					// The cubes around the current cube
+					Cube back_cube = {};
+					Cube top_cube = {};
+					Cube right_cube = {};
+
+					Cube front_cube = {};
+					Cube bottom_cube = {};
+					Cube left_cube = {};
+
+					// Loop over the faces
+					if ((chunk_ws_pos.x + x + 1) < CHUNK_SIZE * WORLD_SIZE_WIDTH) {
+						back_cube = chunk->cubes[x + 1][y][z];
+					}
+					if ((chunk_ws_pos.y + y + 1) < CHUNK_SIZE * WORLD_SIZE_HEIGHT) {
+						top_cube = chunk->cubes[x][y + 1][z];
+					}
+					if ((chunk_ws_pos.z + z + 1) < CHUNK_SIZE * WORLD_SIZE_LENGTH) {
+						right_cube = chunk->cubes[x][y][z + 1];
+					}
+					if ((chunk_ws_pos.x + x - 1) > CHUNK_SIZE * WORLD_SIZE_WIDTH) {
+						front_cube = chunk->cubes[x - 1][y][z];
+					}
+					if ((chunk_ws_pos.y + y - 1) > CHUNK_SIZE * WORLD_SIZE_HEIGHT) {
+						bottom_cube = chunk->cubes[x][y - 1][z];
+					}
+					if ((chunk_ws_pos.z + z - 1) > CHUNK_SIZE * WORLD_SIZE_LENGTH) {
+						left_cube = chunk->cubes[x][y][z - 1];
+					}
+
+					// NOTE: The cube is draw from the center. I might just 
+					// have the faces draw from the bottom corner
+
+					// Emit a face
+					// The points go in clockwise order
+					// NOTE: This offset is wrong
+					if (back_cube.type == IT_Air) {
+						// Emit a face
+						Cube_Face face = {};
+
+						GL_Texture* texture = get_image(current_cube->type);
+						face.texture_handle = texture->handle;
+
+						face.p1 = cube_ws_pos;
+						face.p1.x += CUBE_SIZE;
+
+						face.p2 = cube_ws_pos;
+						face.p2.x += CUBE_SIZE;
+						face.p2.y += CUBE_SIZE;
+
+						face.p3 = cube_ws_pos;
+						face.p3.x += CUBE_SIZE;
+						face.p3.y += CUBE_SIZE;
+						face.p3.z += CUBE_SIZE;
+
+						face.p4 = cube_ws_pos;
+						face.p4.x += CUBE_SIZE;
+						face.p4.z += CUBE_SIZE;
+
+						Vertex_3D_Faces vertex = {};
+
+						// First Triangle
+						vertex.pos = face.p1;
+						vertex.uv = { 0, 0 };
+						faces_vertices.push_back(vertex);
+
+						vertex.pos = face.p2;
+						vertex.uv = { 1, 0 };
+						faces_vertices.push_back(vertex);
+
+						vertex.pos = face.p3;
+						vertex.uv = { 1, 1 };
+						faces_vertices.push_back(vertex);
+
+						// Second Triangle
+						vertex.pos = face.p3;
+						vertex.uv = { 1, 1 };
+						faces_vertices.push_back(vertex);
+
+						vertex.pos = face.p4;
+						vertex.uv = { 0, 1 };
+						faces_vertices.push_back(vertex);
+
+						vertex.pos = face.p1;
+						vertex.uv = { 0, 0 };
+						faces_vertices.push_back(vertex);
+
+						gl_renderer->cube_faces.push_back(face);
+					}
+
+					if (top_cube.type == IT_Air) {
+						Cube_Face face = {};
+
+						GL_Texture* texture = get_image(current_cube->type);
+						face.texture_handle = texture->handle;
+
+						face.p1 = cube_ws_pos;
+						face.p1.y += CUBE_SIZE;
+
+						face.p2 = cube_ws_pos;
+						face.p2.x += CUBE_SIZE;
+						face.p2.y += CUBE_SIZE;
+
+						face.p3 = cube_ws_pos;
+						face.p3.x += CUBE_SIZE;
+						face.p3.y += CUBE_SIZE;
+						face.p3.z += CUBE_SIZE;
+
+						face.p4 = cube_ws_pos;
+						face.p4.y += CUBE_SIZE;
+						face.p4.z += CUBE_SIZE;
+
+						Vertex_3D_Faces vertex = {};
+
+						// First Triangle
+						vertex.pos = face.p1;
+						vertex.uv = { 0, 0 };
+						faces_vertices.push_back(vertex);
+
+						vertex.pos = face.p4;
+						vertex.uv = { 1, 0 };
+						faces_vertices.push_back(vertex);
+
+						vertex.pos = face.p3;
+						vertex.uv = { 1, 1 };
+						faces_vertices.push_back(vertex);
+
+						// Second Triangle
+						vertex.pos = face.p3;
+						vertex.uv = { 1, 1 };
+						faces_vertices.push_back(vertex);
+
+						vertex.pos = face.p2;
+						vertex.uv = { 0, 1 };
+						faces_vertices.push_back(vertex);
+
+						vertex.pos = face.p1;
+						vertex.uv = { 0, 0 };
+						faces_vertices.push_back(vertex);
+
+						gl_renderer->cube_faces.push_back(face);
+					}
+
+					if (right_cube.type == IT_Air) {
+						Cube_Face face = {};
+
+						GL_Texture* texture = get_image(current_cube->type);
+						face.texture_handle = texture->handle;
+
+						face.p1 = cube_ws_pos;
+						face.p1.z += CUBE_SIZE;
+
+						face.p2 = cube_ws_pos;
+						face.p2.y += CUBE_SIZE;
+						face.p2.z += CUBE_SIZE;
+
+						face.p3 = cube_ws_pos;
+						face.p3.x += CUBE_SIZE;
+						face.p3.y += CUBE_SIZE;
+						face.p3.z += CUBE_SIZE;
+
+						face.p4 = cube_ws_pos;
+						face.p4.x += CUBE_SIZE;
+						face.p4.z += CUBE_SIZE;
+
+						Vertex_3D_Faces vertex = {};
+
+						// First Triangle
+						vertex.pos = face.p1;
+						vertex.uv = { 0, 0 };
+						faces_vertices.push_back(vertex);
+
+						vertex.pos = face.p4;
+						vertex.uv = { 1, 0 };
+						faces_vertices.push_back(vertex);
+
+						vertex.pos = face.p3;
+						vertex.uv = { 1, 1 };
+						faces_vertices.push_back(vertex);
+
+						// Second Triangle
+						vertex.pos = face.p3;
+						vertex.uv = { 1, 1 };
+						faces_vertices.push_back(vertex);
+
+						vertex.pos = face.p2;
+						vertex.uv = { 0, 1 };
+						faces_vertices.push_back(vertex);
+
+						vertex.pos = face.p1;
+						vertex.uv = { 0, 0 };
+						faces_vertices.push_back(vertex);
+
+						gl_renderer->cube_faces.push_back(face);
+					}
+
+					if (front_cube.type == IT_Air) {
+						Cube_Face face = {};
+
+						GL_Texture* texture = get_image(current_cube->type);
+						face.texture_handle = texture->handle;
+
+						face.p1 = cube_ws_pos;
+
+						face.p2 = cube_ws_pos;
+						face.p2.y += CUBE_SIZE;
+
+						face.p3 = cube_ws_pos;
+						face.p3.y += CUBE_SIZE;
+						face.p3.z += CUBE_SIZE;
+
+						face.p4 = cube_ws_pos;
+						face.p4.z += CUBE_SIZE;
+
+						Vertex_3D_Faces vertex = {};
+
+						// First Triangle
+						vertex.pos = face.p1;
+						vertex.uv = { 0, 0 };
+						faces_vertices.push_back(vertex);
+
+						vertex.pos = face.p4;
+						vertex.uv = { 1, 0 };
+						faces_vertices.push_back(vertex);
+
+						vertex.pos = face.p3;
+						vertex.uv = { 1, 1 };
+						faces_vertices.push_back(vertex);
+
+						// Second Triangle
+						vertex.pos = face.p3;
+						vertex.uv = { 1, 1 };
+						faces_vertices.push_back(vertex);
+
+						vertex.pos = face.p2;
+						vertex.uv = { 0, 1 };
+						faces_vertices.push_back(vertex);
+
+						vertex.pos = face.p1;
+						vertex.uv = { 0, 0 };
+						faces_vertices.push_back(vertex);
+
+						gl_renderer->cube_faces.push_back(face);
+					}
+
+					if (bottom_cube.type == IT_Air) {
+						Cube_Face face = {};
+
+						GL_Texture* texture = get_image(current_cube->type);
+						face.texture_handle = texture->handle;
+
+						face.p1 = cube_ws_pos;
+
+						face.p2 = cube_ws_pos;
+						face.p2.z += CUBE_SIZE;
+
+						face.p3 = cube_ws_pos;
+						face.p3.x += CUBE_SIZE;
+						face.p3.z += CUBE_SIZE;
+
+						face.p4 = cube_ws_pos;
+						face.p4.x += CUBE_SIZE;
+
+						Vertex_3D_Faces vertex = {};
+
+						// First Triangle
+						vertex.pos = face.p1;
+						vertex.uv = { 0, 0 };
+						faces_vertices.push_back(vertex);
+
+						vertex.pos = face.p4;
+						vertex.uv = { 1, 0 };
+						faces_vertices.push_back(vertex);
+
+						vertex.pos = face.p3;
+						vertex.uv = { 1, 1 };
+						faces_vertices.push_back(vertex);
+
+						// Second Triangle
+						vertex.pos = face.p3;
+						vertex.uv = { 1, 1 };
+						faces_vertices.push_back(vertex);
+
+						vertex.pos = face.p2;
+						vertex.uv = { 0, 1 };
+						faces_vertices.push_back(vertex);
+
+						vertex.pos = face.p1;
+						vertex.uv = { 0, 0 };
+						faces_vertices.push_back(vertex);
+
+						gl_renderer->cube_faces.push_back(face);
+					}
+
+					if (left_cube.type == IT_Air) {
+						Cube_Face face = {};
+
+						GL_Texture* texture = get_image(current_cube->type);
+						face.texture_handle = texture->handle;
+
+						face.p1 = cube_ws_pos;
+
+						face.p2 = cube_ws_pos;
+						face.p2.y += CUBE_SIZE;
+
+						face.p3 = cube_ws_pos;
+						face.p3.x += CUBE_SIZE;
+						face.p3.y += CUBE_SIZE;
+
+						face.p4 = cube_ws_pos;
+						face.p4.x += CUBE_SIZE;
+
+						Vertex_3D_Faces vertex = {};
+
+						// First Triangle
+						vertex.pos = face.p1;
+						vertex.uv = { 0, 0 };
+						faces_vertices.push_back(vertex);
+
+						vertex.pos = face.p2;
+						vertex.uv = { 1, 0 };
+						faces_vertices.push_back(vertex);
+
+						vertex.pos = face.p3;
+						vertex.uv = { 1, 1 };
+						faces_vertices.push_back(vertex);
+
+						// Second Triangle
+						vertex.pos = face.p3;
+						vertex.uv = { 1, 1 };
+						faces_vertices.push_back(vertex);
+
+						vertex.pos = face.p4;
+						vertex.uv = { 0, 1 };
+						faces_vertices.push_back(vertex);
+
+						vertex.pos = face.p1;
+						vertex.uv = { 0, 0 };
+						faces_vertices.push_back(vertex);
+
+						gl_renderer->cube_faces.push_back(face);
+					}
+				}
+			}
+		}
+	}
+
+	if (gl_renderer->open_gl.vbo_cube_faces == 0) {
+		glGenBuffers(1, &gl_renderer->open_gl.vbo_cubes);
+		glBindBuffer(GL_ARRAY_BUFFER, gl_renderer->open_gl.vbo_cubes);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(Vertex_3D_Faces) * faces_vertices.size(), faces_vertices.data(), GL_STATIC_DRAW);
+	}
+};
+
+void draw_cube_faces_vbo(GL_Renderer* gl_renderer) {
+	glBindBuffer(GL_ARRAY_BUFFER, gl_renderer->open_gl.vbo_cubes);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Faces), (void*)offsetof(Vertex_3D_Faces, pos));
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Faces), (void*)offsetof(Vertex_3D_Faces, uv));
+	glEnableVertexAttribArray(1);
+
+	const int vertices_per_face = 6;
+	int current_index = 0;
+	for (Cube_Face face : gl_renderer->cube_faces) {
+		glBindTexture(GL_TEXTURE_2D, face.texture_handle);
+
+		GLuint shader_program = shader_program_types[SPT_Cube_Face];
+		if (!shader_program) {
+			log("ERROR: Shader program not specified");
+			assert(false);
+		}
+		glUseProgram(shader_program);
+
+		MX4 perspective_from_world = gl_renderer->perspective_from_view * gl_renderer->view_from_world;
+		GLuint perspective_from_world_loc = glGetUniformLocation(shader_program, "perspective_from_world");
+		glUniformMatrix4fv(perspective_from_world_loc, 1, GL_FALSE, perspective_from_world.e);
+
+		glDrawArrays(GL_TRIANGLES, current_index, vertices_per_face);
+		current_index += vertices_per_face;
+	}
 }
 
 void generate_world_chunks(float noise) {
@@ -786,26 +1194,7 @@ void draw_chunk(GL_Renderer* gl_renderer, int chunk_size, int x_arr_pos, int y_a
 				float world_space_y = y + (float)final_y_arr_pos * CHUNK_SIZE;
 				float world_space_z = z + (float)final_z_arr_pos * CHUNK_SIZE;
 
-				// Loop through that faces 
-				for (int face = 0; face < 6; face++) {
-					// Air next to the voxels determines if the cubes should be drawn
-
-					// If we renderer, we want to emit 4 vertex and 6 indices to the element buffer
-
-					// NOTE: Generate the whole chunk
-					// NOTE: Do texturing later
-					// MP_Rect_3D rect;
-					// mp_draw_cube_face(sdl_renderer, )
-				}
-
 				V3 cube_ws_pos = { world_space_x, world_space_y, world_space_z };
-				// cube_pos.x = (float)(x) - ((float)WORLD_SIZE_WIDTH); // * (float)CHUNK_SIZE) / 2.0f;
-				// cube_pos.y = (float)(y) - ((float)WORLD_SIZE_HEIGHT); // * (float)CHUNK_SIZE) / 2.0f;
-				// cube_pos.z = (float)(z) - ((float)WORLD_SIZE_LENGTH); // * (float)CHUNK_SIZE) / 2.0f;
-
-				 // cube_pos.x += (world_space_x * CHUNK_SIZE);
-				 // cube_pos.y += (world_space_y * CHUNK_SIZE);
-				 // cube_pos.z += (world_space_z * CHUNK_SIZE);
 
 				draw_cube_type(gl_renderer, cube_ws_pos, current_cube->type);
 			}
@@ -823,7 +1212,7 @@ void draw_chunks(GL_Renderer* gl_renderer) {
 	}
 }
 
-void draw_wire_frames(GL_Renderer* gl_renderer, int chunk_w, int chunk_l, int chunk_h){
+void draw_wire_frames(GL_Renderer* gl_renderer){
 	for (int x = 0; x < WORLD_SIZE_WIDTH; x++) {
 		for (int y = 0; y < WORLD_SIZE_HEIGHT; y++) {
 			for (int z = 0; z < WORLD_SIZE_LENGTH; z++) {
@@ -836,62 +1225,35 @@ void draw_wire_frames(GL_Renderer* gl_renderer, int chunk_w, int chunk_l, int ch
 				p1.x -= 0.5f;
 				p1.y -= 0.5f;
 				p1.z -= 0.5f;
+
 				V3 p2 = chunk_ws_pos;
 				p2.x -= 0.5f;
 				p2.y -= 0.5f;
 				p2.z -= 0.5f;
 
-				int w = chunk_w;
-				int l = chunk_l;
-				int h = chunk_h;
+				int w = CHUNK_SIZE;
+				int l = CHUNK_SIZE;
+				int h = CHUNK_SIZE;
 
 				// Left face
-				gl_draw_line(gl_renderer, { p1.x,	  p1.y,     p1.z }, { p2.x + w, p2.y,     p2.z }); 
-				gl_draw_line(gl_renderer, { p1.x + w, p1.y,     p1.z }, { p2.x + w, p2.y + h, p2.z }); 
-				gl_draw_line(gl_renderer, { p1.x + w, p1.y + h, p1.z }, { p2.x,     p2.y + h, p2.z }); 
-				gl_draw_line(gl_renderer, { p1.x,	  p1.y + h, p1.z }, { p2.x,     p2.y,     p2.z }); 
+				gl_draw_line(gl_renderer, { p1.x,	  p1.y,     p1.z     }, { p2.x + w, p2.y,     p2.z    }); 
+				gl_draw_line(gl_renderer, { p1.x + w, p1.y,     p1.z     }, { p2.x + w, p2.y + h, p2.z    }); 
+				gl_draw_line(gl_renderer, { p1.x + w, p1.y + h, p1.z     }, { p2.x,     p2.y + h, p2.z    }); 
+				gl_draw_line(gl_renderer, { p1.x,	  p1.y + h, p1.z     }, { p2.x,     p2.y,     p2.z    }); 
 				// Right face
 				gl_draw_line(gl_renderer, { p1.x,	  p1.y,     p1.z + l }, { p2.x + w, p2.y,     p2.z + l});
 				gl_draw_line(gl_renderer, { p1.x + w, p1.y,     p1.z + l }, { p2.x + w, p2.y + h, p2.z + l}); 
 				gl_draw_line(gl_renderer, { p1.x + w, p1.y + h, p1.z + l }, { p2.x,     p2.y + h, p2.z + l}); 
 				gl_draw_line(gl_renderer, { p1.x,	  p1.y + h, p1.z + l }, { p2.x,     p2.y,     p2.z + l}); 
 				// Connect the squares
-				gl_draw_line(gl_renderer, { p1.x,	  p1.y,     p1.z }, { p2.x,		p2.y,     p2.z + l});
-				gl_draw_line(gl_renderer, { p1.x + w, p1.y,     p1.z }, { p2.x + w, p2.y,     p2.z + l}); 
-				gl_draw_line(gl_renderer, { p1.x + w, p1.y + h, p1.z }, { p2.x + w, p2.y + h, p2.z + l}); 
-				gl_draw_line(gl_renderer, { p1.x,	  p1.y + h, p1.z }, { p2.x,     p2.y + h, p2.z + l}); 
+				gl_draw_line(gl_renderer, { p1.x,	  p1.y,     p1.z     }, { p2.x,		p2.y,     p2.z + l});
+				gl_draw_line(gl_renderer, { p1.x + w, p1.y,     p1.z     }, { p2.x + w, p2.y,     p2.z + l}); 
+				gl_draw_line(gl_renderer, { p1.x + w, p1.y + h, p1.z     }, { p2.x + w, p2.y + h, p2.z + l}); 
+				gl_draw_line(gl_renderer, { p1.x,	  p1.y + h, p1.z     }, { p2.x,     p2.y + h, p2.z + l}); 
 			}
 		}
 	}
 }
-
-#if 0
-void draw_wire_frame(SDL_Renderer* sdl_renderer, V3 pos, float width, float length, float height) {
-	REF(length);
-	REF(height);
-
-	// Pillars 
-	for (int i = 0; i < width; i++) {
-		float x = i + pos.x;
-		float y = i + pos.y;
-		float z = i + pos.z;
-
-		mp_draw_3d_line(sdl_renderer, {x,		 y, z},        0, 0);
-		mp_draw_3d_line(sdl_renderer, {x + 1.0f, y, z},        0, 0);
-		mp_draw_3d_line(sdl_renderer, {x,		 y, z + 1.0f}, 0, 0);
-		mp_draw_3d_line(sdl_renderer, {x + 1.0f, y, z + 1.0f}, 0, 0);
-	}
-
-	mp_draw_3d_line(sdl_renderer, {pos.x,		 pos.y - 0.5f, pos.z + 0.5f},  90, 0);
-	mp_draw_3d_line(sdl_renderer, {pos.x,		 pos.y + 0.5f, pos.z + 0.5f},  90, 0);
-	mp_draw_3d_line(sdl_renderer, {pos.x + 1.0f, pos.y - 0.5f, pos.z + 0.5f},  90, 0);
-	mp_draw_3d_line(sdl_renderer, {pos.x + 1.0f, pos.y + 0.5f, pos.z + 0.5f},  90, 0);
-	mp_draw_3d_line(sdl_renderer, {pos.x + 0.5f, pos.y - 0.5f, pos.z},  0, 90);
-	mp_draw_3d_line(sdl_renderer, {pos.x + 0.5f, pos.y + 0.5f, pos.z},  0, 90);
-	mp_draw_3d_line(sdl_renderer, {pos.x + 0.5f, pos.y - 0.5f, pos.z + 1.0f},  0, 90);
-	mp_draw_3d_line(sdl_renderer, {pos.x + 0.5f, pos.y + 0.5f, pos.z + 1.0f},  0, 90);
-}
-#endif
 
 LRESULT windowProcedure(HWND windowHandle, UINT messageType, WPARAM wParam, LPARAM lParam)
 {
@@ -958,7 +1320,10 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 	Image azir_image = create_Image(gl_renderer, "assets\\azir.jpg");
 
 	init_images(gl_renderer);
+
 	generate_world_chunks(20);
+
+	generate_chunk_vbo(gl_renderer, { 0, 0, 0 });
 
 	bool running = true;
 	while (running) {
@@ -987,7 +1352,7 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		glEnable(GL_DEPTH_TEST);
 		glDepthFunc(GL_LESS);
 		// **************Drawing 3D lines****************
-		draw_wire_frames(gl_renderer, CHUNK_SIZE, CHUNK_SIZE, CHUNK_SIZE);
+		// draw_wire_frames(gl_renderer);
 		gl_upload_and_draw_lines_vbo(gl_renderer);
 		// **********************************************
 
@@ -995,9 +1360,13 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		gl_upload_cube_vbo(gl_renderer);
 
 		// draw_cube(gl_renderer, { 0,0,0 }, images[IT_Dirt].texture);
-		draw_chunks(gl_renderer);
+		// draw_chunks(gl_renderer);
 
-		gl_draw_cubes(gl_renderer);
+		// gl_draw_cubes(gl_renderer);
+		// ***********************************************
+
+		// **************Generating VBO Chunks****************
+		draw_cube_faces_vbo(gl_renderer);
 		// ***********************************************
 		glDisable(GL_DEPTH_TEST);
 
