@@ -74,6 +74,12 @@ MX4 operator*(const MX4& matrix_a, const MX4& matrix_b) {
     return result;
 }
 
+float lerp(float left_Point, float right_Point, float percent) {
+	// Lerp of T = A * (1 - T) + B * T
+	// A is the left side, B is the right side, T is the percentage of the interpolation
+	return ((left_Point) * (1 - percent) + (right_Point)*percent);
+}
+
 float dot_product(const V3& a, const V3& b) {
     return a.x * b.x + a.y * b.y + a.z * b.z;
 }
@@ -182,6 +188,7 @@ MX4 mat4_perspective(float fovy, float aspect)
 {
     float z_near = 0.01f;
     float z_far  = 1000.0f;
+
 
     float tan_half_fovy = tanf(0.5f * fovy);
     MX4 out = {};

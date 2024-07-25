@@ -53,8 +53,8 @@ struct GL_Rect_3D {
 
 struct Chunk_Vbo {
 	GLuint vbo;
-
-	std::vector<GLuint> texture_handles;
+	GLuint texture_sprite_sheet_handle;
+	GLuint total_vertices;
 };
 
 struct Open_GL {
@@ -79,7 +79,6 @@ struct Cube_Draw {
 struct Cube_Face {
 	// World space positions
 	V3 p1, p2, p3, p4;
-	GLuint texture_handle;
 };
 
 struct Vertex_String {
@@ -526,6 +525,7 @@ enum Image_Type {
 	IT_Cobblestone,
 	IT_Dirt,
 	IT_Grass,
+	IT_Texture_Sprite_Sheet,
 
 	IT_Total
 };
@@ -542,6 +542,7 @@ void init_images(GL_Renderer* gl_renderer) {
 	images[IT_Cobblestone] = create_Image(gl_renderer, "assets\\cobblestone.png");
 	images[IT_Dirt] = create_Image(gl_renderer, "assets\\dirt.png");
 	images[IT_Grass] = create_Image(gl_renderer, "assets\\grass.png");
+	images[IT_Texture_Sprite_Sheet] = create_Image(gl_renderer, "assets\\texture_sprite_sheet.png");
 }
 
 struct Font {
@@ -874,6 +875,10 @@ GL_Texture* get_image(Image_Type type) {
 		result = images[type].texture;
 		break;
 	}
+	case IT_Texture_Sprite_Sheet: {
+		result = images[type].texture;
+		break;
+	}
 	case IT_Air: {
 		result = nullptr;
 		break;
@@ -898,14 +903,14 @@ struct Cube {
 	Image_Type type = IT_Air;
 };
 
-const int CHUNK_SIZE = 25;
+const int CHUNK_SIZE = 40;
 struct Chunk {
 	Cube cubes[CHUNK_SIZE][CHUNK_SIZE][CHUNK_SIZE] = {};
 };
 
-const int WORLD_SIZE_WIDTH = 2;
-const int WORLD_SIZE_LENGTH = 2;
-const int WORLD_SIZE_HEIGHT = 1;
+const int WORLD_SIZE_WIDTH = 10;
+const int WORLD_SIZE_LENGTH = 10;
+const int WORLD_SIZE_HEIGHT = 10;
 Chunk world_chunks[WORLD_SIZE_WIDTH][WORLD_SIZE_HEIGHT][WORLD_SIZE_LENGTH] = {};
 
 int height_map[(WORLD_SIZE_WIDTH * CHUNK_SIZE)][(WORLD_SIZE_LENGTH * CHUNK_SIZE)] = {};
@@ -923,7 +928,6 @@ void generate_height_map(float noise) {
 }
 
 void generate_world_chunk(int x_arr_pos, int y_arr_pos, int z_arr_pos, float noise) {
-	REF(noise);
 	int final_x_arr_pos = clamp(x_arr_pos, 0, WORLD_SIZE_WIDTH);
 	int final_y_arr_pos = clamp(y_arr_pos, 0, WORLD_SIZE_HEIGHT);
 	int final_z_arr_pos = clamp(z_arr_pos, 0, WORLD_SIZE_LENGTH);
@@ -980,6 +984,48 @@ struct Vertex_3D_Faces {
 	V2 uv;
 };
 
+// Order of the sprite sheet = Grass | Dirt | Cobblestone
+V2 get_texture_sprite_sheet_uv_coordinates(Image_Type type, int pos_x, int pos_y) {
+	V2 result = {};
+	// Currently only have one row
+	result.y = (float)pos_y;
+
+	switch (type) {
+	case IT_Grass: {
+		// 0 0
+		if (pos_x == 0) {
+			result.x = 0.0f;
+		} else if (pos_x == 1) {
+			result.x = lerp(0, 1, 0.25);
+		}
+		break;
+	}
+	case IT_Dirt: {
+		if (pos_x == 0) {
+			result.x = lerp(0, 1, 0.25);
+		} else if (pos_x == 1) {
+			result.x = lerp(0, 1, 0.50);
+		}
+		break;
+	}
+	case IT_Cobblestone: {
+		if (pos_x == 0) {
+			result.x = lerp(0, 1, 0.50);
+		} else if (pos_x == 1) {
+			result.x = lerp(0, 1, 0.75);
+		}
+		break;
+	}
+	default: {
+		log("Error: Invalid image type to pull from texture sprite sheet");
+		assert(false);
+		break;
+	}
+	}
+
+	return result;
+}
+
 const int CUBE_SIZE = 1;
 
 void generate_chunk_vbo(GL_Renderer* gl_renderer, V3 chunk_arr_pos) {
@@ -1001,8 +1047,6 @@ void generate_chunk_vbo(GL_Renderer* gl_renderer, V3 chunk_arr_pos) {
 
 				Cube* current_cube = &chunk->cubes[x][y][z];
 				if (current_cube->type != IT_Air) {
-					GLuint texture_handle = get_image(current_cube->type)->handle;
-
 					// The cubes around the current cube
 					Cube back_cube = {};
 					Cube top_cube = {};
@@ -1040,12 +1084,10 @@ void generate_chunk_vbo(GL_Renderer* gl_renderer, V3 chunk_arr_pos) {
 					// Emit a face
 					// The points go in clockwise order
 					// NOTE: This offset is wrong
+					Image_Type t = current_cube->type;
 					if (back_cube.type == IT_Air) {
 						// Emit a face
 						Cube_Face face = {};
-
-						GL_Texture* texture = get_image(current_cube->type);
-						face.texture_handle = texture->handle;
 
 						face.p1 = cube_ws_pos;
 						face.p1.x += CUBE_SIZE;
@@ -1067,38 +1109,35 @@ void generate_chunk_vbo(GL_Renderer* gl_renderer, V3 chunk_arr_pos) {
 
 						// First Triangle
 						vertex.pos = face.p1;
-						vertex.uv = { 0, 0 };
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 0);
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p2;
-						vertex.uv = { 1, 0 };
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 0);
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p3;
-						vertex.uv = { 1, 1 };
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 1);
 						faces_vertices.push_back(vertex);
 
 						// Second Triangle
 						vertex.pos = face.p3;
-						vertex.uv = { 1, 1 };
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 1);
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p4;
-						vertex.uv = { 0, 1 };
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 1);
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p1;
-						vertex.uv = { 0, 0 };
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 0);
 						faces_vertices.push_back(vertex);
 
-						chunk_vbo.texture_handles.push_back(texture_handle);
+						chunk_vbo.total_vertices += 6;
 					}
 
 					if (top_cube.type == IT_Air) {
 						Cube_Face face = {};
-
-						GL_Texture* texture = get_image(current_cube->type);
-						face.texture_handle = texture->handle;
 
 						face.p1 = cube_ws_pos;
 						face.p1.y += CUBE_SIZE;
@@ -1120,38 +1159,35 @@ void generate_chunk_vbo(GL_Renderer* gl_renderer, V3 chunk_arr_pos) {
 
 						// First Triangle
 						vertex.pos = face.p1;
-						vertex.uv = { 0, 0 };
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 0);
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p4;
-						vertex.uv = { 1, 0 };
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 0);
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p3;
-						vertex.uv = { 1, 1 };
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 1);
 						faces_vertices.push_back(vertex);
 
 						// Second Triangle
 						vertex.pos = face.p3;
-						vertex.uv = { 1, 1 };
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 1);
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p2;
-						vertex.uv = { 0, 1 };
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 1);
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p1;
-						vertex.uv = { 0, 0 };
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 0);
 						faces_vertices.push_back(vertex);
 
-						chunk_vbo.texture_handles.push_back(texture_handle);
+						chunk_vbo.total_vertices += 6;
 					}
 
 					if (right_cube.type == IT_Air) {
 						Cube_Face face = {};
-
-						GL_Texture* texture = get_image(current_cube->type);
-						face.texture_handle = texture->handle;
 
 						face.p1 = cube_ws_pos;
 						face.p1.z += CUBE_SIZE;
@@ -1173,38 +1209,35 @@ void generate_chunk_vbo(GL_Renderer* gl_renderer, V3 chunk_arr_pos) {
 
 						// First Triangle
 						vertex.pos = face.p1;
-						vertex.uv = { 0, 0 };
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 0);
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p4;
-						vertex.uv = { 1, 0 };
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 0);
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p3;
-						vertex.uv = { 1, 1 };
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 1);
 						faces_vertices.push_back(vertex);
 
 						// Second Triangle
 						vertex.pos = face.p3;
-						vertex.uv = { 1, 1 };
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 1);
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p2;
-						vertex.uv = { 0, 1 };
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 1);
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p1;
-						vertex.uv = { 0, 0 };
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 0);
 						faces_vertices.push_back(vertex);
 
-						chunk_vbo.texture_handles.push_back(texture_handle);
+						chunk_vbo.total_vertices += 6;
 					}
 
 					if (front_cube.type == IT_Air) {
 						Cube_Face face = {};
-
-						GL_Texture* texture = get_image(current_cube->type);
-						face.texture_handle = texture->handle;
 
 						face.p1 = cube_ws_pos;
 
@@ -1222,38 +1255,35 @@ void generate_chunk_vbo(GL_Renderer* gl_renderer, V3 chunk_arr_pos) {
 
 						// First Triangle
 						vertex.pos = face.p1;
-						vertex.uv = { 0, 0 };
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 0);
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p4;
-						vertex.uv = { 1, 0 };
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 0);
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p3;
-						vertex.uv = { 1, 1 };
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 1);
 						faces_vertices.push_back(vertex);
 
 						// Second Triangle
 						vertex.pos = face.p3;
-						vertex.uv = { 1, 1 };
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 1);
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p2;
-						vertex.uv = { 0, 1 };
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 1);
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p1;
-						vertex.uv = { 0, 0 };
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 0);
 						faces_vertices.push_back(vertex);
 
-						chunk_vbo.texture_handles.push_back(texture_handle);
+						chunk_vbo.total_vertices += 6;
 					}
 
 					if (bottom_cube.type == IT_Air) {
 						Cube_Face face = {};
-
-						GL_Texture* texture = get_image(current_cube->type);
-						face.texture_handle = texture->handle;
 
 						face.p1 = cube_ws_pos;
 
@@ -1272,37 +1302,35 @@ void generate_chunk_vbo(GL_Renderer* gl_renderer, V3 chunk_arr_pos) {
 						// First Triangle
 						vertex.pos = face.p1;
 						vertex.uv = { 0, 0 };
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 0);
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p4;
-						vertex.uv = { 1, 0 };
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 0);
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p3;
-						vertex.uv = { 1, 1 };
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 1);
 						faces_vertices.push_back(vertex);
 
 						// Second Triangle
 						vertex.pos = face.p3;
-						vertex.uv = { 1, 1 };
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 1);
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p2;
-						vertex.uv = { 0, 1 };
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 1);
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p1;
-						vertex.uv = { 0, 0 };
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 0);
 						faces_vertices.push_back(vertex);
 
-						chunk_vbo.texture_handles.push_back(texture_handle);
+						chunk_vbo.total_vertices += 6;
 					}
 
 					if (left_cube.type == IT_Air) {
 						Cube_Face face = {};
-
-						GL_Texture* texture = get_image(current_cube->type);
-						face.texture_handle = texture->handle;
 
 						face.p1 = cube_ws_pos;
 
@@ -1320,31 +1348,31 @@ void generate_chunk_vbo(GL_Renderer* gl_renderer, V3 chunk_arr_pos) {
 
 						// First Triangle
 						vertex.pos = face.p1;
-						vertex.uv = { 0, 0 };
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 0);
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p2;
-						vertex.uv = { 1, 0 };
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 0);
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p3;
-						vertex.uv = { 1, 1 };
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 1);
 						faces_vertices.push_back(vertex);
 
 						// Second Triangle
 						vertex.pos = face.p3;
-						vertex.uv = { 1, 1 };
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 1);
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p4;
-						vertex.uv = { 0, 1 };
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 1);
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p1;
-						vertex.uv = { 0, 0 };
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 0);
 						faces_vertices.push_back(vertex);
 
-						chunk_vbo.texture_handles.push_back(texture_handle);
+						chunk_vbo.total_vertices += 6;
 					}
 				}
 			}
@@ -1358,33 +1386,29 @@ void generate_chunk_vbo(GL_Renderer* gl_renderer, V3 chunk_arr_pos) {
 	faces_vertices.clear();
 };
 
-void gl_draw_cube_faces_vbo(GL_Renderer* gl_renderer) {
-	const int vertices_per_face = 6;
+void gl_draw_cube_faces_vbo(GL_Renderer* gl_renderer, GLuint textures_handle) {
 	for (const Chunk_Vbo& chunk_vbo : gl_renderer->open_gl.chunk_vbos) {
-		int current_index = 0;
 		glBindBuffer(GL_ARRAY_BUFFER, chunk_vbo.vbo);
 		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Faces), (void*)offsetof(Vertex_3D_Faces, pos));
 		glEnableVertexAttribArray(0);
 		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Faces), (void*)offsetof(Vertex_3D_Faces, uv));
 		glEnableVertexAttribArray(1);
 
-		for (const GLuint& texture_handle : chunk_vbo.texture_handles) {
-			glBindTexture(GL_TEXTURE_2D, texture_handle);
+		// Bind the sprite sheet with all the textures
+		glBindTexture(GL_TEXTURE_2D, textures_handle);
 
-			GLuint shader_program = shader_program_types[SPT_Cube_Face];
-			if (!shader_program) {
-				log("ERROR: Shader program not specified");
-				assert(false);
-			}
-			glUseProgram(shader_program);
-
-			MX4 perspective_from_world = gl_renderer->perspective_from_view * gl_renderer->view_from_world;
-			GLuint perspective_from_world_loc = glGetUniformLocation(shader_program, "perspective_from_world");
-			glUniformMatrix4fv(perspective_from_world_loc, 1, GL_FALSE, perspective_from_world.e);
-
-			glDrawArrays(GL_TRIANGLES, current_index, vertices_per_face);
-			current_index += vertices_per_face;
+		GLuint shader_program = shader_program_types[SPT_Cube_Face];
+		if (!shader_program) {
+			log("ERROR: Shader program not specified");
+			assert(false);
 		}
+		glUseProgram(shader_program);
+
+		MX4 perspective_from_world = gl_renderer->perspective_from_view * gl_renderer->view_from_world;
+		GLuint perspective_from_world_loc = glGetUniformLocation(shader_program, "perspective_from_world");
+		glUniformMatrix4fv(perspective_from_world_loc, 1, GL_FALSE, perspective_from_world.e);
+
+		glDrawArrays(GL_TRIANGLES, 0, chunk_vbo.total_vertices);
 	}
 }
 
@@ -1537,6 +1561,7 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 	Font font = load_font(gl_renderer, "assets\\font_1.png");
 
 	init_images(gl_renderer);
+	GLuint texture_sprite_sheet_handle = get_image(IT_Texture_Sprite_Sheet)->handle;
 
 	generate_world_chunks(gl_renderer, 20);
 
@@ -1581,7 +1606,7 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		// ***********************************************
 
 		// **************Generating Face VBO Chunks****************
-		gl_draw_cube_faces_vbo(gl_renderer);
+		gl_draw_cube_faces_vbo(gl_renderer, texture_sprite_sheet_handle);
 		// ***********************************************
 		glDisable(GL_DEPTH_TEST);
 		glDisable(GL_CULL_FACE);

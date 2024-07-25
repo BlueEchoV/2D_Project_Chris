@@ -44,6 +44,8 @@ V4 operator*(const MX4& matrix, const V4& vector);
 MX3 operator*(const MX3& matrix_a, const MX3& matrix_b);
 MX4 operator*(const MX4& matrix_a, const MX4& matrix_b);
 
+float lerp(float left_Point, float right_Point, float percent);
+
 float dot_product(const V3& a, const V3& b);
 float dot_product(const V4& a, const V4& b);
 
