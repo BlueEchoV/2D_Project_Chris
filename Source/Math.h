@@ -49,6 +49,8 @@ float lerp(float left_Point, float right_Point, float percent);
 float dot_product(const V3& a, const V3& b);
 float dot_product(const V4& a, const V4& b);
 
+V3 cross(const V3& a, const V3& b);
+
 // COLUMN MAJOR
 V3 get_mx_3_row(const MX3& matrix, int row);
 V3 get_mx_3_col(const MX3& matrix, int col);
@@ -70,5 +72,5 @@ Matrix4 mat4_rotate_z(float angle_radians);
 
 MX4 mat4_perspective(float fovy, float aspect);
 
-V3 calculate_forward(float yaw, float rotation_offset);
+V3 calculate_direction_normalized(float yaw_radians, float pitch_radians, float rotation_offset_degrees);
 V3 normalize(const V3& v);

@@ -211,28 +211,32 @@ void gl_update_renderer(GL_Renderer* gl_renderer) {
 	gl_renderer->yaw += mouse_delta.x;
 	gl_renderer->pitch += mouse_delta.y;
 
-    // Calculate the forward vector
-    V3 forward = calculate_forward(gl_renderer->yaw, 90.0f);    
-	// Normalize the vectors
-    forward = normalize(forward);
+    // Clamp the pitch to avoid flipping the camera
+    if (gl_renderer->pitch > 89.0f) {
+        gl_renderer->pitch = 89.0f;
+    } else if (gl_renderer->pitch < -89.0f) {
+        gl_renderer->pitch = -89.0f;
+    }
 
-	V3 right = calculate_forward(gl_renderer->yaw, 180.0f);
+    // Calculate the forward vector
+    V3 forward = calculate_direction_normalized(gl_renderer->yaw, gl_renderer->pitch, 90.0f);    
+	V3 right = calculate_direction_normalized(gl_renderer->yaw, gl_renderer->pitch, 180.0f);
 
 	// TODO: There is a bug with holding down the keys simultaneously and 
 	// the player moving faster diagonally. 
 	if (key_states[VK_SHIFT].pressed_this_frame || key_states[VK_SHIFT].held_down) {
-		gl_renderer->player_speed = 0.40f;
+		gl_renderer->player_speed = 0.80f;
 	} else {
 		gl_renderer->player_speed = 0.20f;
 	}
 	if (key_states[VK_S].pressed_this_frame || key_states[VK_S].held_down) {
         gl_renderer->player_pos.x -= forward.x * gl_renderer->player_speed;
-        gl_renderer->player_pos.y -= forward.y * gl_renderer->player_speed;
+        gl_renderer->player_pos.y += forward.y * gl_renderer->player_speed;
         gl_renderer->player_pos.z -= forward.z * gl_renderer->player_speed;
 	} 
 	if (key_states[VK_W].pressed_this_frame || key_states[VK_W].held_down) {
         gl_renderer->player_pos.x += forward.x * gl_renderer->player_speed;
-        gl_renderer->player_pos.y += forward.y * gl_renderer->player_speed;
+        gl_renderer->player_pos.y -= forward.y * gl_renderer->player_speed;
         gl_renderer->player_pos.z += forward.z * gl_renderer->player_speed;
     } 
 	if (key_states[VK_D].pressed_this_frame || key_states[VK_D].held_down) {
@@ -263,7 +267,7 @@ void gl_update_renderer(GL_Renderer* gl_renderer) {
 	// This is my camera
 	// Move the camera by the same amount of the player but do the negation
 	// Doing the multiplication before the translation rotates the view first.
-	gl_renderer->view_from_world = mat4_rotate_y(gl_renderer->yaw) /** mat4_rotate_x(renderer->pitch)*/ * translation_matrix_mx_4(
+	gl_renderer->view_from_world = mat4_rotate_x(gl_renderer->pitch) * mat4_rotate_y(gl_renderer->yaw) * translation_matrix_mx_4(
 		-gl_renderer->player_pos.x, 
 		-gl_renderer->player_pos.y, 
 		-gl_renderer->player_pos.z);
@@ -908,9 +912,9 @@ struct Chunk {
 	Cube cubes[CHUNK_SIZE][CHUNK_SIZE][CHUNK_SIZE] = {};
 };
 
-const int WORLD_SIZE_WIDTH = 10;
-const int WORLD_SIZE_LENGTH = 10;
-const int WORLD_SIZE_HEIGHT = 10;
+const int WORLD_SIZE_WIDTH = 5;
+const int WORLD_SIZE_LENGTH = 5;
+const int WORLD_SIZE_HEIGHT = 2;
 Chunk world_chunks[WORLD_SIZE_WIDTH][WORLD_SIZE_HEIGHT][WORLD_SIZE_LENGTH] = {};
 
 int height_map[(WORLD_SIZE_WIDTH * CHUNK_SIZE)][(WORLD_SIZE_LENGTH * CHUNK_SIZE)] = {};

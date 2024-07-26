@@ -87,6 +87,18 @@ float dot_product(const V3& a, const V3& b) {
 float dot_product(const V4& a, const V4& b) {
     return a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
 }
+
+// Computes the cross product of the two vectors. This vector is a 
+// third vector that is perpendicular to both of the original 
+// vectors.
+V3 cross(const V3& a, const V3& b) {
+    V3 result;
+    result.x = a.y * b.z - a.z * b.y;
+    result.y = a.z * b.x - a.x * b.z;
+    result.z = a.x * b.y - a.y * b.x;
+    return result;
+}
+
 // COLUMN MAJOR
 V3 get_mx_3_row(const MX3& matrix, int row) {
     return {matrix.e[row], matrix.e[row + 3], matrix.e[row + 6]};
@@ -200,12 +212,23 @@ MX4 mat4_perspective(float fovy, float aspect)
     return out;
 }
 
-V3 calculate_forward(float yaw, float rotation_offset) {
+V3 calculate_direction_normalized(float yaw_radians, float pitch_radians, float rotation_offset_degrees) {
     V3 forward;
-	float yaw_temp = yaw - (rotation_offset * ((float)M_PI / 180.0f));
-    forward.x = (float)cos(yaw_temp);
-    forward.y = 0;
-	forward.z = (float)sin(yaw_temp);
+
+    // Convert rotation offset to radians
+    float rotation_offset_radians = rotation_offset_degrees * ((float)M_PI / 180.0f);
+
+    // Adjust yaw by the rotation offset
+    float yaw_adjusted = yaw_radians - rotation_offset_radians;
+
+    // Calculate the forward vector components
+    forward.x = (float)cos(yaw_adjusted);
+    forward.y = (float)sin(pitch_radians);
+    forward.z = (float)sin(yaw_adjusted);
+
+    // Normalize the forward vector
+    forward = normalize(forward);
+
     return forward;
 }
 
