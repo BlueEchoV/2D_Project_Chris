@@ -573,7 +573,7 @@ Font load_font(GL_Renderer* gl_renderer, const char* file_name) {
 	result.image_w = width;
 	result.image_h = height;
 	result.char_w = width / 18;
-	result.char_h = width / 7;
+	result.char_h = height / 7;
 	
 	for (int x = 0; x < width; x++) {
 		for (int y = 0; y < height; y++) {
@@ -621,7 +621,7 @@ V2 convert_to_ndc(GL_Renderer* gl_renderer, int x, int y) {
 	return convert_to_ndc(gl_renderer, { (float)x, (float)y });
 }
 
-V2 convert_to_uv_coordinates(V2 pos, int w, int h) {
+V2 convert_to_uv_coordinates(V2 pos, float w, float h) {
 	V2 uv;
 	uv.x = pos.x / w;
 	uv.y = pos.y / h;
@@ -647,15 +647,15 @@ void draw_character(GL_Renderer* gl_renderer, Font* font, char character, int po
     dst.w = (int)(font->char_w * size);
     dst.h = (int)(font->char_h * size);
 
-    V2 bottom_left_src = { (float)src.x, (float)src.y + src.h };
+    V2 top_left_src =	  { (float)src.x,           (float)src.y };
+    V2 top_right_src =	  { (float)(src.x + src.w), (float)src.y };
     V2 bottom_right_src = { (float)(src.x + src.w), (float)(src.y + src.h) };
-    V2 top_right_src = { (float)(src.x + src.w), (float)src.y };
-    V2 top_left_src = { (float)src.x, (float)src.y };
+    V2 bottom_left_src =  { (float)src.x,           (float)src.y + src.h };
 
-    V2 bottom_left_uv = convert_to_uv_coordinates(bottom_left_src, font->texture->w, font->texture->h);
-    V2 bottom_right_uv = convert_to_uv_coordinates(bottom_right_src, font->texture->w, font->texture->h);
-    V2 top_right_uv = convert_to_uv_coordinates(top_right_src, font->texture->w, font->texture->h);
-    V2 top_left_uv = convert_to_uv_coordinates(top_left_src, font->texture->w, font->texture->h);
+    V2 top_left_uv =     convert_to_uv_coordinates(top_left_src,     (float)font->texture->w, (float)font->texture->h);
+    V2 top_right_uv =    convert_to_uv_coordinates(top_right_src,    (float)font->texture->w, (float)font->texture->h);
+    V2 bottom_right_uv = convert_to_uv_coordinates(bottom_right_src, (float)font->texture->w, (float)font->texture->h);
+    V2 bottom_left_uv =  convert_to_uv_coordinates(bottom_left_src,  (float)font->texture->w, (float)font->texture->h);
 
     V2 top_left_dst = { (float)dst.x, (float)dst.y };
     V2 top_right_dst = { (float)(dst.x + dst.w), (float)dst.y };
