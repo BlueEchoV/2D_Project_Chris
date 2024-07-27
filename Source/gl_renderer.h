@@ -113,6 +113,9 @@ extern glBindBufferFunc glBindBuffer;
 typedef void(*glBufferDataFunc)(GLenum target, GLsizeiptr size, const void* data, GLenum usage);
 extern glBufferDataFunc glBufferData;
 
+typedef void(*glDeleteBuffersFunc)(GLsizei n, const GLuint * buffers);
+extern glDeleteBuffersFunc glDeleteBuffers;
+
 typedef GLuint(*glGetUniformLocationFunc)(GLuint program, const GLchar* name);
 extern glGetUniformLocationFunc glGetUniformLocation;
 
@@ -143,6 +146,7 @@ enum Shader_Program_Type {
 	SPT_3D_Lines,
 	SPT_Cube_Face,
 	SPT_String,
+	SPT_Fireball,
 	SPT_TOTAL
 };
 

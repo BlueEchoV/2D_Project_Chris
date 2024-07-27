@@ -1,13 +1,19 @@
 #version 330
 layout(location = 0) in vec3 v_position;
 layout(location = 1) in vec2 v_uv;
+layout(location = 2) in vec3 v_normal;
 
 out vec2 f_uv;
+out vec3 f_normal;
+out vec3 f_world_space_pos;
 
 uniform mat4 perspective_from_world;
 
 void main() {
+	// The v_position is the ws position in this case
+	f_world_space_pos = v_position;
 	// This is ALWAYS the final vertex position in ndc
 	gl_Position = perspective_from_world * vec4(v_position, 1);
 	f_uv = v_uv;
+	f_normal = v_normal;
 }

@@ -15,11 +15,15 @@ struct V3 {
 	float z;
 };
 
-struct V4 {
-	float x;
-	float y;
-	float z;
-	float w;
+union V4 {
+	struct {
+		float x;
+		float y;
+		float z;
+		float w;
+	};
+	V3 xyz;
+	float e[4];
 };
 
 struct Color_f {
@@ -43,6 +47,7 @@ V3 operator*(const MX3& matrix, const V3& vector);
 V4 operator*(const MX4& matrix, const V4& vector);
 MX3 operator*(const MX3& matrix_a, const MX3& matrix_b);
 MX4 operator*(const MX4& matrix_a, const MX4& matrix_b);
+V3 operator-(const V3& v);
 
 float lerp(float left_Point, float right_Point, float percent);
 
@@ -72,5 +77,6 @@ Matrix4 mat4_rotate_z(float angle_radians);
 
 MX4 mat4_perspective(float fovy, float aspect);
 
-V3 calculate_direction_normalized(float yaw_radians, float pitch_radians, float rotation_offset_degrees);
+MX4 matrix_transpose(MX4 mx);
+
 V3 normalize(const V3& v);

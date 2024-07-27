@@ -40,6 +40,10 @@ V4 operator*(const MX4& matrix, const V4& vector) {
     return result;
 }
 
+V3 operator-(const V3& v) {
+    return { -v.x, -v.y, -v.z };
+} 
+
 // Matrix * Matrix
 MX3 operator*(const MX3& matrix_a, const MX3& matrix_b) {
     MX3 result = {};
@@ -201,7 +205,6 @@ MX4 mat4_perspective(float fovy, float aspect)
     float z_near = 0.01f;
     float z_far  = 1000.0f;
 
-
     float tan_half_fovy = tanf(0.5f * fovy);
     MX4 out = {};
     out.col[0].x = 1.0f / (aspect * tan_half_fovy);
@@ -212,24 +215,14 @@ MX4 mat4_perspective(float fovy, float aspect)
     return out;
 }
 
-V3 calculate_direction_normalized(float yaw_radians, float pitch_radians, float rotation_offset_degrees) {
-    V3 forward;
-
-    // Convert rotation offset to radians
-    float rotation_offset_radians = rotation_offset_degrees * ((float)M_PI / 180.0f);
-
-    // Adjust yaw by the rotation offset
-    float yaw_adjusted = yaw_radians - rotation_offset_radians;
-
-    // Calculate the forward vector components
-    forward.x = (float)cos(yaw_adjusted);
-    forward.y = (float)sin(pitch_radians);
-    forward.z = (float)sin(yaw_adjusted);
-
-    // Normalize the forward vector
-    forward = normalize(forward);
-
-    return forward;
+MX4 matrix_transpose(MX4 mx) {
+    MX4 result;
+    for (int row = 0; row < 4; row++) {
+        for (int column = 0; column < 4; column++) {
+            result.col[column].e[row] = mx.col[row].e[column];
+        }
+    }
+    return result;
 }
 
 V3 normalize(const V3& v) {

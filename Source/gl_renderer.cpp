@@ -22,6 +22,7 @@ glDisableVertexAttribArrayFunc glDisableVertexAttribArray = nullptr;
 glBindVertexArrayFunc glBindVertexArray = nullptr;
 glBindBufferFunc glBindBuffer = nullptr;
 glBufferDataFunc glBufferData = nullptr;
+glDeleteBuffersFunc glDeleteBuffers = nullptr;
 glGetUniformLocationFunc glGetUniformLocation = nullptr;
 glUniform1fFunc glUniform1f = nullptr;
 glUniformMatrix4fvFunc glUniformMatrix4fv = nullptr;
@@ -56,6 +57,7 @@ void loadGLFunctions() {
 	glBindVertexArray = (glBindVertexArrayFunc)wglGetProcAddress("glBindVertexArray");
 	glBindBuffer = (glBindBufferFunc)wglGetProcAddress("glBindBuffer");
 	glBufferData = (glBufferDataFunc)wglGetProcAddress("glBufferData");
+	glDeleteBuffers = (glDeleteBuffersFunc)wglGetProcAddress("glDeleteBuffers");
 
 	glGetUniformLocation = (glGetUniformLocationFunc)wglGetProcAddress("glGetUniformLocation");
 	glUniform1f = (glUniform1fFunc)wglGetProcAddress("glUniform1f");
@@ -148,5 +150,10 @@ void load_shaders() {
 	const char* f_string_file_path = "Shaders\\f_string.txt";
 	GLuint string_shader = create_shader_program(v_string_file_path, f_string_file_path);
 	shader_program_types[SPT_String] = string_shader;
+
+	const char* v_fireball_file_path = "Shaders\\v_fireball.txt";
+	const char* f_fireball_file_path = "Shaders\\f_fireball.txt";
+	GLuint fireball_shader = create_shader_program(v_fireball_file_path, f_fireball_file_path);
+	shader_program_types[SPT_Fireball] = fireball_shader;
 }
 

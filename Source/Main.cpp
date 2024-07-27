@@ -61,6 +61,7 @@ struct Open_GL {
 	GLuint vao;
 	GLuint vbo_lines;
 	GLuint vbo_cubes;
+	GLuint vbo_cube_fireballs;
 	GLuint vbo_cube_faces;
 	GLuint vbo_strings;
 
@@ -86,6 +87,18 @@ struct Vertex_String {
 	V2 uv;
 };
 
+struct Fireball {
+	V3 pos;
+	V3 velocity;
+	MX4 mx_world;
+};
+
+struct Fireball_Draw {
+	V3 pos_ws;
+	MX4 mx_world;
+	GLuint texture_handle;
+};
+
 struct GL_Renderer {
 	HWND window;
 	HDC hdc;
@@ -98,6 +111,10 @@ struct GL_Renderer {
 	float time;
 	float player_speed;
 	V3 player_pos = { 0, 0, 0 };
+
+	float fireball_speed;
+	std::vector<Fireball> fireballs;
+	std::vector<Fireball_Draw> fireballs_to_draw;
 
 	float pitch;
 	float roll;
@@ -197,11 +214,11 @@ void get_window_size(HWND window, int& w, int& h) {
 #define VK_D 0x44
 
 void gl_update_renderer(GL_Renderer* gl_renderer) {
-    if (gl_renderer == nullptr) {
-        log("Error: gl_renderer is nullptr");
-        assert(false);
+	if (gl_renderer == nullptr) {
+		log("Error: gl_renderer is nullptr");
+		assert(false);
 		return;
-    }
+	}
 
 	gl_renderer->time += 0.01f;
 
@@ -211,49 +228,66 @@ void gl_update_renderer(GL_Renderer* gl_renderer) {
 	gl_renderer->yaw += mouse_delta.x;
 	gl_renderer->pitch += mouse_delta.y;
 
-    // Clamp the pitch to avoid flipping the camera
-    if (gl_renderer->pitch > 89.0f) {
-        gl_renderer->pitch = 89.0f;
-    } else if (gl_renderer->pitch < -89.0f) {
-        gl_renderer->pitch = -89.0f;
-    }
+	// Clamp the pitch to avoid flipping the camera
+	if (gl_renderer->pitch > 89.0f) {
+		gl_renderer->pitch = 89.0f;
+	}
+	else if (gl_renderer->pitch < -89.0f) {
+		gl_renderer->pitch = -89.0f;
+	}
 
-    // Calculate the forward vector
-    V3 forward = calculate_direction_normalized(gl_renderer->yaw, gl_renderer->pitch, 90.0f);    
-	V3 right = calculate_direction_normalized(gl_renderer->yaw, gl_renderer->pitch, 180.0f);
+	// Calculate the forward vector
+	MX4 transposed_view_mx = matrix_transpose(gl_renderer->view_from_world);
+
+	// OpenGL's default coordinate system
+	V3 forward = -transposed_view_mx.col[2].xyz;
+	V3 right = transposed_view_mx.col[0].xyz;
+	V3 up = transposed_view_mx.col[1].xyz;
 
 	// TODO: There is a bug with holding down the keys simultaneously and 
 	// the player moving faster diagonally. 
 	if (key_states[VK_SHIFT].pressed_this_frame || key_states[VK_SHIFT].held_down) {
 		gl_renderer->player_speed = 0.80f;
-	} else {
+	}
+	else {
 		gl_renderer->player_speed = 0.20f;
 	}
 	if (key_states[VK_S].pressed_this_frame || key_states[VK_S].held_down) {
-        gl_renderer->player_pos.x -= forward.x * gl_renderer->player_speed;
-        gl_renderer->player_pos.y += forward.y * gl_renderer->player_speed;
-        gl_renderer->player_pos.z -= forward.z * gl_renderer->player_speed;
-	} 
+		gl_renderer->player_pos.x -= forward.x * gl_renderer->player_speed;
+		gl_renderer->player_pos.y -= forward.y * gl_renderer->player_speed;
+		gl_renderer->player_pos.z -= forward.z * gl_renderer->player_speed;
+	}
 	if (key_states[VK_W].pressed_this_frame || key_states[VK_W].held_down) {
-        gl_renderer->player_pos.x += forward.x * gl_renderer->player_speed;
-        gl_renderer->player_pos.y -= forward.y * gl_renderer->player_speed;
-        gl_renderer->player_pos.z += forward.z * gl_renderer->player_speed;
-    } 
+		gl_renderer->player_pos.x += forward.x * gl_renderer->player_speed;
+		gl_renderer->player_pos.y += forward.y * gl_renderer->player_speed;
+		gl_renderer->player_pos.z += forward.z * gl_renderer->player_speed;
+	}
 	if (key_states[VK_D].pressed_this_frame || key_states[VK_D].held_down) {
-		gl_renderer->player_pos.x -= right.x * gl_renderer->player_speed;
-        gl_renderer->player_pos.y -= right.y * gl_renderer->player_speed;
-        gl_renderer->player_pos.z -= right.z * gl_renderer->player_speed;
+		gl_renderer->player_pos.x += right.x * gl_renderer->player_speed;
+		gl_renderer->player_pos.y += right.y * gl_renderer->player_speed;
+		gl_renderer->player_pos.z += right.z * gl_renderer->player_speed;
 	}
 	if (key_states[VK_A].pressed_this_frame || key_states[VK_A].held_down) {
-		gl_renderer->player_pos.x += right.x * gl_renderer->player_speed;
-        gl_renderer->player_pos.y += right.y * gl_renderer->player_speed;
-        gl_renderer->player_pos.z += right.z * gl_renderer->player_speed;
+		gl_renderer->player_pos.x -= right.x * gl_renderer->player_speed;
+		gl_renderer->player_pos.y -= right.y * gl_renderer->player_speed;
+		gl_renderer->player_pos.z -= right.z * gl_renderer->player_speed;
 	}
 	if (key_states[VK_SPACE].pressed_this_frame || key_states[VK_SPACE].held_down) {
 		gl_renderer->player_pos.y += gl_renderer->player_speed;
 	}
 	if (key_states[VK_CONTROL].pressed_this_frame || key_states[VK_CONTROL].held_down) {
 		gl_renderer->player_pos.y -= gl_renderer->player_speed;
+	}
+	if (key_states[VK_LBUTTON].pressed_this_frame) {
+		Fireball fireball = {};
+		fireball.pos = gl_renderer->player_pos;
+		fireball.velocity = forward;
+		fireball.mx_world = identity_mx_4();
+		fireball.mx_world.col[2].xyz = -forward;
+		fireball.mx_world.col[0].xyz = right;
+		fireball.mx_world.col[1].xyz = up;
+		gl_renderer->fireballs.push_back(fireball);
+		log("Firing fireball");
 	}
 
 	int window_width = 0;
@@ -266,11 +300,11 @@ void gl_update_renderer(GL_Renderer* gl_renderer) {
 
 	// This is my camera
 	// Move the camera by the same amount of the player but do the negation
-	// Doing the multiplication before the translation rotates the view first.
 	gl_renderer->view_from_world = mat4_rotate_x(gl_renderer->pitch) * mat4_rotate_y(gl_renderer->yaw) * translation_matrix_mx_4(
 		-gl_renderer->player_pos.x, 
 		-gl_renderer->player_pos.y, 
-		-gl_renderer->player_pos.z);
+		-gl_renderer->player_pos.z
+	);
 }
 
 void gl_draw_line(GL_Renderer* gl_renderer, V3 p1, V3 p2) {
@@ -529,6 +563,7 @@ enum Image_Type {
 	IT_Cobblestone,
 	IT_Dirt,
 	IT_Grass,
+	IT_Fireball,
 	IT_Texture_Sprite_Sheet,
 
 	IT_Total
@@ -547,6 +582,43 @@ void init_images(GL_Renderer* gl_renderer) {
 	images[IT_Dirt] = create_Image(gl_renderer, "assets\\dirt.png");
 	images[IT_Grass] = create_Image(gl_renderer, "assets\\grass.png");
 	images[IT_Texture_Sprite_Sheet] = create_Image(gl_renderer, "assets\\texture_sprite_sheet.png");
+	images[IT_Fireball] = create_Image(gl_renderer, "assets\\fireball.png");
+}
+
+GL_Texture* get_image(Image_Type type) {
+	GL_Texture* result = nullptr;
+
+	switch (type) {
+	case IT_Grass: {
+		result = images[type].texture;
+		break;
+	}
+	case IT_Dirt: {
+		result = images[type].texture;
+		break;
+	}
+	case IT_Cobblestone: {
+		result = images[type].texture;
+		break;
+	}
+	case IT_Texture_Sprite_Sheet: {
+		result = images[type].texture;
+		break;
+	}
+	case IT_Fireball: {
+		result = images[type].texture;
+		break;
+	}
+	case IT_Air: {
+		result = nullptr;
+		break;
+	}
+	default: { // The default is just air 
+		break;
+	}
+	}
+
+	return result;
 }
 
 struct Font {
@@ -721,12 +793,57 @@ void draw_string(GL_Renderer* gl_renderer, Font* font, const char* str, int pos_
     }
 }
 
+void draw_string_ws(GL_Renderer* gl_renderer, Font* font, const char* str, V3 ws_pos, int size, bool center) {
+	V4 ws_pos_converted = { ws_pos.x, ws_pos.y, ws_pos.z, 1.0f };
+	// WS position
+	V4 ndc = gl_renderer->perspective_from_view * gl_renderer->view_from_world * ws_pos_converted;
+
+	MX4 transpose_view_mx = matrix_transpose(gl_renderer->view_from_world);
+
+	V3 camera_pos = gl_renderer->player_pos;
+
+	V3 camera_forward = -transpose_view_mx.col[2].xyz;
+
+	V3 camera_to_string;
+	camera_to_string.x = ws_pos.x - camera_pos.x;
+	camera_to_string.y = ws_pos.y - camera_pos.y;
+	camera_to_string.z = ws_pos.z - camera_pos.z;
+
+	float dot_product_result = dot_product(camera_forward, camera_to_string);
+
+	if (dot_product_result < 0) {
+		return;
+	}
+
+	// Perspective divide
+	float x = ndc.x / ndc.w;
+	float y = ndc.y / ndc.w;
+
+	int w, h;
+	get_window_size(gl_renderer->window, w, h);
+
+	// Convert to a range of 0 - 2 from -1 - 1
+	x += 1.0f;
+	y += 1.0f;
+
+	// 0 - 1
+	x /= 2.0f;
+	y /= 2.0f;
+
+	float pixel_pos_x = lerp(0, (float)w, x);
+	float pixel_pos_y = lerp(0, (float)h, 1 - y);
+
+	draw_string(gl_renderer, font, str, (int)pixel_pos_x, (int)pixel_pos_y, size, center);
+}
+
 void gl_upload_and_draw_2d_string(GL_Renderer* gl_renderer, Font* font) {
 	if (gl_renderer->open_gl.vbo_strings == 0) {
-		glGenBuffers(1, &gl_renderer->open_gl.vbo_strings);
-		glBindBuffer(GL_ARRAY_BUFFER, gl_renderer->open_gl.vbo_strings);
-		glBufferData(GL_ARRAY_BUFFER, sizeof(Vertex_String) * gl_renderer->strings.size(), gl_renderer->strings.data(), GL_STATIC_DRAW);
+		glDeleteBuffers(1, &gl_renderer->open_gl.vbo_strings);
 	}
+
+	glGenBuffers(1, &gl_renderer->open_gl.vbo_strings);
+	glBindBuffer(GL_ARRAY_BUFFER, gl_renderer->open_gl.vbo_strings);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(Vertex_String) * gl_renderer->strings.size(), gl_renderer->strings.data(), GL_STATIC_DRAW);
 
 	glBindBuffer(GL_ARRAY_BUFFER, gl_renderer->open_gl.vbo_strings);
 	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex_String), (void*)offsetof(Vertex_String, pos));
@@ -863,58 +980,96 @@ void gl_draw_cubes(GL_Renderer* gl_renderer) {
 	gl_renderer->cubes.clear();
 }
 
-GL_Texture* get_image(Image_Type type) {
-	GL_Texture* result = nullptr;
-
-	switch (type) {
-	case IT_Grass: {
-		result = images[type].texture;
-		break;
-	}
-	case IT_Dirt: {
-		result = images[type].texture;
-		break;
-	}
-	case IT_Cobblestone: {
-		result = images[type].texture;
-		break;
-	}
-	case IT_Texture_Sprite_Sheet: {
-		result = images[type].texture;
-		break;
-	}
-	case IT_Air: {
-		result = nullptr;
-		break;
-	}
-	default: { // The default is just air 
-		break;
-	}
+void gl_upload_cube_fireball_vbo(GL_Renderer* gl_renderer) {
+	if (gl_renderer->open_gl.vbo_cube_fireballs == 0) {
+		glGenBuffers(1, &gl_renderer->open_gl.vbo_cube_fireballs);
+		glBindBuffer(GL_ARRAY_BUFFER, gl_renderer->open_gl.vbo_cube_fireballs);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(cube), cube, GL_STATIC_DRAW);
 	}
 
-	return result;
+	glBindBuffer(GL_ARRAY_BUFFER, gl_renderer->open_gl.vbo_cube_fireballs);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Cube), (void*)offsetof(Vertex_3D_Cube, pos));
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Cube), (void*)offsetof(Vertex_3D_Cube, color));
+	glEnableVertexAttribArray(1);
+	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Cube), (void*)offsetof(Vertex_3D_Cube, uv));
+	glEnableVertexAttribArray(2);
+	glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Cube), (void*)offsetof(Vertex_3D_Cube, normal));
+	glEnableVertexAttribArray(3);
+}
+
+void draw_cube_fireball(GL_Renderer* gl_renderer, V3 pos, MX4 mx_world, GL_Texture* texture) {
+	Fireball_Draw result;
+
+	result.pos_ws = pos;
+	result.texture_handle = texture->handle;
+	result.mx_world = mx_world;
+
+	gl_renderer->fireballs_to_draw.push_back(result);
+}
+
+void draw_cube_fireball_type(GL_Renderer* gl_renderer, V3 pos, MX4 mx_world, Image_Type type) {
+	GL_Texture* result = get_image(type);
+
+	if (result == nullptr) {
+		log("Error: GL_Texture* is nullptr");
+		assert(false);
+		return;
+	} 
+	draw_cube_fireball(gl_renderer, pos, mx_world, result);
+}
+
+void gl_draw_cube_fireballs(GL_Renderer* gl_renderer) {
+	for (Fireball_Draw& current_fireball: gl_renderer->fireballs_to_draw) {
+		glBindTexture(GL_TEXTURE_2D, current_fireball.texture_handle);
+
+		GLuint shader_program = shader_program_types[SPT_3D];
+		if (!shader_program) {
+			log("ERROR: Shader program not specified");
+			assert(false);
+		}
+		glUseProgram(shader_program);
+
+		// MX4 world_from_model = translation_matrix_mx_4(cos(x) * x_speed, sin(x) * y_speed, z_pos);
+		MX4 world_from_model = translation_matrix_mx_4(
+			current_fireball.pos_ws.x, 
+			current_fireball.pos_ws.y, 
+			current_fireball.pos_ws.z) * current_fireball.mx_world/* * mat4_rotate_x(renderer->time)*/;
+		GLuint world_from_model_loc = glGetUniformLocation(shader_program, "world_from_model");
+		glUniformMatrix4fv(world_from_model_loc, 1, GL_FALSE, world_from_model.e);
+
+		MX4 perspective_from_world = gl_renderer->perspective_from_view * gl_renderer->view_from_world;
+		GLuint perspective_from_world_loc = glGetUniformLocation(shader_program, "perspective_from_world");
+		glUniformMatrix4fv(perspective_from_world_loc, 1, GL_FALSE, perspective_from_world.e);
+
+		glDrawArrays(GL_TRIANGLES, 0, ARRAYSIZE(cube));
+	}
+	gl_renderer->fireballs_to_draw.clear();
 }
 
 void draw_cube_type(GL_Renderer* gl_renderer, V3 pos, Image_Type type) {
 	GL_Texture* result = get_image(type);
 
-	if (result != nullptr) {
-		draw_cube(gl_renderer, pos, result);
-	}
+	if (result == nullptr) {
+		log("Error: GL_Texture* is nullptr");
+		assert(false);
+		return;
+	} 
+	draw_cube(gl_renderer, pos, result);
 }
 
 struct Cube {
 	Image_Type type = IT_Air;
 };
 
-const int CHUNK_SIZE = 40;
+const int CHUNK_SIZE = 16;
 struct Chunk {
 	Cube cubes[CHUNK_SIZE][CHUNK_SIZE][CHUNK_SIZE] = {};
 };
 
-const int WORLD_SIZE_WIDTH = 5;
-const int WORLD_SIZE_LENGTH = 5;
-const int WORLD_SIZE_HEIGHT = 2;
+const int WORLD_SIZE_WIDTH = 10;
+const int WORLD_SIZE_LENGTH = 10;
+const int WORLD_SIZE_HEIGHT = 1;
 Chunk world_chunks[WORLD_SIZE_WIDTH][WORLD_SIZE_HEIGHT][WORLD_SIZE_LENGTH] = {};
 
 int height_map[(WORLD_SIZE_WIDTH * CHUNK_SIZE)][(WORLD_SIZE_LENGTH * CHUNK_SIZE)] = {};
@@ -986,6 +1141,7 @@ void generate_world_chunk(int x_arr_pos, int y_arr_pos, int z_arr_pos, float noi
 struct Vertex_3D_Faces {
 	V3 pos;
 	V2 uv;
+	V3 normal;
 };
 
 // Order of the sprite sheet = Grass | Dirt | Cobblestone
@@ -1114,27 +1270,33 @@ void generate_chunk_vbo(GL_Renderer* gl_renderer, V3 chunk_arr_pos) {
 						// First Triangle
 						vertex.pos = face.p1;
 						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 0);
+						vertex.normal = { -1, 0, 0 };
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p2;
 						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 0);
+						vertex.normal = { -1, 0, 0 };
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p3;
 						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 1);
+						vertex.normal = { -1, 0, 0 };
 						faces_vertices.push_back(vertex);
 
 						// Second Triangle
 						vertex.pos = face.p3;
 						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 1);
+						vertex.normal = { -1, 0, 0 };
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p4;
 						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 1);
+						vertex.normal = { -1, 0, 0 };
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p1;
 						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 0);
+						vertex.normal = { -1, 0, 0 };
 						faces_vertices.push_back(vertex);
 
 						chunk_vbo.total_vertices += 6;
@@ -1164,27 +1326,33 @@ void generate_chunk_vbo(GL_Renderer* gl_renderer, V3 chunk_arr_pos) {
 						// First Triangle
 						vertex.pos = face.p1;
 						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 0);
+						vertex.normal = { 0, 1, 0 };
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p4;
 						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 0);
+						vertex.normal = { 0, 1, 0 };
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p3;
 						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 1);
+						vertex.normal = { 0, 1, 0 };
 						faces_vertices.push_back(vertex);
 
 						// Second Triangle
 						vertex.pos = face.p3;
 						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 1);
+						vertex.normal = { 0, 1, 0 };
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p2;
 						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 1);
+						vertex.normal = { 0, 1, 0 };
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p1;
 						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 0);
+						vertex.normal = { 0, 1, 0 };
 						faces_vertices.push_back(vertex);
 
 						chunk_vbo.total_vertices += 6;
@@ -1214,27 +1382,33 @@ void generate_chunk_vbo(GL_Renderer* gl_renderer, V3 chunk_arr_pos) {
 						// First Triangle
 						vertex.pos = face.p1;
 						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 0);
+						vertex.normal = { 0, 0, 1 };
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p4;
 						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 0);
+						vertex.normal = { 0, 0, 1 };
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p3;
 						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 1);
+						vertex.normal = { 0, 0, 1 };
 						faces_vertices.push_back(vertex);
 
 						// Second Triangle
 						vertex.pos = face.p3;
 						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 1);
+						vertex.normal = { 0, 0, 1 };
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p2;
 						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 1);
+						vertex.normal = { 0, 0, 1 };
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p1;
 						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 0);
+						vertex.normal = { 0, 0, 1 };
 						faces_vertices.push_back(vertex);
 
 						chunk_vbo.total_vertices += 6;
@@ -1260,6 +1434,7 @@ void generate_chunk_vbo(GL_Renderer* gl_renderer, V3 chunk_arr_pos) {
 						// First Triangle
 						vertex.pos = face.p1;
 						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 0);
+						vertex.normal = { 0, 0, 1 };
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p4;
@@ -1305,29 +1480,34 @@ void generate_chunk_vbo(GL_Renderer* gl_renderer, V3 chunk_arr_pos) {
 
 						// First Triangle
 						vertex.pos = face.p1;
-						vertex.uv = { 0, 0 };
 						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 0);
+						vertex.normal = { 0, -1, 0 };
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p4;
 						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 0);
+						vertex.normal = { 0, -1, 0 };
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p3;
 						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 1);
+						vertex.normal = { 0, -1, 0 };
 						faces_vertices.push_back(vertex);
 
 						// Second Triangle
 						vertex.pos = face.p3;
 						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 1);
+						vertex.normal = { 0, -1, 0 };
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p2;
 						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 1);
+						vertex.normal = { 0, -1, 0 };
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p1;
 						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 0);
+						vertex.normal = { 0, -1, 0 };
 						faces_vertices.push_back(vertex);
 
 						chunk_vbo.total_vertices += 6;
@@ -1353,27 +1533,33 @@ void generate_chunk_vbo(GL_Renderer* gl_renderer, V3 chunk_arr_pos) {
 						// First Triangle
 						vertex.pos = face.p1;
 						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 0);
+						vertex.normal = { 0, 0, -1 };
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p2;
 						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 0);
+						vertex.normal = { 0, 0, -1 };
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p3;
 						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 1);
+						vertex.normal = { 0, 0, -1 };
 						faces_vertices.push_back(vertex);
 
 						// Second Triangle
 						vertex.pos = face.p3;
 						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 1);
+						vertex.normal = { 0, 0, -1 };
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p4;
 						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 1);
+						vertex.normal = { 0, 0, -1 };
 						faces_vertices.push_back(vertex);
 
 						vertex.pos = face.p1;
 						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 0);
+						vertex.normal = { 0, 0, -1 };
 						faces_vertices.push_back(vertex);
 
 						chunk_vbo.total_vertices += 6;
@@ -1391,12 +1577,18 @@ void generate_chunk_vbo(GL_Renderer* gl_renderer, V3 chunk_arr_pos) {
 };
 
 void gl_draw_cube_faces_vbo(GL_Renderer* gl_renderer, GLuint textures_handle) {
+	V3 light_position = {};
+	if (gl_renderer->fireballs.size() > 0) {
+		light_position = gl_renderer->fireballs[0].pos;
+	}
 	for (const Chunk_Vbo& chunk_vbo : gl_renderer->open_gl.chunk_vbos) {
 		glBindBuffer(GL_ARRAY_BUFFER, chunk_vbo.vbo);
 		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Faces), (void*)offsetof(Vertex_3D_Faces, pos));
 		glEnableVertexAttribArray(0);
 		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Faces), (void*)offsetof(Vertex_3D_Faces, uv));
 		glEnableVertexAttribArray(1);
+		glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Faces), (void*)offsetof(Vertex_3D_Faces, normal));
+		glEnableVertexAttribArray(2);
 
 		// Bind the sprite sheet with all the textures
 		glBindTexture(GL_TEXTURE_2D, textures_handle);
@@ -1409,8 +1601,15 @@ void gl_draw_cube_faces_vbo(GL_Renderer* gl_renderer, GLuint textures_handle) {
 		glUseProgram(shader_program);
 
 		MX4 perspective_from_world = gl_renderer->perspective_from_view * gl_renderer->view_from_world;
+
 		GLuint perspective_from_world_loc = glGetUniformLocation(shader_program, "perspective_from_world");
 		glUniformMatrix4fv(perspective_from_world_loc, 1, GL_FALSE, perspective_from_world.e);
+
+		GLuint time_loc = glGetUniformLocation(shader_program, "u_time");
+		glUniform1f(time_loc, gl_renderer->time);
+
+		// GLuint light_fireball_loc = glGetUniformLocation(shader_program, "light_position_fireball");
+		// glUniform3fv(time_loc, );
 
 		glDrawArrays(GL_TRIANGLES, 0, chunk_vbo.total_vertices);
 	}
@@ -1498,6 +1697,44 @@ void draw_wire_frames(GL_Renderer* gl_renderer){
 	}
 }
 
+void initialize_timer(LARGE_INTEGER &frequency, LARGE_INTEGER &start_time) {
+	//  This is how many counts occur per second
+    QueryPerformanceFrequency(&frequency);
+	// This count acts as the reference point (start time) from which 
+	// subsequent time intervals will be measured.
+    QueryPerformanceCounter(&start_time);
+}
+
+float get_delta_time(const LARGE_INTEGER &frequency, LARGE_INTEGER &last_time) {
+    LARGE_INTEGER current_time;
+    QueryPerformanceCounter(&current_time);
+
+    // Calculate the difference in counts (NOTE: QuadPart is the 64-bit integer)
+    LONGLONG elapsed_counts = current_time.QuadPart - last_time.QuadPart;
+
+    // Calculate delta time in seconds
+    float delta_time = (float)(elapsed_counts) / frequency.QuadPart;
+
+    // Update last_time to the current time
+    last_time = current_time;
+
+    return delta_time;
+}
+
+void update_fireballs(GL_Renderer* gl_renderer, float delta_time) {
+	for (Fireball& fireball : gl_renderer->fireballs) {
+		fireball.pos.x += (fireball.velocity.x * gl_renderer->fireball_speed) * delta_time;
+		fireball.pos.y += (fireball.velocity.y * gl_renderer->fireball_speed) * delta_time;
+		fireball.pos.z += (fireball.velocity.z * gl_renderer->fireball_speed) * delta_time;
+	}
+}
+
+void draw_fireballs(GL_Renderer* gl_renderer) {
+	for (Fireball& fireball : gl_renderer->fireballs) {
+		draw_cube_fireball_type(gl_renderer, fireball.pos, fireball.mx_world, IT_Fireball);
+	}
+}
+
 LRESULT windowProcedure(HWND windowHandle, UINT messageType, WPARAM wParam, LPARAM lParam)
 {
 	LRESULT result = {};
@@ -1515,6 +1752,8 @@ LRESULT windowProcedure(HWND windowHandle, UINT messageType, WPARAM wParam, LPAR
 		current_mouse_position.y = (float)GET_Y_LPARAM(lParam);
 	} break;
 	case WM_LBUTTONDOWN: {
+		key_states[wParam].pressed_this_frame = true;
+		key_states[wParam].held_down = true;
 	} break;
 	case WM_CLOSE: {
 		DestroyWindow(windowHandle);
@@ -1569,6 +1808,13 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 
 	generate_world_chunks(gl_renderer, 20);
 
+	LARGE_INTEGER frequency;
+	LARGE_INTEGER last_time;
+	initialize_timer(frequency, last_time);
+	float delta_time;
+
+	gl_renderer->fireball_speed = 10.0f;
+
 	bool running = true;
 	while (running) {
 		reset_Pressed_This_Frame();
@@ -1583,6 +1829,9 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 			}
 			
 		}
+		delta_time = get_delta_time(frequency, last_time);
+
+		update_fireballs(gl_renderer, delta_time);
 
 		glEnable(GL_CULL_FACE);
 		glFrontFace(GL_CCW);
@@ -1595,30 +1844,66 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 
 		glEnable(GL_DEPTH_TEST);
 		glDepthFunc(GL_LESS);
-		// **************Drawing 3D lines****************
+
+		// Drawing 3D lines
 		draw_wire_frames(gl_renderer);
 		gl_upload_and_draw_lines_vbo(gl_renderer);
-		// **********************************************
 
-		// **************Drawing 3D Cubes****************
+		// Drawing 3D Cubes
 		// gl_upload_cube_vbo(gl_renderer);
-
 		// draw_cube(gl_renderer, { 0,0,0 }, images[IT_Dirt].texture);
 		// draw_chunks(gl_renderer);
+		gl_draw_cubes(gl_renderer);
 
-		// gl_draw_cubes(gl_renderer);
-		// ***********************************************
+		// Drawing fireballs
+		gl_upload_cube_fireball_vbo(gl_renderer);
+		draw_fireballs(gl_renderer);
+		gl_draw_cube_fireballs(gl_renderer);
 
-		// **************Generating Face VBO Chunks****************
+		// Generating Face VBO Chunks
 		gl_draw_cube_faces_vbo(gl_renderer, texture_sprite_sheet_handle);
-		// ***********************************************
+
 		glDisable(GL_DEPTH_TEST);
 		glDisable(GL_CULL_FACE);
 
-		// **************Drawing Strings****************
-		draw_string(gl_renderer, &font, "Testing", 500, 500, 5, true);
+		// Drawing Strings
+		//draw_string(gl_renderer, &font, "Hello world!", 500, 500, 5, true);
+		draw_string_ws(gl_renderer, &font, "First 3D string", { 0,0,0 }, 5, true);
+		//draw_string(gl_renderer, &font, "Hello world!", 250, 500, 5, true);
+
+		MX4 view_mx = gl_renderer->view_from_world;
+
+		int offset_y = 300;
+		int size = 3;
+		std::string row_1 = std::to_string(view_mx.e[0]) 
+			+ " " + std::to_string(view_mx.e[1])
+			+ " " + std::to_string(view_mx.e[2])
+			+ " " + std::to_string(view_mx.e[3]);
+		draw_string(gl_renderer, &font, row_1.c_str(), 500, offset_y, size, true);
+		offset_y += font.char_h * size;
+
+		std::string row_2 = std::to_string(view_mx.e[4]) 
+			+ " " + std::to_string(view_mx.e[5])
+			+ " " + std::to_string(view_mx.e[6])
+			+ " " + std::to_string(view_mx.e[7]);
+		draw_string(gl_renderer, &font, row_2.c_str(), 500, offset_y, size, true);
+		offset_y += font.char_h * size;
+
+		std::string row_3 = std::to_string(view_mx.e[8]) 
+			+ " " + std::to_string(view_mx.e[9])
+			+ " " + std::to_string(view_mx.e[10])
+			+ " " + std::to_string(view_mx.e[11]);
+		draw_string(gl_renderer, &font, row_3.c_str(), 500, offset_y, size, true);
+		offset_y += font.char_h * size;
+
+		std::string row_4 = std::to_string(view_mx.e[12]) 
+			+ " " + std::to_string(view_mx.e[13])
+			+ " " + std::to_string(view_mx.e[14])
+			+ " " + std::to_string(view_mx.e[15]);
+		draw_string(gl_renderer, &font, row_4.c_str(), 500, offset_y, size, true);
+		offset_y += font.char_h * size;
+
 		gl_upload_and_draw_2d_string(gl_renderer, &font);
-		// **********************************************
 
 		gl_update_renderer(gl_renderer);
 		SwapBuffers(gl_renderer->hdc);
