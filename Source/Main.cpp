@@ -1062,25 +1062,28 @@ struct Cube {
 	Image_Type type = IT_Air;
 };
 
-const int CHUNK_SIZE = 16;
+const int CHUNK_WIDTH = 16;
+const int CHUNK_LENGTH = 16;
+const int CHUNK_HEIGHT = 32;
+
 struct Chunk {
-	Cube cubes[CHUNK_SIZE][CHUNK_SIZE][CHUNK_SIZE] = {};
+	Cube cubes[CHUNK_WIDTH][CHUNK_HEIGHT][CHUNK_LENGTH] = {};
 };
 
-const int WORLD_SIZE_WIDTH = 10;
-const int WORLD_SIZE_LENGTH = 10;
+const int WORLD_SIZE_WIDTH = 25;
+const int WORLD_SIZE_LENGTH = 25;
 const int WORLD_SIZE_HEIGHT = 1;
 Chunk world_chunks[WORLD_SIZE_WIDTH][WORLD_SIZE_HEIGHT][WORLD_SIZE_LENGTH] = {};
 
-int height_map[(WORLD_SIZE_WIDTH * CHUNK_SIZE)][(WORLD_SIZE_LENGTH * CHUNK_SIZE)] = {};
+int height_map[(WORLD_SIZE_WIDTH * CHUNK_WIDTH)][(WORLD_SIZE_LENGTH * CHUNK_LENGTH)] = {};
 
 void generate_height_map(float noise) {
-	for (int x = 0; x < WORLD_SIZE_WIDTH * CHUNK_SIZE; x++) {
-		for (int z = 0; z < WORLD_SIZE_LENGTH * CHUNK_SIZE; z++) {
+	for (int x = 0; x < WORLD_SIZE_WIDTH * CHUNK_WIDTH; x++) {
+		for (int z = 0; z < WORLD_SIZE_LENGTH * CHUNK_LENGTH; z++) {
 			float height_value = stb_perlin_noise3((float)x / (float)noise, 0, z / noise, 0, 0, 0);
 			// Normalize and convert the perlin value into a height map value
-			int height = (int)((height_value + 1.0f) * 0.5f * CHUNK_SIZE);
-			height += (WORLD_SIZE_HEIGHT * CHUNK_SIZE) - CHUNK_SIZE;
+			int height = (int)((height_value + 1.0f) * 0.5f * CHUNK_HEIGHT);
+			height += (WORLD_SIZE_HEIGHT * CHUNK_HEIGHT) - CHUNK_HEIGHT;
 			height_map[x][z] = height;
 		}
 	}
@@ -1092,20 +1095,19 @@ void generate_world_chunk(int x_arr_pos, int y_arr_pos, int z_arr_pos, float noi
 	int final_z_arr_pos = clamp(z_arr_pos, 0, WORLD_SIZE_LENGTH);
 
 	Chunk new_chunk = {};
-	for (int x = 0; x < CHUNK_SIZE; x++) {
-		for (int y = 0; y < CHUNK_SIZE; y++) {
-			for (int z = 0; z < CHUNK_SIZE; z++) {
-				float world_space_x = x + (float)final_x_arr_pos * CHUNK_SIZE;
-				float world_space_y = y + (float)final_y_arr_pos * CHUNK_SIZE;
-				float world_space_z = z + (float)final_z_arr_pos * CHUNK_SIZE;
+	for (int x = 0; x < CHUNK_WIDTH; x++) {
+		for (int z = 0; z < CHUNK_LENGTH; z++) {
+			float world_space_x = x + (float)final_x_arr_pos * CHUNK_WIDTH;
+			float world_space_z = z + (float)final_z_arr_pos * CHUNK_LENGTH;
+			int height = height_map[(int)world_space_x][(int)world_space_z];
+			for (int y = 0; y < CHUNK_HEIGHT; y++) {
+				float world_space_y = y + (float)final_y_arr_pos * CHUNK_HEIGHT;
 				float perlin_result = stb_perlin_noise3(
 					(float)world_space_x / (float)noise, 
 					(float)world_space_y / (float)noise,
 					(float)world_space_z / (float)noise, 
 					0, 0, 0 // wrapping
 				);
-
-				int height = height_map[(int)world_space_x][(int)world_space_z];
 
 				Image_Type result = IT_Air;
 
@@ -1152,27 +1154,41 @@ V2 get_texture_sprite_sheet_uv_coordinates(Image_Type type, int pos_x, int pos_y
 
 	switch (type) {
 	case IT_Grass: {
-		// 0 0
 		if (pos_x == 0) {
 			result.x = 0.0f;
 		} else if (pos_x == 1) {
-			result.x = lerp(0, 1, 0.25);
+			result.x = 0.125f;
+		}
+		if (pos_y == 0) {
+			result.y = 0.0f;
+		} else if (pos_y == 1) {
+			result.y = 0.125f;
 		}
 		break;
 	}
 	case IT_Dirt: {
 		if (pos_x == 0) {
-			result.x = lerp(0, 1, 0.25);
+			result.x = 0.125f;
 		} else if (pos_x == 1) {
-			result.x = lerp(0, 1, 0.50);
+			result.x = 0.25f;
+		}
+		if (pos_y == 0) {
+			result.y = 0.0f;
+		} else if (pos_y == 1) {
+			result.y = 0.125f;
 		}
 		break;
 	}
 	case IT_Cobblestone: {
 		if (pos_x == 0) {
-			result.x = lerp(0, 1, 0.50);
+			result.x = 0.25;
 		} else if (pos_x == 1) {
-			result.x = lerp(0, 1, 0.75);
+			result.x = 0.375;
+		}
+		if (pos_y == 0) {
+			result.y = 0.0f;
+		} else if (pos_y == 1) {
+			result.y = 0.125f;
 		}
 		break;
 	}
@@ -1189,16 +1205,16 @@ V2 get_texture_sprite_sheet_uv_coordinates(Image_Type type, int pos_x, int pos_y
 const int CUBE_SIZE = 1;
 
 void generate_chunk_vbo(GL_Renderer* gl_renderer, V3 chunk_arr_pos) {
-	V3 chunk_ws_pos = {chunk_arr_pos.x * CHUNK_SIZE, chunk_arr_pos.y * CHUNK_SIZE, chunk_arr_pos.z * CHUNK_SIZE};
+	V3 chunk_ws_pos = {chunk_arr_pos.x * CHUNK_WIDTH, chunk_arr_pos.y * CHUNK_HEIGHT, chunk_arr_pos.z * CHUNK_LENGTH};
 	Chunk* chunk = &world_chunks[(int)chunk_arr_pos.x][(int)chunk_arr_pos.y][(int)chunk_arr_pos.z];
 
 	// Generate the data to be sent to the GPU
 	std::vector<Vertex_3D_Faces> faces_vertices = {};
 	Chunk_Vbo chunk_vbo = {};
 
-	for (int x = 0; x < CHUNK_SIZE; x++) {
-		for (int y = 0; y < CHUNK_SIZE; y++) {
-			for (int z = 0; z < CHUNK_SIZE; z++) {
+	for (int x = 0; x < CHUNK_WIDTH; x++) {
+		for (int y = 0; y < CHUNK_HEIGHT; y++) {
+			for (int z = 0; z < CHUNK_LENGTH; z++) {
 				// Grab the cube I want
 				V3 cube_ws_pos = chunk_ws_pos;
 				cube_ws_pos.x += x;
@@ -1219,13 +1235,13 @@ void generate_chunk_vbo(GL_Renderer* gl_renderer, V3 chunk_arr_pos) {
 					// Loop over the faces
 					// This currently doesn't take into account adjacent chunks when 
 					// drawing the faces
-					if (x + 1 < CHUNK_SIZE) {
+					if (x + 1 < CHUNK_WIDTH) {
 						back_cube = chunk->cubes[x + 1][y][z];
 					}
-					if (y + 1 < CHUNK_SIZE) {
+					if (y + 1 < CHUNK_HEIGHT) {
 						top_cube = chunk->cubes[x][y + 1][z];
 					}
-					if (z + 1 < CHUNK_SIZE) {
+					if (z + 1 < CHUNK_LENGTH) {
 						right_cube = chunk->cubes[x][y][z + 1];
 					}
 					if (x > 0) {
@@ -1618,8 +1634,8 @@ void gl_draw_cube_faces_vbo(GL_Renderer* gl_renderer, GLuint textures_handle) {
 void generate_world_chunks(GL_Renderer* gl_renderer, float noise) {
 	generate_height_map(noise);
 	for (int x = 0; x < WORLD_SIZE_WIDTH; x++) {
-		for (int y = 0; y < WORLD_SIZE_HEIGHT; y++) {
-			for (int z = 0; z < WORLD_SIZE_LENGTH; z++) {
+		for (int z = 0; z < WORLD_SIZE_LENGTH; z++) {
+			for (int y = 0; y < WORLD_SIZE_HEIGHT; y++) {
 				generate_world_chunk(x, y, z, noise);
 				generate_chunk_vbo(gl_renderer, { (float)x, (float)y, (float)z });
 			}
@@ -1627,20 +1643,20 @@ void generate_world_chunks(GL_Renderer* gl_renderer, float noise) {
 	}
 }
 
-void draw_chunk(GL_Renderer* gl_renderer, int chunk_size, int x_arr_pos, int y_arr_pos, int z_arr_pos) {
+void draw_chunk(GL_Renderer* gl_renderer, int x_arr_pos, int y_arr_pos, int z_arr_pos) {
 	int final_x_arr_pos = clamp(x_arr_pos, 0, WORLD_SIZE_WIDTH);
 	int final_y_arr_pos = clamp(y_arr_pos, 0, WORLD_SIZE_HEIGHT);
 	int final_z_arr_pos = clamp(z_arr_pos, 0, WORLD_SIZE_LENGTH);
 	Chunk* chunk = &world_chunks[final_x_arr_pos][final_y_arr_pos][final_z_arr_pos];
 
-	for (int x = 0; x < chunk_size; x++) {
-		for (int y = 0; y < chunk_size; y++) {
-			for (int z = 0; z < chunk_size; z++) {
+	for (int x = 0; x < CHUNK_WIDTH; x++) {
+		for (int y = 0; y < CHUNK_HEIGHT; y++) {
+			for (int z = 0; z < CHUNK_LENGTH; z++) {
 				// Voxel index
 				Cube* current_cube = &chunk->cubes[x][y][z];
-				float world_space_x = x + (float)final_x_arr_pos * CHUNK_SIZE;
-				float world_space_y = y + (float)final_y_arr_pos * CHUNK_SIZE;
-				float world_space_z = z + (float)final_z_arr_pos * CHUNK_SIZE;
+				float world_space_x = x + (float)final_x_arr_pos * CHUNK_WIDTH;
+				float world_space_y = y + (float)final_y_arr_pos * CHUNK_HEIGHT;
+				float world_space_z = z + (float)final_z_arr_pos * CHUNK_LENGTH;
 
 				V3 cube_ws_pos = { world_space_x, world_space_y, world_space_z };
 
@@ -1654,7 +1670,7 @@ void draw_chunks(GL_Renderer* gl_renderer) {
 	for (int x = 0; x < WORLD_SIZE_WIDTH; x++) {
 		for (int y = 0; y < WORLD_SIZE_HEIGHT; y++) {
 			for (int z = 0; z < WORLD_SIZE_LENGTH; z++) {
-				draw_chunk(gl_renderer, CHUNK_SIZE, x, y, z);
+				draw_chunk(gl_renderer, x, y, z);
 			}
 		}
 	}
@@ -1666,16 +1682,16 @@ void draw_wire_frames(GL_Renderer* gl_renderer){
 			for (int z = 0; z < WORLD_SIZE_LENGTH; z++) {
 				// This is the corner position of the chunk. 
 				// This is the position I'm drawing from.
-				V3 chunk_ws_pos = {(float)x * CHUNK_SIZE, (float)y * CHUNK_SIZE, (float)z * CHUNK_SIZE};
+				V3 chunk_ws_pos = {(float)x * CHUNK_WIDTH, (float)y * CHUNK_HEIGHT, (float)z * CHUNK_LENGTH};
 
 				// The points draw in the center of the cube. Need to offset them.
 				V3 p1 = chunk_ws_pos;
 
 				V3 p2 = chunk_ws_pos;
 
-				int w = CHUNK_SIZE;
-				int l = CHUNK_SIZE;
-				int h = CHUNK_SIZE;
+				int w = CHUNK_WIDTH;
+				int l = CHUNK_LENGTH;
+				int h = CHUNK_HEIGHT;
 
 				// Left face
 				gl_draw_line(gl_renderer, { p1.x,	  p1.y,     p1.z     }, { p2.x + w, p2.y,     p2.z    }); 
