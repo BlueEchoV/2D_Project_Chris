@@ -61,7 +61,7 @@ struct Open_GL {
 	GLuint vao;
 	GLuint vbo_lines;
 	GLuint vbo_cubes;
-	GLuint vbo_cube_fireballs;
+	GLuint vbo_fireballs;
 	GLuint vbo_cube_faces;
 	GLuint vbo_strings;
 
@@ -87,16 +87,29 @@ struct Vertex_String {
 	V2 uv;
 };
 
+enum Image_Type {
+    IT_Air,
+	IT_Cobblestone,
+	IT_Dirt,
+	IT_Grass,
+	IT_Fireball,
+	IT_Texture_Sprite_Sheet,
+
+	IT_Total
+};
+
 struct Fireball {
 	V3 pos;
 	V3 velocity;
 	MX4 mx_world;
+	Image_Type type;
 };
 
-struct Fireball_Draw {
-	V3 pos_ws;
+struct Fireball_To_Draw {
+	V3 pos;
+	V3 velocity;
 	MX4 mx_world;
-	GLuint texture_handle;
+	Image_Type type;
 };
 
 struct GL_Renderer {
@@ -114,7 +127,6 @@ struct GL_Renderer {
 
 	float fireball_speed;
 	std::vector<Fireball> fireballs;
-	std::vector<Fireball_Draw> fireballs_to_draw;
 
 	float pitch;
 	float roll;
@@ -213,6 +225,17 @@ void get_window_size(HWND window, int& w, int& h) {
 #define VK_A 0x41
 #define VK_D 0x44
 
+void shoot_fireball(GL_Renderer* gl_renderer, V3 pos, V3 velocity, MX4 world, Image_Type type) {
+	Fireball result;
+
+	result.pos = pos;
+	result.velocity = velocity;
+	result.mx_world = world;
+	result.type = type;
+
+	gl_renderer->fireballs.push_back(result);
+}
+
 void gl_update_renderer(GL_Renderer* gl_renderer) {
 	if (gl_renderer == nullptr) {
 		log("Error: gl_renderer is nullptr");
@@ -279,15 +302,12 @@ void gl_update_renderer(GL_Renderer* gl_renderer) {
 		gl_renderer->player_pos.y -= gl_renderer->player_speed;
 	}
 	if (key_states[VK_LBUTTON].pressed_this_frame) {
-		Fireball fireball = {};
-		fireball.pos = gl_renderer->player_pos;
-		fireball.velocity = forward;
-		fireball.mx_world = identity_mx_4();
-		fireball.mx_world.col[2].xyz = -forward;
-		fireball.mx_world.col[0].xyz = right;
-		fireball.mx_world.col[1].xyz = up;
-		gl_renderer->fireballs.push_back(fireball);
-		log("Firing fireball");
+		MX4 matrix = identity_mx_4();
+		matrix.col[2].xyz = -forward;
+		matrix.col[0].xyz = right;
+		matrix.col[1].xyz = up;
+		shoot_fireball(gl_renderer, gl_renderer->player_pos, forward, matrix, IT_Fireball);
+		log("Shooting fireball");
 	}
 
 	int window_width = 0;
@@ -557,17 +577,6 @@ Image create_Image(GL_Renderer* gl_renderer, const char* file_Path) {
 
 	return result;
 }
-
-enum Image_Type {
-    IT_Air,
-	IT_Cobblestone,
-	IT_Dirt,
-	IT_Grass,
-	IT_Fireball,
-	IT_Texture_Sprite_Sheet,
-
-	IT_Total
-};
 
 Image images[IT_Total] = {};
 
@@ -925,24 +934,6 @@ Vertex_3D_Cube cube[36] = {
 	{{-0.5, -0.5,  0.5}, color_three, {0, 1}, {0, -1, 0}}
 };
 
-void gl_upload_cube_vbo(GL_Renderer* gl_renderer) {
-	if (gl_renderer->open_gl.vbo_cubes == 0) {
-		glGenBuffers(1, &gl_renderer->open_gl.vbo_cubes);
-		glBindBuffer(GL_ARRAY_BUFFER, gl_renderer->open_gl.vbo_cubes);
-		glBufferData(GL_ARRAY_BUFFER, sizeof(cube), cube, GL_STATIC_DRAW);
-	}
-
-	glBindBuffer(GL_ARRAY_BUFFER, gl_renderer->open_gl.vbo_cubes);
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Cube), (void*)offsetof(Vertex_3D_Cube, pos));
-	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Cube), (void*)offsetof(Vertex_3D_Cube, color));
-	glEnableVertexAttribArray(1);
-	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Cube), (void*)offsetof(Vertex_3D_Cube, uv));
-	glEnableVertexAttribArray(2);
-	glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Cube), (void*)offsetof(Vertex_3D_Cube, normal));
-	glEnableVertexAttribArray(3);
-}
-
 void draw_cube(GL_Renderer* gl_renderer, V3 pos, GL_Texture* texture) {
 	Cube_Draw result;
 
@@ -980,14 +971,26 @@ void gl_draw_cubes(GL_Renderer* gl_renderer) {
 	gl_renderer->cubes.clear();
 }
 
-void gl_upload_cube_fireball_vbo(GL_Renderer* gl_renderer) {
-	if (gl_renderer->open_gl.vbo_cube_fireballs == 0) {
-		glGenBuffers(1, &gl_renderer->open_gl.vbo_cube_fireballs);
-		glBindBuffer(GL_ARRAY_BUFFER, gl_renderer->open_gl.vbo_cube_fireballs);
+void gl_draw_fireballs(GL_Renderer* gl_renderer) {
+	std::vector<Fireball_To_Draw> fireballs_to_draw;
+	for (Fireball& fireball : gl_renderer->fireballs) {
+		Fireball_To_Draw result;
+
+		result.pos = fireball.pos;
+		result.velocity = fireball.velocity;
+		result.mx_world = fireball.mx_world;
+		result.type = fireball.type;
+
+		fireballs_to_draw.push_back(result);
+	}
+
+	if (gl_renderer->open_gl.vbo_fireballs == 0) {
+		glGenBuffers(1, &gl_renderer->open_gl.vbo_fireballs);
+		glBindBuffer(GL_ARRAY_BUFFER, gl_renderer->open_gl.vbo_fireballs);
 		glBufferData(GL_ARRAY_BUFFER, sizeof(cube), cube, GL_STATIC_DRAW);
 	}
 
-	glBindBuffer(GL_ARRAY_BUFFER, gl_renderer->open_gl.vbo_cube_fireballs);
+	glBindBuffer(GL_ARRAY_BUFFER, gl_renderer->open_gl.vbo_fireballs);
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Cube), (void*)offsetof(Vertex_3D_Cube, pos));
 	glEnableVertexAttribArray(0);
 	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Cube), (void*)offsetof(Vertex_3D_Cube, color));
@@ -996,34 +999,12 @@ void gl_upload_cube_fireball_vbo(GL_Renderer* gl_renderer) {
 	glEnableVertexAttribArray(2);
 	glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Cube), (void*)offsetof(Vertex_3D_Cube, normal));
 	glEnableVertexAttribArray(3);
-}
 
-void draw_cube_fireball(GL_Renderer* gl_renderer, V3 pos, MX4 mx_world, GL_Texture* texture) {
-	Fireball_Draw result;
+	for (Fireball_To_Draw& fireball_to_draw : fireballs_to_draw) {
+		GLuint texture = get_image(fireball_to_draw.type)->handle;
+		glBindTexture(GL_TEXTURE_2D, texture);
 
-	result.pos_ws = pos;
-	result.texture_handle = texture->handle;
-	result.mx_world = mx_world;
-
-	gl_renderer->fireballs_to_draw.push_back(result);
-}
-
-void draw_cube_fireball_type(GL_Renderer* gl_renderer, V3 pos, MX4 mx_world, Image_Type type) {
-	GL_Texture* result = get_image(type);
-
-	if (result == nullptr) {
-		log("Error: GL_Texture* is nullptr");
-		assert(false);
-		return;
-	} 
-	draw_cube_fireball(gl_renderer, pos, mx_world, result);
-}
-
-void gl_draw_cube_fireballs(GL_Renderer* gl_renderer) {
-	for (Fireball_Draw& current_fireball: gl_renderer->fireballs_to_draw) {
-		glBindTexture(GL_TEXTURE_2D, current_fireball.texture_handle);
-
-		GLuint shader_program = shader_program_types[SPT_3D];
+		GLuint shader_program = shader_program_types[SPT_Fireball];
 		if (!shader_program) {
 			log("ERROR: Shader program not specified");
 			assert(false);
@@ -1032,9 +1013,9 @@ void gl_draw_cube_fireballs(GL_Renderer* gl_renderer) {
 
 		// MX4 world_from_model = translation_matrix_mx_4(cos(x) * x_speed, sin(x) * y_speed, z_pos);
 		MX4 world_from_model = translation_matrix_mx_4(
-			current_fireball.pos_ws.x, 
-			current_fireball.pos_ws.y, 
-			current_fireball.pos_ws.z) * current_fireball.mx_world/* * mat4_rotate_x(renderer->time)*/;
+			fireball_to_draw.pos.x,
+			fireball_to_draw.pos.y,
+			fireball_to_draw.pos.z) * fireball_to_draw.mx_world/* * mat4_rotate_x(renderer->time)*/;
 		GLuint world_from_model_loc = glGetUniformLocation(shader_program, "world_from_model");
 		glUniformMatrix4fv(world_from_model_loc, 1, GL_FALSE, world_from_model.e);
 
@@ -1044,7 +1025,7 @@ void gl_draw_cube_fireballs(GL_Renderer* gl_renderer) {
 
 		glDrawArrays(GL_TRIANGLES, 0, ARRAYSIZE(cube));
 	}
-	gl_renderer->fireballs_to_draw.clear();
+	// No need to clear the vector because it's within the scope of this function
 }
 
 void draw_cube_type(GL_Renderer* gl_renderer, V3 pos, Image_Type type) {
@@ -1070,8 +1051,8 @@ struct Chunk {
 	Cube cubes[CHUNK_WIDTH][CHUNK_HEIGHT][CHUNK_LENGTH] = {};
 };
 
-const int WORLD_SIZE_WIDTH = 25;
-const int WORLD_SIZE_LENGTH = 25;
+const int WORLD_SIZE_WIDTH = 1;
+const int WORLD_SIZE_LENGTH = 1;
 const int WORLD_SIZE_HEIGHT = 1;
 Chunk world_chunks[WORLD_SIZE_WIDTH][WORLD_SIZE_HEIGHT][WORLD_SIZE_LENGTH] = {};
 
@@ -1745,12 +1726,6 @@ void update_fireballs(GL_Renderer* gl_renderer, float delta_time) {
 	}
 }
 
-void draw_fireballs(GL_Renderer* gl_renderer) {
-	for (Fireball& fireball : gl_renderer->fireballs) {
-		draw_cube_fireball_type(gl_renderer, fireball.pos, fireball.mx_world, IT_Fireball);
-	}
-}
-
 LRESULT windowProcedure(HWND windowHandle, UINT messageType, WPARAM wParam, LPARAM lParam)
 {
 	LRESULT result = {};
@@ -1869,12 +1844,10 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		// gl_upload_cube_vbo(gl_renderer);
 		// draw_cube(gl_renderer, { 0,0,0 }, images[IT_Dirt].texture);
 		// draw_chunks(gl_renderer);
-		gl_draw_cubes(gl_renderer);
+		// gl_draw_cubes(gl_renderer);
 
 		// Drawing fireballs
-		gl_upload_cube_fireball_vbo(gl_renderer);
-		draw_fireballs(gl_renderer);
-		gl_draw_cube_fireballs(gl_renderer);
+		gl_draw_fireballs(gl_renderer);
 
 		// Generating Face VBO Chunks
 		gl_draw_cube_faces_vbo(gl_renderer, texture_sprite_sheet_handle);
