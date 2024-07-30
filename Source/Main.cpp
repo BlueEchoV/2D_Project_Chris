@@ -6,11 +6,13 @@
 #include <algorithm>
 #include <errno.h>
 #include <string.h>
+#include <iomanip> 
 #include <iostream>
 #include <fstream>
 #include <sstream>
 #include <utility>
 #include <assert.h>
+#include <format>
 
 #define STB_PERLIN_IMPLEMENTATION
 #include "Perlin.h"
@@ -236,6 +238,16 @@ void shoot_fireball(GL_Renderer* gl_renderer, V3 pos, V3 velocity, MX4 world, Im
 	gl_renderer->fireballs.push_back(result);
 }
 
+#if 0
+V3 matrix_4_forward(MX4 mx) {
+
+}
+
+V3 camera_4_forward(MX4 mx) {
+
+}
+#endif
+
 void gl_update_renderer(GL_Renderer* gl_renderer) {
 	if (gl_renderer == nullptr) {
 		log("Error: gl_renderer is nullptr");
@@ -263,6 +275,11 @@ void gl_update_renderer(GL_Renderer* gl_renderer) {
 	MX4 transposed_view_mx = matrix_transpose(gl_renderer->view_from_world);
 
 	// OpenGL's default coordinate system
+
+	// The third column of the transposed view matrix col[2] corresponds to the 
+	// forward direction of the camera. The forward direction is typically the 
+	// negative z-axis. By negating this column, you get the actual forward direction 
+	// in the camera's coordinate system.
 	V3 forward = -transposed_view_mx.col[2].xyz;
 	V3 right = transposed_view_mx.col[0].xyz;
 	V3 up = transposed_view_mx.col[1].xyz;
@@ -934,6 +951,47 @@ Vertex_3D_Cube cube[36] = {
 	{{-0.5, -0.5,  0.5}, color_three, {0, 1}, {0, -1, 0}}
 };
 
+void draw_cube_mx(GL_Renderer* gl_renderer, MX4 mx) {
+	if (gl_renderer->open_gl.vbo_cubes == 0) {
+		glGenBuffers(1, &gl_renderer->open_gl.vbo_cubes);
+		glBindBuffer(GL_ARRAY_BUFFER, gl_renderer->open_gl.vbo_cubes);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(cube), cube, GL_STATIC_DRAW);
+	}
+
+	glBindBuffer(GL_ARRAY_BUFFER, gl_renderer->open_gl.vbo_cubes);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Cube), (void*)offsetof(Vertex_3D_Cube, pos));
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Cube), (void*)offsetof(Vertex_3D_Cube, color));
+	glEnableVertexAttribArray(1);
+	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Cube), (void*)offsetof(Vertex_3D_Cube, uv));
+	glEnableVertexAttribArray(2);
+	glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Cube), (void*)offsetof(Vertex_3D_Cube, normal));
+	glEnableVertexAttribArray(3);
+
+	GLuint handle = get_image(IT_Dirt)->handle;
+	glBindTexture(GL_TEXTURE_2D, handle);
+
+	GLuint shader_program = shader_program_types[SPT_3D];
+	if (!shader_program) {
+		log("ERROR: Shader program not specified");
+		assert(false);
+	}
+	glUseProgram(shader_program);
+
+	MX4 world_from_model = mx;
+	GLuint world_from_model_loc = glGetUniformLocation(shader_program, "world_from_model");
+	glUniformMatrix4fv(world_from_model_loc, 1, GL_FALSE, world_from_model.e);
+
+	MX4 perspective_from_world = gl_renderer->perspective_from_view * gl_renderer->view_from_world;
+	GLuint perspective_from_world_loc = glGetUniformLocation(shader_program, "perspective_from_world");
+	glUniformMatrix4fv(perspective_from_world_loc, 1, GL_FALSE, perspective_from_world.e);
+
+	GLuint time_loc = glGetUniformLocation(shader_program, "u_time");
+	glUniform1f(time_loc, gl_renderer->time);
+
+	glDrawArrays(GL_TRIANGLES, 0, ARRAYSIZE(cube));
+}
+
 void draw_cube(GL_Renderer* gl_renderer, V3 pos, GL_Texture* texture) {
 	Cube_Draw result;
 
@@ -944,6 +1002,23 @@ void draw_cube(GL_Renderer* gl_renderer, V3 pos, GL_Texture* texture) {
 }
 
 void gl_draw_cubes(GL_Renderer* gl_renderer) {
+	if (gl_renderer->open_gl.vbo_fireballs == 0) {
+		glGenBuffers(1, &gl_renderer->open_gl.vbo_fireballs);
+		glBindBuffer(GL_ARRAY_BUFFER, gl_renderer->open_gl.vbo_fireballs);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(cube), cube, GL_STATIC_DRAW);
+	}
+
+	glBindBuffer(GL_ARRAY_BUFFER, gl_renderer->open_gl.vbo_fireballs);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Cube), (void*)offsetof(Vertex_3D_Cube, pos));
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Cube), (void*)offsetof(Vertex_3D_Cube, color));
+	glEnableVertexAttribArray(1);
+	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Cube), (void*)offsetof(Vertex_3D_Cube, uv));
+	glEnableVertexAttribArray(2);
+	glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Cube), (void*)offsetof(Vertex_3D_Cube, normal));
+	glEnableVertexAttribArray(3);
+
+
 	for (Cube_Draw current_cube : gl_renderer->cubes) {
 		glBindTexture(GL_TEXTURE_2D, current_cube.texture_handle);
 
@@ -1000,6 +1075,7 @@ void gl_draw_fireballs(GL_Renderer* gl_renderer) {
 	glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Cube), (void*)offsetof(Vertex_3D_Cube, normal));
 	glEnableVertexAttribArray(3);
 
+	std::vector<MX4> matrices;
 	for (Fireball_To_Draw& fireball_to_draw : fireballs_to_draw) {
 		GLuint texture = get_image(fireball_to_draw.type)->handle;
 		glBindTexture(GL_TEXTURE_2D, texture);
@@ -1016,6 +1092,17 @@ void gl_draw_fireballs(GL_Renderer* gl_renderer) {
 			fireball_to_draw.pos.x,
 			fireball_to_draw.pos.y,
 			fireball_to_draw.pos.z) * fireball_to_draw.mx_world/* * mat4_rotate_x(renderer->time)*/;
+
+		MX4 child_mx_one = world_from_model * mat4_rotate_z(gl_renderer->time * 2) * translation_matrix_mx_4(0, 2, 0) * scaling_matrix_mx_4(0.5f, 0.5f, 0.5f);
+		MX4 child_mx_two = world_from_model * mat4_rotate_z(gl_renderer->time * 2.0f + (float)M_PI / 2.0f) * translation_matrix_mx_4(0, 2, 0) * scaling_matrix_mx_4(0.5f, 0.5f, 0.5f);
+		MX4 child_mx_three = world_from_model * mat4_rotate_z(gl_renderer->time * 2.0f + (float)M_PI) * translation_matrix_mx_4(0, 2, 0) * scaling_matrix_mx_4(0.5f, 0.5f, 0.5f);
+		MX4 child_mx_four = world_from_model * mat4_rotate_z(gl_renderer->time * 2.0f + (3.0f * (float)M_PI) / 2.0f) * translation_matrix_mx_4(0, 2, 0) * scaling_matrix_mx_4(0.5f, 0.5f, 0.5f);
+
+		matrices.push_back(child_mx_one);
+		matrices.push_back(child_mx_two);
+		matrices.push_back(child_mx_three);
+		matrices.push_back(child_mx_four);
+		
 		GLuint world_from_model_loc = glGetUniformLocation(shader_program, "world_from_model");
 		glUniformMatrix4fv(world_from_model_loc, 1, GL_FALSE, world_from_model.e);
 
@@ -1026,6 +1113,9 @@ void gl_draw_fireballs(GL_Renderer* gl_renderer) {
 		glDrawArrays(GL_TRIANGLES, 0, ARRAYSIZE(cube));
 	}
 	// No need to clear the vector because it's within the scope of this function
+	for (MX4 matrix : matrices) {
+		draw_cube_mx(gl_renderer, matrix);
+	}
 }
 
 void draw_cube_type(GL_Renderer* gl_renderer, V3 pos, Image_Type type) {
@@ -1760,6 +1850,43 @@ LRESULT windowProcedure(HWND windowHandle, UINT messageType, WPARAM wParam, LPAR
 	return result;
 }
 
+void draw_mx4(GL_Renderer* gl_renderer, std::string mx_name, Font* font, MX4 mx, int pos_x, int pos_y, int size, bool center) {
+	int offset_y = 0;
+	std::string title = " " + mx_name;
+	draw_string(gl_renderer, font, title.c_str(), pos_x, pos_y + offset_y, size, center);
+	offset_y += font->char_h * size;
+
+	MX4 mx_transposed = matrix_transpose(mx);
+
+	std::string row_1 = std::format("{:>5.2f}", mx_transposed.e[0]) 
+		+ " " + std::format("{:>5.2f}", mx_transposed.e[1])
+		+ " " + std::format("{:>5.2f}", mx_transposed.e[2])
+		+ " " + std::format("{:>5.2f}", mx_transposed.e[3]);
+	draw_string(gl_renderer, font, row_1.c_str(), pos_x, pos_y + offset_y, size, center);
+	offset_y += font->char_h * size;
+
+	std::string row_2 = std::format("{:>5.2f}",mx_transposed.e[4]) 
+		+ " " + std::format("{:>5.2f}", mx_transposed.e[5])
+		+ " " + std::format("{:>5.2f}", mx_transposed.e[6])
+		+ " " + std::format("{:>5.2f}", mx_transposed.e[7]);
+	draw_string(gl_renderer, font, row_2.c_str(), pos_x, pos_y + offset_y, size, center);
+	offset_y += font->char_h * size;
+
+	std::string row_3 = std::format("{:>5.2f}", mx_transposed.e[8]) 
+		+ " " + std::format("{:>5.2f}", mx_transposed.e[9])
+		+ " " + std::format("{:>5.2f}", mx_transposed.e[10])
+		+ " " + std::format("{:>5.2f}", mx_transposed.e[11]);
+	draw_string(gl_renderer, font, row_3.c_str(), pos_x, pos_y + offset_y, size, center);
+	offset_y += font->char_h * size;
+
+	std::string row_4 = std::format("{:>5.2f}", mx_transposed.e[12]) 
+		+ " " + std::format("{:>5.2f}", mx_transposed.e[13])
+		+ " " + std::format("{:>5.2f}", mx_transposed.e[14])
+		+ " " + std::format("{:>5.2f}", mx_transposed.e[15]);
+	draw_string(gl_renderer, font, row_4.c_str(), pos_x, pos_y + offset_y, size, center);
+	offset_y += font->char_h * size;
+}
+
 int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd) {
 	OutputDebugString("Hello World!\n");
 
@@ -1841,10 +1968,33 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		gl_upload_and_draw_lines_vbo(gl_renderer);
 
 		// Drawing 3D Cubes
-		// gl_upload_cube_vbo(gl_renderer);
-		// draw_cube(gl_renderer, { 0,0,0 }, images[IT_Dirt].texture);
+		float pos_x = -10.0f;
+		MX4 mx_parent = translation_matrix_mx_4(pos_x, 0, 0);
+		draw_cube_mx(gl_renderer, mx_parent);
+		for (int i = 0; i < 20; i++) {
+			mx_parent = mx_parent * mat4_rotate_x(sin(gl_renderer->time * 10) * 0.01f) * translation_matrix_mx_4(0, 1, 0);
+			draw_cube_mx(gl_renderer, mx_parent);
+		}
+
+#if 0
+		float pos_x = -10.0f + sin(gl_renderer->time);
+		MX4 mx_parent = translation_matrix_mx_4(pos_x, 0, 0);
+		draw_cube_mx(gl_renderer, mx_parent);
+		MX4 mx_child = mx_parent * mat4_rotate_y(sin(gl_renderer->time)) * translation_matrix_mx_4(2, 0, 0) * mat4_rotate_y(sin(gl_renderer->time));
+		draw_cube_mx(gl_renderer, mx_child);
+		// *******
+		MX4 mx_parent = translation_matrix_mx_4(pos_x, 0, 0) * mat4_rotate_x(sin(gl_renderer->time));
+		draw_cube_mx(gl_renderer, mx_parent);
+		MX4 mx_child = mx_parent * translation_matrix_mx_4(0, 1, 0);
+		draw_cube_mx(gl_renderer, mx_child);
+		MX4 mx_child_of_child = mx_child * translation_matrix_mx_4(0, 1, 0) * scaling_matrix_mx_4(0.5f, 0.5f, 0.5f);
+		draw_cube_mx(gl_renderer, mx_child_of_child);
+		MX4 mx_child_of_that_child = mx_child_of_child * translation_matrix_mx_4(0, 2, 0) * scaling_matrix_mx_4(2.0f, 2.0f, 2.0f);
+		draw_cube_mx(gl_renderer, mx_child_of_that_child);
+#endif
+
 		// draw_chunks(gl_renderer);
-		// gl_draw_cubes(gl_renderer);
+		gl_draw_cubes(gl_renderer);
 
 		// Drawing fireballs
 		gl_draw_fireballs(gl_renderer);
@@ -1861,36 +2011,7 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		//draw_string(gl_renderer, &font, "Hello world!", 250, 500, 5, true);
 
 		MX4 view_mx = gl_renderer->view_from_world;
-
-		int offset_y = 300;
-		int size = 3;
-		std::string row_1 = std::to_string(view_mx.e[0]) 
-			+ " " + std::to_string(view_mx.e[1])
-			+ " " + std::to_string(view_mx.e[2])
-			+ " " + std::to_string(view_mx.e[3]);
-		draw_string(gl_renderer, &font, row_1.c_str(), 500, offset_y, size, true);
-		offset_y += font.char_h * size;
-
-		std::string row_2 = std::to_string(view_mx.e[4]) 
-			+ " " + std::to_string(view_mx.e[5])
-			+ " " + std::to_string(view_mx.e[6])
-			+ " " + std::to_string(view_mx.e[7]);
-		draw_string(gl_renderer, &font, row_2.c_str(), 500, offset_y, size, true);
-		offset_y += font.char_h * size;
-
-		std::string row_3 = std::to_string(view_mx.e[8]) 
-			+ " " + std::to_string(view_mx.e[9])
-			+ " " + std::to_string(view_mx.e[10])
-			+ " " + std::to_string(view_mx.e[11]);
-		draw_string(gl_renderer, &font, row_3.c_str(), 500, offset_y, size, true);
-		offset_y += font.char_h * size;
-
-		std::string row_4 = std::to_string(view_mx.e[12]) 
-			+ " " + std::to_string(view_mx.e[13])
-			+ " " + std::to_string(view_mx.e[14])
-			+ " " + std::to_string(view_mx.e[15]);
-		draw_string(gl_renderer, &font, row_4.c_str(), 500, offset_y, size, true);
-		offset_y += font.char_h * size;
+		draw_mx4(gl_renderer, "View_from_world", &font, view_mx, 0, 0, 2, false);
 
 		gl_upload_and_draw_2d_string(gl_renderer, &font);
 
