@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string>
 #include <unordered_map>
+#include <functional>
 #include <algorithm>
 #include <errno.h>
 #include <string.h>
@@ -819,17 +820,22 @@ void draw_string(GL_Renderer* gl_renderer, Font* font, const char* str, int pos_
     }
 }
 
+V3 get_camera_forward(GL_Renderer* gl_renderer) {
+	MX4 transpose_view_mx = matrix_transpose(gl_renderer->view_from_world);
+	// Move the camera in the opposite direction
+	V3 camera_forward = -transpose_view_mx.col[2].xyz;
+
+	return camera_forward;
+}
+
 void draw_string_ws(GL_Renderer* gl_renderer, Font* font, const char* str, V3 ws_pos, int size, bool center) {
 	V4 ws_pos_converted = { ws_pos.x, ws_pos.y, ws_pos.z, 1.0f };
 	// WS position
 	V4 ndc = gl_renderer->perspective_from_view * gl_renderer->view_from_world * ws_pos_converted;
 
-	MX4 transpose_view_mx = matrix_transpose(gl_renderer->view_from_world);
+	V3 camera_forward = get_camera_forward(gl_renderer);
 
 	V3 camera_pos = gl_renderer->player_pos;
-
-	V3 camera_forward = -transpose_view_mx.col[2].xyz;
-
 	V3 camera_to_string;
 	camera_to_string.x = ws_pos.x - camera_pos.x;
 	camera_to_string.y = ws_pos.y - camera_pos.y;
@@ -1123,7 +1129,7 @@ void draw_cube_type(GL_Renderer* gl_renderer, V3 pos, Image_Type type) {
 
 	if (result == nullptr) {
 		log("Error: GL_Texture* is nullptr");
-		assert(false);
+		// assert(false);
 		return;
 	} 
 	draw_cube(gl_renderer, pos, result);
@@ -1133,14 +1139,89 @@ struct Cube {
 	Image_Type type = IT_Air;
 };
 
-const int CHUNK_WIDTH = 16;
-const int CHUNK_LENGTH = 16;
-const int CHUNK_HEIGHT = 32;
+const int VIEW_DISTANCE = 2;
+
+const int CHUNK_WIDTH = 2;
+const int CHUNK_LENGTH = 2;
+const int CHUNK_HEIGHT = 2;
+
+struct Chunk_Index {
+    int x;
+    int z;
+
+    bool operator==(const Chunk_Index& other) const {
+        return x == other.x && z == other.z;
+    }
+};
+
+struct Chunk_Index_Hash {
+    std::size_t operator()(const Chunk_Index& index) const {
+        std::size_t hash_x = std::hash<int>{}(index.x);
+        std::size_t hash_z = std::hash<int>{}(index.z);
+		// Combine the hashes
+        return hash_x ^ (hash_z << 1);
+    }
+};
 
 struct Chunk {
 	Cube cubes[CHUNK_WIDTH][CHUNK_HEIGHT][CHUNK_LENGTH] = {};
 };
 
+std::unordered_map<Chunk_Index, Chunk, Chunk_Index_Hash> world_chunks;
+// std::unordered_map<Chunk_Index, Chunk> world_chunks;
+
+void generate_chunk(Chunk_Index index, float noise) {
+	Chunk new_chunk = {};
+	for (int x = 0; x < CHUNK_WIDTH; x++) {
+		for (int z = 0; z < CHUNK_LENGTH; z++) {
+			float world_space_x = x + (float)x * CHUNK_WIDTH;
+			float world_space_z = z + (float)z * CHUNK_LENGTH;
+
+			float height_value = stb_perlin_noise3((float)world_space_x / (float)noise, 0, (float)world_space_z / (float)noise, 0, 0, 0);
+			// Normalize and convert the perlin value into a height map value
+			int height = (int)((height_value + 1.0f) * 0.5f * CHUNK_HEIGHT);
+			
+			for (int y = 0; y < CHUNK_HEIGHT; y++) {
+				float world_space_y = (float)y + (float)CHUNK_HEIGHT;
+				float perlin_result = stb_perlin_noise3(
+					(float)world_space_x / (float)noise, 
+					(float)world_space_y / (float)noise,
+					(float)world_space_z / (float)noise, 
+					0, 0, 0 // wrapping
+				);
+
+				Image_Type result = IT_Air;
+
+				// We know this is the top chunk
+				// Draw the chunk
+				if (world_space_y < height) {
+					if (world_space_y == height - 1) {
+						result = IT_Grass;
+					} else if (world_space_y < height - 1 && world_space_y >= height - 4) {
+						result = IT_Dirt;
+					} else if (world_space_y < height - 4 && world_space_y >= height - 8) {
+						result = IT_Cobblestone;
+					} else {
+						if (perlin_result > -0.3) {
+							result = IT_Cobblestone;
+						} else {
+							result = IT_Air;
+						}
+					}
+				// Don't draw
+				} else {
+					result = IT_Air;
+				}
+
+				new_chunk.cubes[x][y][z].type = result;
+			}
+		}
+	}
+
+	world_chunks[index] = new_chunk;
+}
+
+#if 0
 const int WORLD_SIZE_WIDTH = 1;
 const int WORLD_SIZE_LENGTH = 1;
 const int WORLD_SIZE_HEIGHT = 1;
@@ -1210,6 +1291,7 @@ void generate_world_chunk(int x_arr_pos, int y_arr_pos, int z_arr_pos, float noi
 
 	world_chunks[final_x_arr_pos][final_y_arr_pos][final_z_arr_pos] = new_chunk;
 }
+#endif
 
 struct Vertex_3D_Faces {
 	V3 pos;
@@ -1275,22 +1357,25 @@ V2 get_texture_sprite_sheet_uv_coordinates(Image_Type type, int pos_x, int pos_y
 
 const int CUBE_SIZE = 1;
 
-void generate_chunk_vbo(GL_Renderer* gl_renderer, V3 chunk_arr_pos) {
-	V3 chunk_ws_pos = {chunk_arr_pos.x * CHUNK_WIDTH, chunk_arr_pos.y * CHUNK_HEIGHT, chunk_arr_pos.z * CHUNK_LENGTH};
-	Chunk* chunk = &world_chunks[(int)chunk_arr_pos.x][(int)chunk_arr_pos.y][(int)chunk_arr_pos.z];
+// NOTE: Changed the arr pos to a V2
+void generate_chunk_vbo(GL_Renderer* gl_renderer, Chunk_Index index) {
+	// Chunk* chunk = &world_chunks[(int)chunk_arr_pos.x][(int)chunk_arr_pos.y][(int)chunk_arr_pos.z];
+	Chunk* chunk = &world_chunks[index];
 
 	// Generate the data to be sent to the GPU
 	std::vector<Vertex_3D_Faces> faces_vertices = {};
 	Chunk_Vbo chunk_vbo = {};
 
+	V3 chunk_ws_pos = {(float)index.x * (float)CHUNK_WIDTH, 0, (float)index.z * (float)CHUNK_HEIGHT};
 	for (int x = 0; x < CHUNK_WIDTH; x++) {
 		for (int y = 0; y < CHUNK_HEIGHT; y++) {
 			for (int z = 0; z < CHUNK_LENGTH; z++) {
 				// Grab the cube I want
 				V3 cube_ws_pos = chunk_ws_pos;
 				cube_ws_pos.x += x;
-				cube_ws_pos.y += y;
 				cube_ws_pos.z += z;
+
+				cube_ws_pos.y = (float)y;
 
 				Cube* current_cube = &chunk->cubes[x][y][z];
 				if (current_cube->type != IT_Air) {
@@ -1702,6 +1787,54 @@ void gl_draw_cube_faces_vbo(GL_Renderer* gl_renderer, GLuint textures_handle) {
 	}
 }
 
+void draw_chunk(GL_Renderer* gl_renderer, Chunk_Index chunk_index) {
+	Chunk* chunk = &world_chunks[chunk_index];
+	for (int x = 0; x < CHUNK_WIDTH; x++) {
+		for (int y = 0; y < CHUNK_HEIGHT; y++) {
+			for (int z = 0; z < CHUNK_LENGTH; z++) {
+				Cube* current_cube = &chunk->cubes[x][y][z];
+				float world_space_x = x + (float)chunk_index.x * CHUNK_WIDTH;
+				float world_space_y = (float)y;
+				float world_space_z = z + (float)chunk_index.z * CHUNK_LENGTH;
+
+				V3 cube_ws_pos = { world_space_x, world_space_y, world_space_z };
+
+				draw_cube_type(gl_renderer, cube_ws_pos, current_cube->type);
+			}
+		}
+	}
+}
+
+void load_chunks_around_player(GL_Renderer* gl_renderer, float noise) {
+	int chunk_player_is_on_x = (int)gl_renderer->player_pos.x / CHUNK_WIDTH;
+	int chunk_player_is_on_z = (int)gl_renderer->player_pos.z / CHUNK_LENGTH;
+
+	for (int x = -VIEW_DISTANCE; x < VIEW_DISTANCE; x++) {
+		for (int z = -VIEW_DISTANCE; z < VIEW_DISTANCE; z++) {
+			Chunk_Index index;
+			index.x = chunk_player_is_on_x + x;
+			index.z = chunk_player_is_on_z + z;
+			generate_chunk(index, noise);
+		}
+	}
+}
+
+void draw_chunks_around_player(GL_Renderer* gl_renderer) {
+	int chunk_player_is_on_x = (int)gl_renderer->player_pos.x / CHUNK_WIDTH;
+	int chunk_player_is_on_z = (int)gl_renderer->player_pos.z / CHUNK_LENGTH;
+
+	for (int x = -VIEW_DISTANCE; x < VIEW_DISTANCE; x++) {
+		for (int z = -VIEW_DISTANCE; z < VIEW_DISTANCE; z++) {
+			Chunk_Index index;
+			index.x = chunk_player_is_on_x + x;
+			index.z = chunk_player_is_on_z + z;
+			draw_chunk(gl_renderer, index);
+		}
+	}
+
+}
+
+#if 0
 void generate_world_chunks(GL_Renderer* gl_renderer, float noise) {
 	generate_height_map(noise);
 	for (int x = 0; x < WORLD_SIZE_WIDTH; x++) {
@@ -1783,6 +1916,7 @@ void draw_wire_frames(GL_Renderer* gl_renderer){
 		}
 	}
 }
+#endif
 
 void initialize_timer(LARGE_INTEGER &frequency, LARGE_INTEGER &start_time) {
 	//  This is how many counts occur per second
@@ -1924,8 +2058,6 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 	init_images(gl_renderer);
 	GLuint texture_sprite_sheet_handle = get_image(IT_Texture_Sprite_Sheet)->handle;
 
-	generate_world_chunks(gl_renderer, 20);
-
 	LARGE_INTEGER frequency;
 	LARGE_INTEGER last_time;
 	initialize_timer(frequency, last_time);
@@ -1951,6 +2083,9 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 
 		update_fireballs(gl_renderer, delta_time);
 
+		load_chunks_around_player(gl_renderer, 20);
+		draw_chunks_around_player(gl_renderer);
+
 		glEnable(GL_CULL_FACE);
 		glFrontFace(GL_CCW);
 		// GL_COLOR_BUFFER_BIT: This clears the color buffer, which is responsible for holding the color 
@@ -1964,7 +2099,7 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		glDepthFunc(GL_LESS);
 
 		// Drawing 3D lines
-		draw_wire_frames(gl_renderer);
+		// draw_wire_frames(gl_renderer);
 		gl_upload_and_draw_lines_vbo(gl_renderer);
 
 		// Drawing 3D Cubes
