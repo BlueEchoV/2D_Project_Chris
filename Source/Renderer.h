@@ -641,10 +641,9 @@ struct Renderer {
 	MX4 view_from_world;
 };
 
-
 struct SDL_Renderer;
 SDL_Renderer* SDL_CreateRenderer(HWND window, int index, uint32_t flags);
-void SDL_DestroyRenderer(SDL_Renderer * renderer);
+void SDL_DestroyRenderer(SDL_Renderer* renderer);
 int SDL_GetRendererOutputSize(SDL_Renderer* sdl_renderer, int* w, int* h);
 
 int SDL_SetRenderDrawColor(SDL_Renderer* sdl_renderer, uint8_t r, uint8_t g, uint8_t b, uint8_t a);

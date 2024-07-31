@@ -18,7 +18,7 @@ void main()
 	light_pos.z += sin(u_time * 10) * 10;
 	vec3 pixel_to_light_length = light_pos - f_world_space_pos;
 	float vec_length = length(pixel_to_light_length);
-	float light_radius = 100;
+	float light_radius = 10;
 	// Saturate clamps between 0 and 1
 	float distance_intensity = 1.0 - clamp(vec_length / light_radius, 0, 1);
 	vec3 pixel_to_light = normalize(pixel_to_light_length);

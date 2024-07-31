@@ -1138,7 +1138,7 @@ struct Cube {
 
 const int CHUNK_WIDTH = 16;
 const int CHUNK_LENGTH = 16;
-const int CHUNK_HEIGHT = 8;
+const int CHUNK_HEIGHT = 128;
 
 struct Chunk {
 	bool generated = false;
@@ -1224,11 +1224,12 @@ void generate_chunk(Chunk_Index index, float noise) {
 
 const int WORLD_SIZE_WIDTH = 16;
 const int WORLD_SIZE_LENGTH = 16;
+
+#if 0
 Chunk world_chunks[WORLD_SIZE_WIDTH][WORLD_SIZE_LENGTH] = {};
 
 int height_map[(WORLD_SIZE_WIDTH * CHUNK_WIDTH)][(WORLD_SIZE_LENGTH * CHUNK_LENGTH)] = {};
 
-#if 0
 void generate_height_map(float noise) {
 	for (int x = 0; x < WORLD_SIZE_WIDTH * CHUNK_WIDTH; x++) {
 		for (int z = 0; z < WORLD_SIZE_LENGTH * CHUNK_LENGTH; z++) {
@@ -1299,12 +1300,15 @@ Chunk* generate_world_chunk(int x_arr_pos, int z_arr_pos, float noise) {
 	new_chunk->index_z = z_arr_pos;
 	for (int x = 0; x < CHUNK_WIDTH; x++) {
 		for (int z = 0; z < CHUNK_LENGTH; z++) {
-			// float world_space_x = x + (float)x_arr_pos * CHUNK_WIDTH;
-			// float world_space_z = z + (float)z_arr_pos * CHUNK_LENGTH;
+			float world_space_x = x + (float)x_arr_pos * CHUNK_WIDTH;
+			float world_space_z = z + (float)z_arr_pos * CHUNK_LENGTH;
 			// int height = height_map[(int)world_space_x][(int)world_space_z];
+			float height_value = stb_perlin_noise3((float)world_space_x / (float)noise, 0, world_space_z / noise, 0, 0, 0);
+			// Normalize and convert the perlin value into a height map value
+			int height = (int)((height_value + 1.0f) * 0.5f * CHUNK_HEIGHT);
+			height += CHUNK_HEIGHT - CHUNK_HEIGHT;
+
 			for (int y = 0; y < CHUNK_HEIGHT; y++) {
-				new_chunk->cubes[x][y][z].type = IT_Dirt;
-#if 0
 				float world_space_y = (float)y;
 				float perlin_result = stb_perlin_noise3(
 					(float)world_space_x / (float)noise, 
@@ -1336,8 +1340,7 @@ Chunk* generate_world_chunk(int x_arr_pos, int z_arr_pos, float noise) {
 					result = IT_Air;
 				}
 
-				new_chunk.cubes[x][y][z].type = result;
-#endif
+				new_chunk->cubes[x][y][z].type = result;
 			}
 		}
 	}
@@ -1467,7 +1470,7 @@ void generate_chunk_vbo(GL_Renderer* gl_renderer, V3 chunk_arr_pos) {
 
 					// Emit a face
 					// The points go in clockwise order
-					// NOTE: This offset is wrong
+					// NOTE: This offset isr
 					Image_Type t = current_cube->type;
 					if (back_cube.type == IT_Air) {
 						// Emit a face
@@ -2433,17 +2436,19 @@ void draw_chunks(GL_Renderer* gl_renderer) {
 		}
 	}
 }
+#endif
 
 void draw_wire_frames(GL_Renderer* gl_renderer){
-	for (int x = 0; x < WORLD_SIZE_WIDTH; x++) {
-		for (int z = 0; z < WORLD_SIZE_LENGTH; z++) {
+	for (int x = -VIEW_DISTANCE; x < VIEW_DISTANCE; x++) {
+		for (int z = -VIEW_DISTANCE; z < VIEW_DISTANCE; z++) {
+			int chunk_selected_x = x + gl_renderer->previous_chunk_player_x;
+			int chunk_selected_z = z + gl_renderer->previous_chunk_player_z;
 			// This is the corner position of the chunk. 
 			// This is the position I'm drawing from.
-			V3 chunk_ws_pos = {(float)x * CHUNK_WIDTH, 0, (float)z * CHUNK_LENGTH};
+			V3 chunk_ws_pos = {(float)chunk_selected_x * CHUNK_WIDTH, 0, (float)chunk_selected_z * CHUNK_LENGTH};
 
 			// The points draw in the center of the cube. Need to offset them.
 			V3 p1 = chunk_ws_pos;
-
 			V3 p2 = chunk_ws_pos;
 
 			int w = CHUNK_WIDTH;
@@ -2468,7 +2473,6 @@ void draw_wire_frames(GL_Renderer* gl_renderer){
 		}
 	}
 }
-#endif
 
 void initialize_timer(LARGE_INTEGER &frequency, LARGE_INTEGER &start_time) {
 	//  This is how many counts occur per second
@@ -2635,7 +2639,7 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		}
 		delta_time = get_delta_time(frequency, last_time);
 
-		// update_fireballs(gl_renderer, delta_time);
+		update_fireballs(gl_renderer, delta_time);
 
 		glEnable(GL_CULL_FACE);
 		glFrontFace(GL_CCW);
@@ -2650,8 +2654,8 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		glDepthFunc(GL_LESS);
 
 		// Drawing 3D lines
-		// draw_wire_frames(gl_renderer);
-		// gl_upload_and_draw_lines_vbo(gl_renderer);
+		draw_wire_frames(gl_renderer);
+		gl_upload_and_draw_lines_vbo(gl_renderer);
 
 		// Drawing 3D Cubes
 		// float pos_x = -10.0f;
@@ -2682,7 +2686,7 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		// draw_chunks(gl_renderer);
 		// gl_draw_cubes(gl_renderer);
 		// Drawing fireballs
-		// gl_draw_fireballs(gl_renderer);
+		gl_draw_fireballs(gl_renderer);
 
 		// Generating Face VBO Chunks
 		// gl_draw_cube_faces_vbo(gl_renderer, texture_sprite_sheet_handle);
@@ -2692,14 +2696,11 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		glDisable(GL_CULL_FACE);
 
 		// Drawing Strings
-		//draw_string(gl_renderer, &font, "Hello world!", 500, 500, 5, true);
-		// draw_string_ws(gl_renderer, &font, "First 3D string", { 0,0,0 }, 5, true);
-		//draw_string(gl_renderer, &font, "Hello world!", 250, 500, 5, true);
-
-		// MX4 view_mx = gl_renderer->view_from_world;
-		// draw_mx4(gl_renderer, "View_from_world", &font, view_mx, 0, 0, 2, false);
-
-		// gl_upload_and_draw_2d_string(gl_renderer, &font);
+		draw_string_ws(gl_renderer, &font, "First 3D string", { 0,0,0 }, 5, true);
+		draw_string(gl_renderer, &font, "Hello world!", 250, 500, 5, true);
+		MX4 view_mx = gl_renderer->view_from_world;
+		draw_mx4(gl_renderer, "View_from_world", &font, view_mx, 0, 0, 2, false);
+		gl_upload_and_draw_2d_string(gl_renderer, &font);
 
 		gl_update_renderer(gl_renderer);
 		SwapBuffers(gl_renderer->hdc);
