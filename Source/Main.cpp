@@ -23,40 +23,15 @@
 #include "Math.h"
 #include "gl_renderer.h"
 
-void initialize_timer(LARGE_INTEGER &frequency, LARGE_INTEGER &start_time) {
-	//  This is how many counts occur per second
-    QueryPerformanceFrequency(&frequency);
-	// This count acts as the reference point (start time) from which 
-	// subsequent time intervals will be measured.
-    QueryPerformanceCounter(&start_time);
-}
-
-// Float is out of range of precision
-float get_delta_time(const LARGE_INTEGER &frequency, LARGE_INTEGER &last_time) {
-    LARGE_INTEGER current_time;
-    QueryPerformanceCounter(&current_time);
-
-    // Calculate the difference in counts (NOTE: QuadPart is the 64-bit integer)
-    LONGLONG elapsed_counts = current_time.QuadPart - last_time.QuadPart;
-
-    // Calculate delta time in seconds
-    float delta_time = (float)(elapsed_counts) / frequency.QuadPart;
-
-    // Update last_time to the current time
-    last_time = current_time;
-
-    return delta_time;
-}
-
 uint64_t start_time;
 LARGE_INTEGER elapsed_global_time;
-LARGE_INTEGER frequency;
+LARGE_INTEGER frequency_seconds;
 void init_clock() {
 	if (!QueryPerformanceCounter(&elapsed_global_time)) {
 		log("Error: QueryPerformanceCounter() failed");
 	}
 	// For getting the seconds
-	if (!QueryPerformanceFrequency(&frequency)) {
+	if (!QueryPerformanceFrequency(&frequency_seconds)) {
 		log("Error: QueryPerformanceFrequency() failed");
 	}
 	start_time = elapsed_global_time.QuadPart;
@@ -67,7 +42,18 @@ uint64_t get_clock_milliseconds() {
     if (!QueryPerformanceCounter(&elapsed_global_time)) {
 		log("Error: QueryPerformanceCounter() failed");
 	}
-	return (elapsed_global_time.QuadPart - start_time) / (frequency.QuadPart / 1000);
+	return (elapsed_global_time.QuadPart - start_time) / (frequency_seconds.QuadPart / 1000);
+}
+
+float get_clock_seconds() {
+	uint64_t time_milliseconds = get_clock_milliseconds();
+	return (float)time_milliseconds / 1000.0f;
+}
+
+float get_clock_difference(float start_time_seconds) {
+	uint64_t current_time_milliseconds = get_clock_milliseconds();
+	float current_time_seconds = (float)current_time_milliseconds / 1000.0f;
+	return current_time_seconds - start_time_seconds;
 }
 
 struct Key_State {
@@ -2260,7 +2246,10 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 
 		// Generating Face VBO Chunks
 		// gl_draw_cube_faces_vbo(gl_renderer, texture_sprite_sheet_handle);
+		float before_generation_time = get_clock_seconds();
 		generate_and_draw_chunks_around_player(gl_renderer, texture_sprite_sheet_handle, 20);
+		float after_generation_time = get_clock_difference(before_generation_time); 
+		log("Time to generate chunks = %f", after_generation_time);
 
 		glDisable(GL_DEPTH_TEST);
 		glDisable(GL_CULL_FACE);
