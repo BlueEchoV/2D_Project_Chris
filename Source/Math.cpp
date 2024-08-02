@@ -202,6 +202,13 @@ Matrix4 mat4_rotate_z(float angle_radians)
 // Frustum
 MX4 mat4_perspective(float fovy, float aspect)
 {
+    MX4 conversion = {};
+    conversion.col[3].w = 1;
+
+    conversion.col[0].z = -1;
+    conversion.col[1].x = 1;
+    conversion.col[2].y = 1;
+
     float z_near = 0.01f;
     float z_far  = 1000.0f;
 
@@ -212,7 +219,8 @@ MX4 mat4_perspective(float fovy, float aspect)
     out.col[2].z = -(z_far + z_near) / (z_far - z_near);
     out.col[2].w = -1.0f;
     out.col[3].z = -2.0f * z_far * z_near / (z_far - z_near);
-    return out;
+
+    return out * conversion;
 }
 
 MX4 matrix_transpose(MX4 mx) {
