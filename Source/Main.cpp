@@ -56,23 +56,16 @@ float get_clock_difference(float start_time_seconds) {
 	return current_time_seconds - start_time_seconds;
 }
 
+float profiling_time_start = 0.0f;
 float delta_time = 0.0f;
-float time_start = 0.0f;
-float interval_cooldown = 0.0f;
 void time_to_execute_start() {
-	if (interval_cooldown <= 0.0f) {
-		time_start = get_clock_seconds();
-	}
+	profiling_time_start = get_clock_seconds();
 }
-void time_to_execute_finish(float interval_to_log) {
-	if (interval_cooldown <= 0.0f) {
-		interval_cooldown = interval_to_log;
-		float time = get_clock_seconds();
-		time = time - time_start;
-		log("Time to execute block = %f", time);
-	} else {
-		interval_cooldown -= delta_time;
-	} 
+void time_to_execute_finish(std::string name) {
+	float time = get_clock_seconds();
+	time = time - profiling_time_start;
+	std::string str = name + ": %f";
+	log(str.c_str(), time);
 }
 
 struct Key_State {
@@ -2028,7 +2021,7 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 				}
 			}
 		}
-		time_to_execute_finish(3.0f);
+		time_to_execute_finish("Testing");
 	}
 	// Draw the chunk
 	gl_draw_cube_faces_vbo(gl_renderer, textures_handle);
