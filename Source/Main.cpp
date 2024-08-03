@@ -56,6 +56,25 @@ float get_clock_difference(float start_time_seconds) {
 	return current_time_seconds - start_time_seconds;
 }
 
+float delta_time = 0.0f;
+float time_start = 0.0f;
+float interval_cooldown = 0.0f;
+void time_to_execute_start() {
+	if (interval_cooldown <= 0.0f) {
+		time_start = get_clock_seconds();
+	}
+}
+void time_to_execute_finish(float interval_to_log) {
+	if (interval_cooldown <= 0.0f) {
+		interval_cooldown = interval_to_log;
+		float time = get_clock_seconds();
+		time = time - time_start;
+		log("Time to execute block = %f", time);
+	} else {
+		interval_cooldown -= delta_time;
+	} 
+}
+
 struct Key_State {
 	bool pressed_this_frame;
 	bool held_down;
@@ -1182,7 +1201,7 @@ struct Cube {
 
 const int CHUNK_WIDTH = 16;
 const int CHUNK_LENGTH = 16;
-const int CHUNK_HEIGHT = 16;
+const int CHUNK_HEIGHT = 64;
 
 struct Chunk {
 	bool generated = false;
@@ -1969,6 +1988,7 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 	}
 	first_pass = false;
 	if (player_on_same_chunk == false) {
+		time_to_execute_start();
 		gl_renderer->previous_chunk_player_x = current_chunk_player_x;
 		gl_renderer->previous_chunk_player_y = current_chunk_player_y;
 		for (int x = -VIEW_DISTANCE; x < VIEW_DISTANCE; x++) {
@@ -2008,6 +2028,7 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 				}
 			}
 		}
+		time_to_execute_finish(3.0f);
 	}
 	// Draw the chunk
 	gl_draw_cube_faces_vbo(gl_renderer, textures_handle);
@@ -2051,7 +2072,7 @@ void draw_wire_frames(GL_Renderer* gl_renderer){
 	}
 }
 
-void update_fireballs(GL_Renderer* gl_renderer, float delta_time) {
+void update_fireballs(GL_Renderer* gl_renderer) {
 	for (Fireball& fireball : gl_renderer->fireballs) {
 		fireball.pos.x += (fireball.velocity.x * gl_renderer->fireball_speed) * delta_time;
 		fireball.pos.y += (fireball.velocity.y * gl_renderer->fireball_speed) * delta_time;
@@ -2066,7 +2087,7 @@ LRESULT windowProcedure(HWND windowHandle, UINT messageType, WPARAM wParam, LPAR
 	case WM_KEYDOWN: {
 		key_states[wParam].pressed_this_frame = true;
 		key_states[wParam].held_down = true;
-		log("WM_KEYDOWN: %llu", wParam);
+		// log("WM_KEYDOWN: %llu", wParam);
 	} break;
 	case WM_KEYUP: {
 		key_states[wParam].held_down = false;
@@ -2170,7 +2191,6 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 	init_clock();
 	float previous_frame_time = 0;
 	float current_time = 0;
-	float delta_time;
 
 	// generate_world_chunks(gl_renderer, 20);
 
@@ -2193,14 +2213,13 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 
 		uint64_t current_milliseconds = get_clock_milliseconds();
 		current_time = ((float)current_milliseconds / 1000.0f);
-		log("current_time = %f", current_time);
 		delta_time = (current_time - previous_frame_time);
 		if (delta_time > 0.5f) {
 			delta_time = 0.5f;
 		}
 		previous_frame_time = current_time;
 
-		update_fireballs(gl_renderer, delta_time);
+		update_fireballs(gl_renderer);
 
 		glEnable(GL_CULL_FACE);
 		glFrontFace(GL_CCW);
@@ -2246,10 +2265,7 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 
 		// Generating Face VBO Chunks
 		// gl_draw_cube_faces_vbo(gl_renderer, texture_sprite_sheet_handle);
-		float before_generation_time = get_clock_seconds();
 		generate_and_draw_chunks_around_player(gl_renderer, texture_sprite_sheet_handle, 20);
-		float after_generation_time = get_clock_difference(before_generation_time); 
-		log("Time to generate chunks = %f", after_generation_time);
 
 		glDisable(GL_DEPTH_TEST);
 		glDisable(GL_CULL_FACE);
