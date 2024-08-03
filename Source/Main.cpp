@@ -108,7 +108,7 @@ struct Chunk_Vbo {
 };
 
 // IN CHUNKS
-const int VIEW_DISTANCE = 5;
+int VIEW_DISTANCE = 15;
 
 struct Open_GL {
 	GLuint vao;
@@ -118,7 +118,6 @@ struct Open_GL {
 	GLuint vbo_cube_faces;
 	GLuint vbo_strings;
 
-	std::vector<Chunk_Vbo> chunk_vbos_stored;
 	std::vector<Chunk_Vbo> chunk_vbos_to_draw;
 };
 
@@ -376,6 +375,12 @@ void gl_update_renderer(GL_Renderer* gl_renderer) {
 		matrix.col[2].xyz = up;
 		shoot_fireball(gl_renderer, gl_renderer->player_pos, forward, matrix, IT_Fireball);
 		log("Shooting fireball");
+	}
+	if (key_states[VK_UP].pressed_this_frame) {
+		VIEW_DISTANCE++;
+	}
+	if (key_states[VK_DOWN].pressed_this_frame) {
+		VIEW_DISTANCE--;
 	}
 
 	int window_width = 0;
@@ -1195,7 +1200,7 @@ struct Cube {
 
 const int CHUNK_WIDTH = 16;
 const int CHUNK_LENGTH = 16;
-const int CHUNK_HEIGHT = 16;
+const int CHUNK_HEIGHT = 256;
 
 struct Chunk {
 	bool generated = false;
@@ -1978,7 +1983,6 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 		&& first_pass == true) {
 		player_on_same_chunk = true;
 	}
-	profile_time_to_execute_start();
 	if (player_on_same_chunk == false || first_pass) {
 		for (Chunk_Vbo& chunk_vbo : gl_renderer->open_gl.chunk_vbos_to_draw) {
 			chunk_vbo.destroy = true;
@@ -2006,7 +2010,6 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 			}
 		}
 	}
-	profile_time_to_execute_finish("Main loop time");
 	std::erase_if(gl_renderer->open_gl.chunk_vbos_to_draw, [](const Chunk_Vbo& chunk_vbo) {
 		if (chunk_vbo.destroy) {
 			glDeleteBuffers(1, &chunk_vbo.vbo);
