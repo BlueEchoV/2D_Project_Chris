@@ -56,15 +56,36 @@ float get_clock_difference(float start_time_seconds) {
 	return current_time_seconds - start_time_seconds;
 }
 
-float profiling_time_start = 0.0f;
+float profiling_time_start_seconds = 0.0f;
 float delta_time = 0.0f;
-void profile_time_to_execute_start() {
-	profiling_time_start = get_clock_seconds();
+void profile_time_to_execute_start_seconds() {
+	profiling_time_start_seconds = get_clock_seconds();
 }
-void profile_time_to_execute_finish(std::string name) {
+void profile_time_to_execute_finish_seconds(std::string name) {
 	float time = get_clock_seconds();
-	time = time - profiling_time_start;
-	std::string str = name + ": %f";
+	time = time - profiling_time_start_seconds;
+	std::string str = name + ": %f sec";
+	log(str.c_str(), time);
+}
+
+uint64_t profiling_time_start_milliseconds = 0;
+void profile_time_to_execute_start_milliseconds() {
+	profiling_time_start_milliseconds = get_clock_milliseconds();
+}
+void profile_time_to_execute_finish_milliseconds(std::string name, bool include_less_than_one) {
+	uint64_t time = get_clock_milliseconds();
+	time = time - profiling_time_start_milliseconds;
+	std::string str = name + ": ";
+	// Weird condition but it's based on the result of get_clock_milliseconds which 
+	// rounds the return value so we can just say it's "less than"
+	if (time <= 1) {
+		if (include_less_than_one) {
+			str += "less than 1";
+			log("Less than 1");
+		}
+		return;
+	}
+	str = "%i ms";
 	log(str.c_str(), time);
 }
 
@@ -172,7 +193,7 @@ const int CUBE_SIZE = 1;
 
 const int CHUNK_WIDTH = 16;
 const int CHUNK_LENGTH = 16;
-const int CHUNK_HEIGHT = 256;
+const int CHUNK_HEIGHT = 16;
 
 struct Chunk {
 	bool generated = false;
@@ -2348,6 +2369,7 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 		player_on_same_chunk = true;
 	}
 	if (player_on_same_chunk == false || first_pass) {
+		profile_time_to_execute_start_milliseconds();
 		for (Chunk* chunk : gl_renderer->chunks_to_draw) {
 			chunk->destroy = true;
 		}
@@ -2371,6 +2393,7 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 				}
 			}
 		}
+		profile_time_to_execute_finish_milliseconds("generate_and_draw_chunks_around_player", false);
 	}
 	std::erase_if(gl_renderer->chunks_to_draw, [](const Chunk* chunk) {
 		if (chunk->destroy) {
@@ -2613,9 +2636,7 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 
 		// Generating Face VBO Chunks
 		// gl_draw_cube_faces_vbo(gl_renderer, texture_sprite_sheet_handle);
-		profile_time_to_execute_start();
 		generate_and_draw_chunks_around_player(gl_renderer, texture_sprite_sheet_handle, 20);
-		profile_time_to_execute_finish("generate_and_draw_chunks_around_player");
 
 		glDisable(GL_DEPTH_TEST);
 		glDisable(GL_CULL_FACE);
