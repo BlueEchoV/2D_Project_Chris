@@ -30,6 +30,7 @@ wglCreateContextAttribsARBFunc wglCreateContextAttribsARB = nullptr;
 glActiveTextureFunc glActiveTexture = nullptr;
 glUniform1iFunc glUniform1i = nullptr;
 glBlendEquationFunc glBlendEquation = nullptr;
+glBufferSubDataFunc glBufferSubData = nullptr;
 
 void loadGLFunctions() {
 	glCreateShader = (glCreateShaderFunc)wglGetProcAddress("glCreateShader");
@@ -57,6 +58,7 @@ void loadGLFunctions() {
 	glBindVertexArray = (glBindVertexArrayFunc)wglGetProcAddress("glBindVertexArray");
 	glBindBuffer = (glBindBufferFunc)wglGetProcAddress("glBindBuffer");
 	glBufferData = (glBufferDataFunc)wglGetProcAddress("glBufferData");
+	glBufferSubData = (glBufferSubDataFunc)wglGetProcAddress("glBufferSubData");
 	glDeleteBuffers = (glDeleteBuffersFunc)wglGetProcAddress("glDeleteBuffers");
 
 	glGetUniformLocation = (glGetUniformLocationFunc)wglGetProcAddress("glGetUniformLocation");

@@ -113,6 +113,11 @@ extern glBindBufferFunc glBindBuffer;
 typedef void(*glBufferDataFunc)(GLenum target, GLsizeiptr size, const void* data, GLenum usage);
 extern glBufferDataFunc glBufferData;
 
+typedef intptr_t khronos_intptr_t;
+typedef khronos_intptr_t GLintptr;
+typedef void(*glBufferSubDataFunc)(GLenum target, GLintptr offset, GLsizeiptr size, const void* data);
+extern glBufferSubDataFunc glBufferSubData;
+
 typedef void(*glDeleteBuffersFunc)(GLsizei n, const GLuint * buffers);
 extern glDeleteBuffersFunc glDeleteBuffers;
 
