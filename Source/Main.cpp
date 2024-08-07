@@ -1302,12 +1302,10 @@ void generate_world_chunk(GL_Renderer* gl_renderer, int chunk_world_index_x, int
 	Chunk* new_chunk = {};
 	// See if we can buffer_sub_data
 	bool buffer_sub_data = false;
-	GLsizeiptr previous_buffer_size = {};
 	for (Chunk* chunk : gl_renderer->chunks_to_draw) {
 		// Check if there is a open spot
 		if (chunk->allocated == false) {
 			new_chunk = chunk;
-			previous_buffer_size = chunk->buffer_size;
 			buffer_sub_data = true;
 			break;
 		}
@@ -1720,25 +1718,33 @@ void generate_world_chunk(GL_Renderer* gl_renderer, int chunk_world_index_x, int
 	bool force_reallocate = false;
 	if (buffer_sub_data) {
 		GLsizeiptr new_size = sizeof(Vertex_3D_Faces) * faces_vertices.size();
-		// ONLY ALLOCATE IF THERE IS ENOUGH SIZE
-		if (new_size <= previous_buffer_size) {
+		// ONLY ALLOCATE IF THERE IS ENOUGH SIZE IN THE CURRENT BUFFER
+		if (new_size <= new_chunk->buffer_size) {
 			glBindBuffer(GL_ARRAY_BUFFER, new_chunk->vbo);
+			//											  size of the data that is being replaced
 			glBufferSubData(GL_ARRAY_BUFFER, (GLintptr)0, new_size, faces_vertices.data());
+			GLsizeiptr size_difference = new_chunk->buffer_size - new_size;
+			// Fill the rest of the buffer with nullptr to get rid of any remaining artifacts
+			if (size_difference > 0) {
+				glBufferSubData(GL_ARRAY_BUFFER, (GLintptr)new_size, new_chunk->buffer_size, nullptr);
+			}
 		}
 		else {
 			force_reallocate = true;
 		}
-		if (new_size < previous_buffer_size) {
-			// Don't leave any straggling data in the vbo to be drawn
-			glBufferSubData(GL_ARRAY_BUFFER, (GLintptr)new_size, previous_buffer_size - new_size, nullptr);
-		}
 	}
 	if (!buffer_sub_data || force_reallocate) {
-		glGenBuffers(1, &new_chunk->vbo);
+		bool chunk_already_in_chunks_to_draw = true;
+		if (new_chunk->vbo <= 0) {
+			glGenBuffers(1, &new_chunk->vbo);
+			chunk_already_in_chunks_to_draw = false;
+		}
 		glBindBuffer(GL_ARRAY_BUFFER, new_chunk->vbo);
 		new_chunk->buffer_size = sizeof(Vertex_3D_Faces) * faces_vertices.size();
 		glBufferData(GL_ARRAY_BUFFER, sizeof(Vertex_3D_Faces) * faces_vertices.size(), faces_vertices.data(), GL_STATIC_DRAW);
-		gl_renderer->chunks_to_draw.push_back(new_chunk);
+		if (!chunk_already_in_chunks_to_draw) {
+			gl_renderer->chunks_to_draw.push_back(new_chunk);
+		}
 	}
 	faces_vertices.clear();
 }
@@ -1889,7 +1895,7 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 	bool player_on_same_chunk = false;
 	if (current_chunk_player_x == previous_chunk_player_x
 		&& current_chunk_player_y == previous_chunk_player_y
-		&& first_pass == true) {
+		|| first_pass == true) {
 		player_on_same_chunk = true;
 	}
 	std::vector<V2> chunks_to_generate = {};
@@ -1905,11 +1911,20 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 				int chunk_y = y + current_chunk_player_y;
 
 				bool already_generated = false;
+				Chunk* previous_chunk = nullptr;
 				for (Chunk* chunk : gl_renderer->chunks_to_draw) {
 					if (chunk->chunk_x == chunk_x &&
 						chunk->chunk_y == chunk_y) {
+						// Not the greatest fix
+						if (already_generated && previous_chunk != nullptr) {
+							previous_chunk->allocated = false;
+							// Delete any duplicate chunks
+							chunk->allocated = true;
+							continue;
+						}
 						already_generated = true;
 						chunk->allocated = true;
+						previous_chunk = chunk;
 					}
 				}
 				if (already_generated == false) {
@@ -1918,7 +1933,6 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 			}
 		}
 	}
-	// This 
 	// Do this after the loop so we don't overwrite any currently allocated chunks
 	// log("chunks_to_generate_size = %i", chunks_to_generate.size());
 	for (V2 chunk : chunks_to_generate) {
