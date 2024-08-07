@@ -193,7 +193,7 @@ const int CUBE_SIZE = 1;
 
 const int CHUNK_WIDTH = 16;
 const int CHUNK_LENGTH = 16;
-const int CHUNK_HEIGHT = 16;
+const int CHUNK_HEIGHT = 256;
 
 struct Chunk {
 	bool allocated = false;
@@ -342,6 +342,7 @@ void shoot_fireball(GL_Renderer* gl_renderer, V3 pos, V3 velocity, MX4 world, Im
 	gl_renderer->fireballs.push_back(result);
 }
 
+bool force_regenerate = true;
 void gl_update_renderer(GL_Renderer* gl_renderer) {
 	if (gl_renderer == nullptr) {
 		log("Error: gl_renderer is nullptr");
@@ -426,9 +427,13 @@ void gl_update_renderer(GL_Renderer* gl_renderer) {
 	}
 	if (key_states[VK_UP].pressed_this_frame) {
 		VIEW_DISTANCE++;
+		force_regenerate = true;
+		log("%i", VIEW_DISTANCE);
 	}
 	if (key_states[VK_DOWN].pressed_this_frame) {
 		VIEW_DISTANCE--;
+		force_regenerate = true;
+		log("%i", VIEW_DISTANCE);
 	}
 
 	int window_width = 0;
@@ -1719,14 +1724,22 @@ void generate_world_chunk(GL_Renderer* gl_renderer, int chunk_world_index_x, int
 	if (buffer_sub_data) {
 		GLsizeiptr new_size = sizeof(Vertex_3D_Faces) * faces_vertices.size();
 		// ONLY ALLOCATE IF THERE IS ENOUGH SIZE IN THE CURRENT BUFFER
-		if (new_size <= new_chunk->buffer_size) {
+		if (new_size <= new_chunk->buffer_size && new_chunk->vbo > 0) {
 			glBindBuffer(GL_ARRAY_BUFFER, new_chunk->vbo);
 			//											  size of the data that is being replaced
 			glBufferSubData(GL_ARRAY_BUFFER, (GLintptr)0, new_size, faces_vertices.data());
+			// glBufferSubData(GL_ARRAY_BUFFER, (GLintptr)0, new_chunk->buffer_size, NULL);
 			GLsizeiptr size_difference = new_chunk->buffer_size - new_size;
 			// Fill the rest of the buffer with nullptr to get rid of any remaining artifacts
 			if (size_difference > 0) {
-				glBufferSubData(GL_ARRAY_BUFFER, (GLintptr)new_size, new_chunk->buffer_size, nullptr);
+				std::vector<Vertex_3D_Faces> emptied_vertex_3d_faces;
+				GLsizeiptr total_vertex_3d_faces = size_difference / sizeof(Vertex_3D_Faces);
+				Vertex_3D_Faces empty = {};
+				for (GLsizeiptr i = 0; i < total_vertex_3d_faces; i++) {
+					emptied_vertex_3d_faces.push_back(empty);
+				}
+				glBufferSubData(GL_ARRAY_BUFFER, (GLintptr)new_size, size_difference, emptied_vertex_3d_faces.data());
+				emptied_vertex_3d_faces.clear();
 			}
 		}
 		else {
@@ -1881,7 +1894,6 @@ void draw_chunks_around_player(GL_Renderer* gl_renderer) {
 }
 #endif
 
-bool first_pass = true;
 void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint textures_handle, float noise) {
 	profile_time_to_execute_start_milliseconds();
 	// ONLY overwrite if we are in range of new chunks
@@ -1894,12 +1906,11 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 
 	bool player_on_same_chunk = false;
 	if (current_chunk_player_x == previous_chunk_player_x
-		&& current_chunk_player_y == previous_chunk_player_y
-		|| first_pass == true) {
+		&& current_chunk_player_y == previous_chunk_player_y) {
 		player_on_same_chunk = true;
 	}
 	std::vector<V2> chunks_to_generate = {};
-	if (player_on_same_chunk == false || first_pass) {
+	if (player_on_same_chunk == false || force_regenerate) {
 		for (Chunk* chunk : gl_renderer->chunks_to_draw) {
 			chunk->allocated = false;
 		}
@@ -1948,7 +1959,7 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 		return false;
 	});
 	gl_draw_cube_faces_vbo(gl_renderer, textures_handle);
-	first_pass = false;
+	force_regenerate = false;
 	profile_time_to_execute_finish_milliseconds("generate_and_draw_chunks_around_player", false);
 }
 
