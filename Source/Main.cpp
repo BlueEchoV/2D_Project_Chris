@@ -193,7 +193,7 @@ const int CUBE_SIZE = 1;
 
 const int CHUNK_WIDTH = 16;
 const int CHUNK_LENGTH = 16;
-const int CHUNK_HEIGHT = 16;
+const int CHUNK_HEIGHT = 256;
 
 struct Chunk {
 	bool allocated = false;
@@ -1441,10 +1441,13 @@ void generate_world_chunk(GL_Renderer* gl_renderer, int chunk_world_index_x, int
 		for (int y = 0; y < CHUNK_LENGTH; y++) {
 			float world_space_x = x + (float)new_chunk->chunk_x * CHUNK_WIDTH;
 			float world_space_y = y + (float)new_chunk->chunk_y * CHUNK_LENGTH;
-			// int height = height_map[(int)world_space_x][(int)world_space_y];
 			float height_value = stb_perlin_noise3((float)world_space_x / (float)noise, 0, world_space_y / noise, 0, 0, 0);
-			// Normalize and convert the perlin value into a height map value
-			int height = (int)((height_value + 1.0f) * 0.5f * CHUNK_HEIGHT);
+			// The perlin value is between -1 and 1, and this line normalizes it to a 
+			// range of 0 to CHUNK_HEIGHT, determining the height of the terrain
+			// at that (x, y) position.
+			float max_height_range = 30.0f;
+			int column_height = (int)((height_value + 1.0f) * 0.5f * max_height_range);
+			column_height += (CHUNK_HEIGHT - (int)max_height_range);
 
 			for (int z = 0; z < CHUNK_HEIGHT; z++) {
 				float world_space_z = (float)z;
@@ -1458,12 +1461,12 @@ void generate_world_chunk(GL_Renderer* gl_renderer, int chunk_world_index_x, int
 				Image_Type result = IT_Air;
 
 				// We know this is the top chunk
-				if (world_space_z < height) {
-					if (world_space_z == height - 1) {
+				if (world_space_z < column_height) {
+					if (world_space_z == column_height - 1) {
 						result = IT_Grass;
-					} else if (world_space_z < height - 1 && world_space_z >= height - 4) {
+					} else if (world_space_z < column_height - 1 && world_space_z >= column_height - 4) {
 						result = IT_Dirt;
-					} else if (world_space_z < height - 4 && world_space_z >= height - 8) {
+					} else if (world_space_z < column_height - 4 && world_space_z >= column_height - 8) {
 						result = IT_Cobblestone;
 					} else {
 						if (perlin_result > -0.3) {
