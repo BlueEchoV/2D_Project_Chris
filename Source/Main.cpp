@@ -1484,6 +1484,7 @@ void generate_world_chunk(GL_Renderer* gl_renderer, int chunk_world_index_x, int
 		}
 	}
 
+	new_chunk->total_vertices = 0;
 	// Generate the data to be sent to the GPU
 	std::vector<Vertex_3D_Faces> faces_vertices = {};
 	V3 chunk_ws_pos = { new_chunk->chunk_x * (float)CHUNK_WIDTH, new_chunk->chunk_y * (float)CHUNK_LENGTH, 0 };
