@@ -152,6 +152,7 @@ enum Shader_Program_Type {
 	SPT_Cube_Face,
 	SPT_String,
 	SPT_Fireball,
+	SPT_Cube_Map,
 	SPT_TOTAL
 };
 

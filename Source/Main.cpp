@@ -72,7 +72,7 @@ uint64_t profiling_time_start_milliseconds = 0;
 void profile_time_to_execute_start_milliseconds() {
 	profiling_time_start_milliseconds = get_clock_milliseconds();
 }
-void profile_time_to_execute_finish_milliseconds(std::string name, bool include_less_than_one) {
+void profile_time_to_execute_finish_milliseconds(const std::string& name, bool include_less_than_one) {
 	uint64_t time = get_clock_milliseconds();
 	time = time - profiling_time_start_milliseconds;
 	std::string str = name + ": ";
@@ -193,7 +193,7 @@ const int CUBE_SIZE = 1;
 
 const int CHUNK_WIDTH = 16;
 const int CHUNK_LENGTH = 16;
-const int CHUNK_HEIGHT = 256;
+const int CHUNK_HEIGHT = 16;
 
 struct Chunk {
 	bool allocated = false;
@@ -724,6 +724,81 @@ void init_images(GL_Renderer* gl_renderer) {
 	images[IT_Fireball] = create_Image(gl_renderer, "assets\\fireball.png");
 }
 
+#define GL_TEXTURE_CUBE_MAP               0x8513
+#define GL_TEXTURE_CUBE_MAP_POSITIVE_X    0x8515
+#define GL_TEXTURE_CUBE_MAP_NEGATIVE_X    0x8516
+#define GL_TEXTURE_CUBE_MAP_POSITIVE_Y    0x8517
+#define GL_TEXTURE_CUBE_MAP_NEGATIVE_Y    0x8518
+#define GL_TEXTURE_CUBE_MAP_POSITIVE_Z    0x8519
+#define GL_TEXTURE_CUBE_MAP_NEGATIVE_Z    0x851A
+GLuint cube_map_texture_handle = 0;
+void create_cube_map() {
+	const char* image_back_file_path = "assets\\cube\\back.png";
+	int back_w, back_h, back_channels;
+	unsigned char* back_data = stbi_load(image_back_file_path, &back_w, &back_h, &back_channels, 4);
+	if (back_data == NULL) {
+		log("ERROR: stbi_load returned NULL");
+		return;
+	}
+
+	const char* image_bottom_file_path = "assets\\cube\\bottom.png";
+	int bottom_w, bottom_h, bottom_channels;
+	unsigned char* bottom_data = stbi_load(image_bottom_file_path, &bottom_w, &bottom_h, &bottom_channels, 4);
+	if (bottom_data == NULL) {
+		log("ERROR: stbi_load returned NULL");
+		return;
+	}
+
+	const char* image_front_file_path = "assets\\cube\\front.png";
+	int front_w, front_h, front_channels;
+	unsigned char* front_data = stbi_load(image_front_file_path, &front_w, &front_h, &front_channels, 4);
+	if (front_data == NULL) {
+		log("ERROR: stbi_load returned NULL");
+		return;
+	}
+
+	const char* image_left_file_path = "assets\\cube\\left.png";
+	int left_w, left_h, left_channels;
+	unsigned char* left_data = stbi_load(image_left_file_path, &left_w, &left_h, &left_channels, 4);
+	if (left_data == NULL) {
+		log("ERROR: stbi_load returned NULL");
+		return;
+	}
+
+	const char* image_right_file_path = "assets\\cube\\right.png";
+	int right_w, right_h, right_channels;
+	unsigned char* right_data = stbi_load(image_right_file_path, &right_w, &right_h, &right_channels, 4);
+	if (right_data == NULL) {
+		log("ERROR: stbi_load returned NULL");
+		return;
+	}
+
+	const char* image_top_file_path = "assets\\cube\\top.png";
+	int top_w, top_h, top_channels;
+	unsigned char* top_data = stbi_load(image_top_file_path, &top_w, &top_h, &top_channels, 4);
+	if (top_data == NULL) {
+		log("ERROR: stbi_load returned NULL");
+		return;
+	}
+
+	glGenTextures(1, &cube_map_texture_handle);
+	glBindTexture(GL_TEXTURE_CUBE_MAP, cube_map_texture_handle);
+
+	int width = back_w;
+	int height = back_h;
+	glTexImage2D(GL_TEXTURE_CUBE_MAP_NEGATIVE_Z, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, back_data);
+	glTexImage2D(GL_TEXTURE_CUBE_MAP_NEGATIVE_Y, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, bottom_data);
+	glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_Z, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, front_data);
+	glTexImage2D(GL_TEXTURE_CUBE_MAP_NEGATIVE_X, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, left_data);
+	glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, right_data);
+	glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_Y, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, top_data);
+
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+}
+
 GL_Texture* get_image(Image_Type type) {
 	GL_Texture* result = nullptr;
 
@@ -1068,6 +1143,44 @@ Vertex_3D_Cube cube[36] = {
 	{{ 0.5, -0.5,  0.5}, color_three, {1, 1}, {0, -1, 0}}, 
 	{{-0.5, -0.5,  0.5}, color_three, {0, 1}, {0, -1, 0}}
 };
+
+void draw_cube_map(GL_Renderer* gl_renderer) {
+	if (gl_renderer->open_gl.vbo_cubes == 0) {
+		glGenBuffers(1, &gl_renderer->open_gl.vbo_cubes);
+		glBindBuffer(GL_ARRAY_BUFFER, gl_renderer->open_gl.vbo_cubes);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(cube), cube, GL_STATIC_DRAW);
+	}
+	glBindBuffer(GL_ARRAY_BUFFER, gl_renderer->open_gl.vbo_cubes);
+
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Cube), (void*)offsetof(Vertex_3D_Cube, pos));
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Cube), (void*)offsetof(Vertex_3D_Cube, color));
+	glEnableVertexAttribArray(1);
+	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Cube), (void*)offsetof(Vertex_3D_Cube, uv));
+	glEnableVertexAttribArray(2);
+	glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Cube), (void*)offsetof(Vertex_3D_Cube, normal));
+	glEnableVertexAttribArray(3);
+
+	glBindTexture(GL_TEXTURE_2D, cube_map_texture_handle);
+
+	GLuint shader_program = shader_program_types[SPT_Cube_Map];
+	if (!shader_program) {
+		log("ERROR: Shader program not specified");
+		assert(false);
+	}
+	glUseProgram(shader_program);
+
+	// NOTE: This is bad because if I change the way the view matrix is created,
+	// this code breaks.
+	// Get the view matrix rotation and not the position change
+	MX4 view_rotation = mat4_rotate_y(-gl_renderer->pitch) * mat4_rotate_z(-gl_renderer->yaw);
+
+	MX4 perspective_from_view = gl_renderer->perspective_from_view * view_rotation;
+	GLuint perspective_from_world_loc = glGetUniformLocation(shader_program, "perspective_from_view");
+	glUniformMatrix4fv(perspective_from_world_loc, 1, GL_FALSE, perspective_from_view.e);
+
+	glDrawArrays(GL_TRIANGLES, 0, ARRAYSIZE(cube));
+}
 
 void draw_cube_mx(GL_Renderer* gl_renderer, MX4 mx) {
 	if (gl_renderer->open_gl.vbo_cubes == 0) {
@@ -1729,18 +1842,18 @@ void generate_world_chunk(GL_Renderer* gl_renderer, int chunk_world_index_x, int
 			//											  size of the data that is being replaced
 			glBufferSubData(GL_ARRAY_BUFFER, (GLintptr)0, new_size, faces_vertices.data());
 			// glBufferSubData(GL_ARRAY_BUFFER, (GLintptr)0, new_chunk->buffer_size, NULL);
-			GLsizeiptr size_difference = new_chunk->buffer_size - new_size;
+			// GLsizeiptr size_difference = new_chunk->buffer_size - new_size;
 			// Fill the rest of the buffer with nullptr to get rid of any remaining artifacts
-			if (size_difference > 0) {
-				std::vector<Vertex_3D_Faces> emptied_vertex_3d_faces;
-				GLsizeiptr total_vertex_3d_faces = size_difference / sizeof(Vertex_3D_Faces);
-				Vertex_3D_Faces empty = {};
-				for (GLsizeiptr i = 0; i < total_vertex_3d_faces; i++) {
-					emptied_vertex_3d_faces.push_back(empty);
-				}
-				glBufferSubData(GL_ARRAY_BUFFER, (GLintptr)new_size, size_difference, emptied_vertex_3d_faces.data());
-				emptied_vertex_3d_faces.clear();
-			}
+			// if (size_difference > 0) {
+			// 	std::vector<Vertex_3D_Faces> emptied_vertex_3d_faces;
+			// 	GLsizeiptr total_vertex_3d_faces = size_difference / sizeof(Vertex_3D_Faces);
+			// 	Vertex_3D_Faces empty = {};
+			// 	for (GLsizeiptr i = 0; i < total_vertex_3d_faces; i++) {
+			// 		emptied_vertex_3d_faces.push_back(empty);
+			// 	}
+			// 	glBufferSubData(GL_ARRAY_BUFFER, (GLintptr)new_size, size_difference, emptied_vertex_3d_faces.data());
+			// 	emptied_vertex_3d_faces.clear();
+			// }
 		}
 		else {
 			force_reallocate = true;
@@ -2115,6 +2228,8 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 	init_images(gl_renderer);
 	GLuint texture_sprite_sheet_handle = get_image(IT_Texture_Sprite_Sheet)->handle;
 
+	create_cube_map();
+
 	init_clock();
 	float previous_frame_time = 0;
 	float current_time = 0;
@@ -2148,8 +2263,6 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 
 		update_fireballs(gl_renderer);
 
-		glEnable(GL_CULL_FACE);
-		glFrontFace(GL_CCW);
 		// GL_COLOR_BUFFER_BIT: This clears the color buffer, which is responsible for holding the color 
 		// information of the pixels. Clearing this buffer sets all the pixels to the color specified by glClearColor.
 		// GL_DEPTH_BUFFER_BIT: This clears the depth buffer, which is responsible for holding the depth 
@@ -2157,6 +2270,12 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		// to handle occlusion correctly.
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+		glDisable(GL_CULL_FACE);
+		glDisable(GL_DEPTH_TEST);
+		draw_cube_map(gl_renderer);
+
+		glEnable(GL_CULL_FACE);
+		glFrontFace(GL_CCW);
 		glEnable(GL_DEPTH_TEST);
 		glDepthFunc(GL_LESS);
 		// Drawing 3D Cubes

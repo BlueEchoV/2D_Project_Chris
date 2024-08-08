@@ -157,5 +157,10 @@ void load_shaders() {
 	const char* f_fireball_file_path = "Shaders\\f_fireball.txt";
 	GLuint fireball_shader = create_shader_program(v_fireball_file_path, f_fireball_file_path);
 	shader_program_types[SPT_Fireball] = fireball_shader;
+
+	const char* v_cube_map_file_path = "Shaders\\v_cube_map.txt";
+	const char* f_cube_map_file_path = "Shaders\\f_cube_map.txt";
+	GLuint cube_map_shader = create_shader_program(v_cube_map_file_path, f_cube_map_file_path);
+	shader_program_types[SPT_Cube_Map] = cube_map_shader;
 }
 

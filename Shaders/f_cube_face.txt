@@ -34,4 +34,5 @@ void main()
 	float light_intensity = max(dot(f_normal, pixel_to_light), 0);
 	o_color = tex_color;
 	o_color.xyz *= clamp((light_intensity * distance_intensity) + 0.1, 0, 1);
+	o_color.xyz += tex_color.xyz * 0.25;
 }
