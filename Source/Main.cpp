@@ -748,6 +748,9 @@ void create_cube_map() {
 		log("ERROR: stbi_load returned NULL");
 		return;
 	}
+	DEFER{
+		stbi_image_free(bottom_data);
+	};
 
 	const char* image_front_file_path = "assets\\cube\\front.png";
 	int front_w, front_h, front_channels;
@@ -756,6 +759,9 @@ void create_cube_map() {
 		log("ERROR: stbi_load returned NULL");
 		return;
 	}
+	DEFER{
+		stbi_image_free(front_data);
+	};
 
 	const char* image_left_file_path = "assets\\cube\\left.png";
 	int left_w, left_h, left_channels;
@@ -764,6 +770,9 @@ void create_cube_map() {
 		log("ERROR: stbi_load returned NULL");
 		return;
 	}
+	DEFER{
+		stbi_image_free(left_data);
+	};
 
 	const char* image_right_file_path = "assets\\cube\\right.png";
 	int right_w, right_h, right_channels;
@@ -772,6 +781,9 @@ void create_cube_map() {
 		log("ERROR: stbi_load returned NULL");
 		return;
 	}
+	DEFER{
+		stbi_image_free(right_data);
+	};
 
 	const char* image_top_file_path = "assets\\cube\\top.png";
 	int top_w, top_h, top_channels;
@@ -780,6 +792,9 @@ void create_cube_map() {
 		log("ERROR: stbi_load returned NULL");
 		return;
 	}
+	DEFER{
+		stbi_image_free(top_data);
+	};
 
 	glGenTextures(1, &cube_map_texture_handle);
 	glBindTexture(GL_TEXTURE_CUBE_MAP, cube_map_texture_handle);
