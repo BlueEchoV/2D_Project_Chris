@@ -129,7 +129,7 @@ struct Chunk_Vbo {
 };
 
 // IN CHUNKS
-int VIEW_DISTANCE = 2;
+int VIEW_DISTANCE = 4;
 
 struct Open_GL {
 	GLuint vao;
@@ -193,7 +193,7 @@ const int CUBE_SIZE = 1;
 
 const int CHUNK_WIDTH = 16;
 const int CHUNK_LENGTH = 16;
-const int CHUNK_HEIGHT = 256;
+const int CHUNK_HEIGHT = 32;
 
 struct Chunk {
 	bool allocated = false;
@@ -735,7 +735,7 @@ void init_images(GL_Renderer* gl_renderer) {
 #define GL_TEXTURE_CUBE_MAP_NEGATIVE_Z    0x851A
 GLuint cube_map_texture_handle = 0;
 void create_cube_map() {
-	const char* image_back_file_path = "assets\\cube\\back.png";
+	const char* image_back_file_path = "assets\\skybox\\space\\back.png";
 	int back_w, back_h, back_channels;
 	unsigned char* back_data = stbi_load(image_back_file_path, &back_w, &back_h, &back_channels, 4);
 	if (back_data == NULL) {
@@ -743,7 +743,7 @@ void create_cube_map() {
 		return;
 	}
 
-	const char* image_bottom_file_path = "assets\\cube\\bottom.png";
+	const char* image_bottom_file_path = "assets\\skybox\\space\\bottom.png";
 	int bottom_w, bottom_h, bottom_channels;
 	unsigned char* bottom_data = stbi_load(image_bottom_file_path, &bottom_w, &bottom_h, &bottom_channels, 4);
 	if (bottom_data == NULL) {
@@ -754,7 +754,7 @@ void create_cube_map() {
 		stbi_image_free(bottom_data);
 	};
 
-	const char* image_front_file_path = "assets\\cube\\front.png";
+	const char* image_front_file_path = "assets\\skybox\\space\\front.png";
 	int front_w, front_h, front_channels;
 	unsigned char* front_data = stbi_load(image_front_file_path, &front_w, &front_h, &front_channels, 4);
 	if (front_data == NULL) {
@@ -765,7 +765,7 @@ void create_cube_map() {
 		stbi_image_free(front_data);
 	};
 
-	const char* image_left_file_path = "assets\\cube\\left.png";
+	const char* image_left_file_path = "assets\\skybox\\space\\left.png";
 	int left_w, left_h, left_channels;
 	unsigned char* left_data = stbi_load(image_left_file_path, &left_w, &left_h, &left_channels, 4);
 	if (left_data == NULL) {
@@ -776,7 +776,7 @@ void create_cube_map() {
 		stbi_image_free(left_data);
 	};
 
-	const char* image_right_file_path = "assets\\cube\\right.png";
+	const char* image_right_file_path = "assets\\skybox\\space\\right.png";
 	int right_w, right_h, right_channels;
 	unsigned char* right_data = stbi_load(image_right_file_path, &right_w, &right_h, &right_channels, 4);
 	if (right_data == NULL) {
@@ -787,7 +787,7 @@ void create_cube_map() {
 		stbi_image_free(right_data);
 	};
 
-	const char* image_top_file_path = "assets\\cube\\top.png";
+	const char* image_top_file_path = "assets\\skybox\\space\\top.png";
 	int top_w, top_h, top_channels;
 	unsigned char* top_data = stbi_load(image_top_file_path, &top_w, &top_h, &top_channels, 4);
 	if (top_data == NULL) {
