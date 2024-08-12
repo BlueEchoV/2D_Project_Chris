@@ -2121,7 +2121,7 @@ void SDL_RenderPresent(SDL_Renderer* sdl_renderer) {
 			glUseProgram(shader_program);
 
 			if (info.total_indices > 0) {
-				glDrawElements(info.draw_type, info.total_indices, GL_UNSIGNED_INT, (void*)(info.index_buffer_index * sizeof(unsigned int)));
+				glDrawElements(info.draw_type, total_indices, GL_UNSIGNED_INT, (void*)(info.index_buffer_index * sizeof(unsigned int)));
 			}
 			else {
 				glDrawArrays(info.draw_type, (GLuint)info.starting_index, info.total_vertices);
