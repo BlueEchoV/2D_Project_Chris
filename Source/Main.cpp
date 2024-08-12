@@ -345,6 +345,7 @@ void shoot_fireball(GL_Renderer* gl_renderer, V3 pos, V3 velocity, MX4 world, Im
 	gl_renderer->fireballs.push_back(result);
 }
 
+bool toggle_wire_frames = false;
 bool force_regenerate = true;
 void gl_update_renderer(GL_Renderer* gl_renderer) {
 	if (gl_renderer == nullptr) {
@@ -437,6 +438,9 @@ void gl_update_renderer(GL_Renderer* gl_renderer) {
 		VIEW_DISTANCE--;
 		force_regenerate = true;
 		log("%i", VIEW_DISTANCE);
+	}
+	if (key_states[VK_TAB].pressed_this_frame) {
+		toggle_wire_frames = !toggle_wire_frames;
 	}
 
 	int window_width = 0;
@@ -2690,6 +2694,7 @@ void draw_wire_frames(GL_Renderer* gl_renderer){
 			int l = CHUNK_LENGTH;
 			int h = CHUNK_HEIGHT;
 
+#if 0
 			// Left face
 			gl_draw_line(gl_renderer, { 1, 0, 0, 1 }, { p1.x,	  p1.y,     p1.z     }, { p2.x + w, p2.y,     p2.z    }); 
 			gl_draw_line(gl_renderer, { 1, 0, 0, 1 }, { p1.x + w, p1.y,     p1.z     }, { p2.x + w, p2.y,     p2.z + h}); 
@@ -2704,7 +2709,26 @@ void draw_wire_frames(GL_Renderer* gl_renderer){
 			gl_draw_line(gl_renderer, { 1, 0, 0, 1 }, { p1.x,	  p1.y,     p1.z     }, { p2.x,		p2.y + l, p2.z});
 			gl_draw_line(gl_renderer, { 1, 0, 0, 1 }, { p1.x + w, p1.y,     p1.z     }, { p2.x + w, p2.y + l, p2.z + h}); 
 			gl_draw_line(gl_renderer, { 1, 0, 0, 1 }, { p1.x + w, p1.y,     p1.z + h }, { p2.x + w, p2.y + l, p2.z + h}); 
-			gl_draw_line(gl_renderer, { 1, 0, 0, 1 }, { p1.x,	  p1.y,     p1.z + h }, { p2.x,     p2.y + l, p2.z}); 
+			gl_draw_line(gl_renderer, { 1, 0, 0, 1 }, { p1.x,	  p1.y,     p1.z + h }, { p2.x,     p2.y + l, p2.z});  
+#endif
+
+			// Left face (Y-Z plane)
+			gl_draw_line(gl_renderer, { 1, 0, 0, 1 }, { p1.x,	  p1.y,     p1.z     }, { p2.x,     p2.y + l, p2.z    }); 
+			gl_draw_line(gl_renderer, { 1, 0, 0, 1 }, { p1.x,     p1.y + l, p1.z     }, { p2.x,     p2.y + l, p2.z + h}); 
+			gl_draw_line(gl_renderer, { 1, 0, 0, 1 }, { p1.x,     p1.y + l, p1.z + h }, { p2.x,     p2.y,     p2.z + h}); 
+			gl_draw_line(gl_renderer, { 1, 0, 0, 1 }, { p1.x,	  p1.y,     p1.z + h }, { p2.x,     p2.y,     p2.z    });
+
+			// Right face (Y-Z plane offset by width)
+			gl_draw_line(gl_renderer, { 1, 0, 0, 1 }, { p1.x + w, p1.y,     p1.z     }, { p2.x + w, p2.y + l, p2.z    }); 
+			gl_draw_line(gl_renderer, { 1, 0, 0, 1 }, { p1.x + w, p1.y + l, p1.z     }, { p2.x + w, p2.y + l, p2.z + h}); 
+			gl_draw_line(gl_renderer, { 1, 0, 0, 1 }, { p1.x + w, p1.y + l, p1.z + h }, { p2.x + w, p2.y,     p2.z + h}); 
+			gl_draw_line(gl_renderer, { 1, 0, 0, 1 }, { p1.x + w, p1.y,     p1.z + h }, { p2.x + w, p2.y,     p2.z    });
+
+			// Connect the squares (X-Z plane)
+			gl_draw_line(gl_renderer, { 1, 0, 0, 1 }, { p1.x,	  p1.y,     p1.z     }, { p2.x + w, p2.y,     p2.z    });
+			gl_draw_line(gl_renderer, { 1, 0, 0, 1 }, { p1.x + w, p1.y,     p1.z     }, { p2.x + w, p2.y,     p2.z + h}); 
+			gl_draw_line(gl_renderer, { 1, 0, 0, 1 }, { p1.x + w, p1.y,     p1.z + h }, { p2.x,     p2.y,     p2.z + h}); 
+			gl_draw_line(gl_renderer, { 1, 0, 0, 1 }, { p1.x,	  p1.y,     p1.z + h }, { p2.x,     p2.y,     p2.z    });
 		}
 	}
 }
@@ -2914,7 +2938,9 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		glDisable(GL_CULL_FACE);
 
 		// Drawing 3D lines
-		// draw_wire_frames(gl_renderer);
+		if (toggle_wire_frames) {
+			draw_wire_frames(gl_renderer);
+		}
 		V3 p1_x = { 0, 0, 0 } ;
 		V3 p2_x = { 5, 0, 0 } ;
 		gl_draw_line(gl_renderer, { 1, 0, 0, 1 }, p1_x, p2_x);
