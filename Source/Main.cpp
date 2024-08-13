@@ -22,6 +22,7 @@
 #include "Utility.h"
 #include "Math.h"
 #include "gl_renderer.h"
+#include "Jobs.h"
 
 uint64_t start_time;
 LARGE_INTEGER elapsed_global_time;
@@ -138,6 +139,7 @@ struct Open_GL {
 	GLuint vbo_fireballs;
 	GLuint vbo_cube_faces;
 	GLuint vbo_strings;
+	GLuint vbo_quads;
 };
 
 struct Vertex_3D_Line {
@@ -216,6 +218,11 @@ struct Vertex_3D_Faces {
 	V3 normal;
 };
 
+struct Vertex_3D {
+	V3 pos;
+	V2 uv;
+};
+
 struct GL_Renderer {
 	HWND window;
 	HDC hdc;
@@ -225,6 +232,7 @@ struct GL_Renderer {
 	std::vector<Cube_Draw> cubes;
 	std::vector<Vertex_String> strings;
 	std::vector<Chunk*> chunks_to_draw;
+	std::vector<Vertex_3D> quads_to_draw;
 
 	float time;
 	float player_speed;
@@ -345,7 +353,7 @@ void shoot_fireball(GL_Renderer* gl_renderer, V3 pos, V3 velocity, MX4 world, Im
 	gl_renderer->fireballs.push_back(result);
 }
 
-bool toggle_wire_frames = false;
+bool toggle_debug_info = false;
 bool force_regenerate = true;
 void gl_update_renderer(GL_Renderer* gl_renderer) {
 	if (gl_renderer == nullptr) {
@@ -386,10 +394,10 @@ void gl_update_renderer(GL_Renderer* gl_renderer) {
 	// TODO: There is a bug with holding down the keys simultaneously and 
 	// the player moving faster diagonally. 
 	if (key_states[VK_SHIFT].pressed_this_frame || key_states[VK_SHIFT].held_down) {
-		gl_renderer->player_speed = 0.80f;
+		gl_renderer->player_speed = 2.00f;
 	}
 	else {
-		gl_renderer->player_speed = 0.20f;
+		gl_renderer->player_speed = 1.00f;
 	}
 	if (key_states[VK_S].pressed_this_frame || key_states[VK_S].held_down) {
 		gl_renderer->player_pos.x -= forward.x * gl_renderer->player_speed;
@@ -440,7 +448,7 @@ void gl_update_renderer(GL_Renderer* gl_renderer) {
 		log("%i", VIEW_DISTANCE);
 	}
 	if (key_states[VK_TAB].pressed_this_frame) {
-		toggle_wire_frames = !toggle_wire_frames;
+		toggle_debug_info = !toggle_debug_info;
 	}
 
 	int window_width = 0;
@@ -738,6 +746,7 @@ void init_images(GL_Renderer* gl_renderer) {
 #define GL_TEXTURE_CUBE_MAP_NEGATIVE_Y    0x8518
 #define GL_TEXTURE_CUBE_MAP_POSITIVE_Z    0x8519
 #define GL_TEXTURE_CUBE_MAP_NEGATIVE_Z    0x851A
+#define GL_TEXTURE_CUBE_MAP_SEAMLESS      0x884F
 GLuint cube_map_texture_handle = 0;
 void create_cube_map() {
 	const char* image_back_file_path = "assets\\skybox\\space\\back.png";
@@ -817,8 +826,11 @@ void create_cube_map() {
 
 	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_REPEAT);
 	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_REPEAT);
-	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+
+	glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);
+	glGenerateMipmap(GL_TEXTURE_CUBE_MAP);
 }
 
 GL_Texture* get_image(Image_Type type) {
@@ -1692,7 +1704,7 @@ void buffer_world_chunk(GL_Renderer* gl_renderer, int chunk_world_index_x, int c
 
 						vertex.normal = { 0, 0, 1 };
 
-						// Square (Indicies)
+						// Square (Indices)
 						vertex.pos = face.p1;
 						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 0);
 						faces_vertices.push_back(vertex);
@@ -1746,7 +1758,7 @@ void buffer_world_chunk(GL_Renderer* gl_renderer, int chunk_world_index_x, int c
 
 						vertex.normal = { 0, 1, 0 };
 
-						// Square (Indicies)
+						// Square (Indices)
 						vertex.pos = face.p1;
 						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 0);
 						faces_vertices.push_back(vertex);
@@ -2513,6 +2525,97 @@ void gl_draw_cube_faces_vbo(GL_Renderer* gl_renderer, GLuint textures_handle) {
 }
 
 #if 0
+Vertex_3D quad[4] = {
+//   V3  UV
+	{{}, {}},
+};
+
+void gl_draw_quad(GL_Renderer* gl_renderer, GLuint textures_handle) {
+	if (gl_renderer->open_gl.vbo_fireballs == 0) {
+		glGenBuffers(1, &gl_renderer->open_gl.vbo_quads);
+		glBindBuffer(GL_ARRAY_BUFFER, gl_renderer->open_gl.vbo_quads);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(cube), cube, GL_STATIC_DRAW);
+	}
+
+	glBindBuffer(GL_ARRAY_BUFFER, gl_renderer->open_gl.vbo_fireballs);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D), (void*)offsetof(Vertex_3D, pos));
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D), (void*)offsetof(Vertex_3D, uv));
+	glEnableVertexAttribArray(1);
+
+
+	for (Cube_Draw current_cube : gl_renderer->cubes) {
+		glBindTexture(GL_TEXTURE_2D, current_cube.texture_handle);
+
+		GLuint shader_program = shader_program_types[SPT_3D];
+		if (!shader_program) {
+			log("ERROR: Shader program not specified");
+			assert(false);
+		}
+		glUseProgram(shader_program);
+
+		// MX4 world_from_model = translation_matrix_mx_4(cos(x) * x_speed, sin(x) * y_speed, z_pos);
+		MX4 world_from_model = translation_matrix_mx_4(current_cube.pos_ws.x, current_cube.pos_ws.y, current_cube.pos_ws.z)/* * mat4_rotate_x(renderer->time)*/;
+		GLuint world_from_model_loc = glGetUniformLocation(shader_program, "world_from_model");
+		glUniformMatrix4fv(world_from_model_loc, 1, GL_FALSE, world_from_model.e);
+
+		MX4 perspective_from_world = gl_renderer->perspective_from_view * gl_renderer->view_from_world;
+		GLuint perspective_from_world_loc = glGetUniformLocation(shader_program, "perspective_from_world");
+		glUniformMatrix4fv(perspective_from_world_loc, 1, GL_FALSE, perspective_from_world.e);
+
+		GLuint time_loc = glGetUniformLocation(shader_program, "u_time");
+		glUniform1f(time_loc, gl_renderer->time);
+
+		glDrawArrays(GL_TRIANGLES, 0, ARRAYSIZE(cube));
+	}
+	gl_renderer->cubes.clear();
+
+	// V3 light_position = {};
+	// if (gl_renderer->fireballs.size() > 0) {
+	// 	light_position = gl_renderer->fireballs[0].pos;
+	// }
+
+	// Bind the sprite sheet with all the textures
+	// log("chunks_to_draw_size = %i", gl_renderer->chunks_to_draw.size());
+	for (Chunk* chunk: gl_renderer->chunks_to_draw) {
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, chunk->ebo);
+		if (chunk->ebo <= 0) {
+			assert(false);
+		}
+		glBindBuffer(GL_ARRAY_BUFFER, chunk->vbo);
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Faces), (void*)offsetof(Vertex_3D_Faces, pos));
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Faces), (void*)offsetof(Vertex_3D_Faces, uv));
+		glEnableVertexAttribArray(1);
+		glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Faces), (void*)offsetof(Vertex_3D_Faces, normal));
+		glEnableVertexAttribArray(2);
+
+		glBindTexture(GL_TEXTURE_2D, textures_handle);
+
+		GLuint shader_program = shader_program_types[SPT_Cube_Face];
+		if (!shader_program) {
+			log("ERROR: Shader program not specified");
+			assert(false);
+		}
+		glUseProgram(shader_program);
+
+		MX4 perspective_from_world = gl_renderer->perspective_from_view * gl_renderer->view_from_world;
+
+		GLuint perspective_from_world_loc = glGetUniformLocation(shader_program, "perspective_from_world");
+		glUniformMatrix4fv(perspective_from_world_loc, 1, GL_FALSE, perspective_from_world.e);
+
+		GLuint time_loc = glGetUniformLocation(shader_program, "u_time");
+		glUniform1f(time_loc, gl_renderer->time);
+
+		// GLuint light_fireball_loc = glGetUniformLocation(shader_program, "light_position_fireball");
+		// glUniform3fv(time_loc, );
+
+		glDrawElements(GL_TRIANGLES, chunk->total_indices_to_be_rendered, GL_UNSIGNED_INT, (void*)0);
+	}
+}
+#endif
+
+#if 0
 void gl_draw_cube_faces_vbo(GL_Renderer* gl_renderer, GLuint textures_handle) {
 	V3 light_position = {};
 	if (gl_renderer->fireballs.size() > 0) {
@@ -2938,7 +3041,7 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		glDisable(GL_CULL_FACE);
 
 		// Drawing 3D lines
-		if (toggle_wire_frames) {
+		if (toggle_debug_info) {
 			draw_wire_frames(gl_renderer);
 		}
 		V3 p1_x = { 0, 0, 0 } ;
@@ -2969,6 +3072,16 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 
 		gl_update_renderer(gl_renderer);
 		SwapBuffers(gl_renderer->hdc);
+
+		// init_threads();
+		// NOTE: Could use a unique ptr here
+		Job_Increment_Value increment_value;
+		jobs.push_back(&increment_value);
+		
+		for (Job* job : jobs) {
+			job->execute_job();
+		}
+		jobs.clear();
 
 		Sleep(1);
 	}

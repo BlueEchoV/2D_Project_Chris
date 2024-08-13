@@ -31,6 +31,7 @@ glActiveTextureFunc glActiveTexture = nullptr;
 glUniform1iFunc glUniform1i = nullptr;
 glBlendEquationFunc glBlendEquation = nullptr;
 glBufferSubDataFunc glBufferSubData = nullptr;
+glGenerateMipmapFunc glGenerateMipmap = nullptr;
 
 void loadGLFunctions() {
 	glCreateShader = (glCreateShaderFunc)wglGetProcAddress("glCreateShader");
@@ -69,6 +70,7 @@ void loadGLFunctions() {
 	wglCreateContextAttribsARB = (wglCreateContextAttribsARBFunc)wglGetProcAddress("wglCreateContextAttribsARB");
 
 	glActiveTexture = (glActiveTextureFunc)wglGetProcAddress("glActiveTexture");
+	glGenerateMipmap = (glGenerateMipmapFunc)wglGetProcAddress("glGenerateMipmap");
 }
 
 GLuint create_shader(const std::string shader_file_path, GLenum shader_type) {

@@ -142,6 +142,9 @@ extern glUniform1iFunc glUniform1i;
 typedef void(*glBlendEquationFunc)(GLenum mode);
 extern glBlendEquationFunc glBlendEquation;
 
+typedef void(*glGenerateMipmapFunc)(GLenum target);
+extern glGenerateMipmapFunc glGenerateMipmap;
+
 void loadGLFunctions();
 
 enum Shader_Program_Type {

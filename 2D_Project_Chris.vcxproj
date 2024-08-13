@@ -20,12 +20,14 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Source\gl_renderer.cpp" />
+    <ClCompile Include="Source\Jobs.cpp" />
     <ClCompile Include="Source\Main.cpp" />
     <ClCompile Include="Source\Math.cpp" />
     <ClCompile Include="Source\Utility.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Source\gl_renderer.h" />
+    <ClInclude Include="Source\Jobs.h" />
     <ClInclude Include="Source\Math.h" />
     <ClInclude Include="Source\Perlin.h" />
     <ClInclude Include="Source\Utility.h" />

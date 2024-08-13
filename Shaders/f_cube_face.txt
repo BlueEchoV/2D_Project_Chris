@@ -12,27 +12,17 @@ uniform vec3 light_position_fireball;
 
 void main()
 {
-	// No Lighting
-	// o_color = texture(my_texture, f_uv);
-	
-	// Lighting
-	vec4 tex_color = texture(my_texture, f_uv);
-	
-	vec3 light_pos = vec3(0, 0, 40);
-	// vec3 light_pos = light_position_fireball;
-	
-	light_pos.x += cos(u_time * 10) * 10;
-	light_pos.y += sin(u_time * 10) * 10;
-	
-	vec3 pixel_to_light_length = light_pos - f_world_space_pos;
-	float vec_length = length(pixel_to_light_length);
-	float light_radius = 100;
-	
-	// Saturate clamps between 0 and 1
-	float distance_intensity = 1.0 - clamp(vec_length / light_radius, 0, 1);
-	vec3 pixel_to_light = normalize(pixel_to_light_length);
-	float light_intensity = max(dot(f_normal, pixel_to_light), 0);
-	o_color = tex_color;
-	o_color.xyz *= clamp((light_intensity * distance_intensity) + 0.1, 0, 1);
-	o_color.xyz += tex_color.xyz * 0.25;
+    // Sample the texture color
+    vec4 tex_color = texture(my_texture, f_uv);
+
+    // Calculate the light direction as a normalized vector from the light source to the fragment position
+    vec3 light_direction = normalize(vec3(cos(u_time * 2), 0.5, sin(u_time * 2)));
+    
+    // Calculate the light intensity using the dot product between the normal and the light direction
+    float light_intensity = max(dot(f_normal, light_direction), 0.0);
+    
+    // Apply lighting to the texture color
+    o_color = tex_color;
+    o_color.xyz *= light_intensity;
+    o_color.xyz += tex_color.xyz * 0.25;
 }
