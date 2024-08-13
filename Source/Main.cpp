@@ -3073,16 +3073,12 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		gl_update_renderer(gl_renderer);
 		SwapBuffers(gl_renderer->hdc);
 
-		// init_threads();
-		// NOTE: Could use a unique ptr here
-		Job_Increment_Value increment_value;
-		jobs.push_back(&increment_value);
-		
-		for (Job* job : jobs) {
-			job->execute_job();
-		}
-		jobs.clear();
+		init_job_system(); 
 
+		add_job(JT_Increment_Number);
+
+		execute_all_jobs();
+		
 		Sleep(1);
 	}
 	// TODO: Clean up shaders

@@ -4,8 +4,26 @@
 #include <vector>
 #include <mutex>
 #include <chrono>
+#include <semaphore>
+#include <assert.h>
 
+enum Job_Type {
+	JT_Increment_Number,
+	JT_Total
+};
+
+void init_job_system();
+void add_job(Job_Type type);
+void execute_all_jobs();
+
+// In order, what to do:
+// 1) Add a job to a job list
+// 2) Have a list of threads that are created to grab the jobs and execute them
+// 3) Wait until all threads are finised to progress
+
+#if 0
 struct Job {
+	bool job_executed = false;
 	virtual void execute_job() = 0;
 };
 
@@ -18,3 +36,4 @@ extern std::vector<Job*> jobs;
 extern std::vector<std::thread> threads;
 // void init_threads();
 void finish_executing_all_threads();
+#endif
