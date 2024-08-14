@@ -130,7 +130,7 @@ struct Chunk_Vbo {
 };
 
 // IN CHUNKS
-int VIEW_DISTANCE = 4;
+int VIEW_DISTANCE = 2;
 
 struct Open_GL {
 	GLuint vao;
@@ -193,9 +193,9 @@ struct Cube {
 
 const int CUBE_SIZE = 1;
 
-const int CHUNK_WIDTH = 16;
-const int CHUNK_LENGTH = 16;
-const int CHUNK_HEIGHT = 256;
+const int CHUNK_WIDTH = 4;
+const int CHUNK_LENGTH = 4;
+const int CHUNK_HEIGHT = 16;
 
 struct Chunk {
 	GLuint ebo;
@@ -341,6 +341,7 @@ void get_window_size(HWND window, int& w, int& h) {
 #define VK_S 0x53
 #define VK_A 0x41
 #define VK_D 0x44
+#define VK_1 0x31
 
 void shoot_fireball(GL_Renderer* gl_renderer, V3 pos, V3 velocity, MX4 world, Image_Type type) {
 	Fireball result;
@@ -353,6 +354,7 @@ void shoot_fireball(GL_Renderer* gl_renderer, V3 pos, V3 velocity, MX4 world, Im
 	gl_renderer->fireballs.push_back(result);
 }
 
+bool apply_player_collision = false;
 bool toggle_debug_info = false;
 bool force_regenerate = true;
 void gl_update_renderer(GL_Renderer* gl_renderer) {
@@ -402,22 +404,30 @@ void gl_update_renderer(GL_Renderer* gl_renderer) {
 	if (key_states[VK_S].pressed_this_frame || key_states[VK_S].held_down) {
 		gl_renderer->player_pos.x -= forward.x * gl_renderer->player_speed;
 		gl_renderer->player_pos.y -= forward.y * gl_renderer->player_speed;
-		gl_renderer->player_pos.z -= forward.z * gl_renderer->player_speed;
+		if (!apply_player_collision) {
+			gl_renderer->player_pos.z -= forward.z * gl_renderer->player_speed;
+		}
 	}
 	if (key_states[VK_W].pressed_this_frame || key_states[VK_W].held_down) {
 		gl_renderer->player_pos.x += forward.x * gl_renderer->player_speed;
 		gl_renderer->player_pos.y += forward.y * gl_renderer->player_speed;
-		gl_renderer->player_pos.z += forward.z * gl_renderer->player_speed;
+		if (!apply_player_collision) {
+			gl_renderer->player_pos.z += forward.z * gl_renderer->player_speed;
+		}
 	}
 	if (key_states[VK_D].pressed_this_frame || key_states[VK_D].held_down) {
 		gl_renderer->player_pos.x += right.x * gl_renderer->player_speed;
 		gl_renderer->player_pos.y += right.y * gl_renderer->player_speed;
-		gl_renderer->player_pos.z += right.z * gl_renderer->player_speed;
+		if (!apply_player_collision) {
+			gl_renderer->player_pos.z += forward.z * gl_renderer->player_speed;
+		}
 	}
 	if (key_states[VK_A].pressed_this_frame || key_states[VK_A].held_down) {
 		gl_renderer->player_pos.x -= right.x * gl_renderer->player_speed;
 		gl_renderer->player_pos.y -= right.y * gl_renderer->player_speed;
-		gl_renderer->player_pos.z -= right.z * gl_renderer->player_speed;
+		if (!apply_player_collision) {
+			gl_renderer->player_pos.z -= right.z * gl_renderer->player_speed;
+		}
 	}
 	if (key_states[VK_SPACE].pressed_this_frame || key_states[VK_SPACE].held_down) {
 		gl_renderer->player_pos.x += up.x * gl_renderer->player_speed;
@@ -449,6 +459,9 @@ void gl_update_renderer(GL_Renderer* gl_renderer) {
 	}
 	if (key_states[VK_TAB].pressed_this_frame) {
 		toggle_debug_info = !toggle_debug_info;
+	}
+	if (key_states[VK_1].pressed_this_frame) {
+		apply_player_collision = !apply_player_collision;
 	}
 
 	int window_width = 0;
@@ -1482,6 +1495,8 @@ void generate_world_chunk(GL_Renderer* gl_renderer, int chunk_world_index_x, int
 		gl_renderer->chunks_to_draw.push_back(new_chunk);
 	}
 
+
+
 	new_chunk->allocated = true;
 
 	new_chunk->chunk_x = chunk_world_index_x;
@@ -2496,6 +2511,98 @@ void draw_mx4(GL_Renderer* gl_renderer, std::string mx_name, Font* font, MX4 mx,
 	offset_y += font->char_h * size;
 }
 
+V3 cube_position_player_is_on = {};
+const float GRAVITY = 0.1f;
+void check_player_collision(GL_Renderer* gl_renderer) {
+	int chunk_player_is_on_x = (int)gl_renderer->player_pos.x / CHUNK_WIDTH;
+	int chunk_player_is_on_y = (int)gl_renderer->player_pos.y / CHUNK_LENGTH;
+
+	Chunk* chunk_player_is_on = nullptr;
+	for (Chunk* chunk : gl_renderer->chunks_to_draw) {
+		if (chunk->chunk_x == chunk_player_is_on_x
+			&& chunk->chunk_y == chunk_player_is_on_y) {
+			chunk_player_is_on = chunk;
+		}
+	}
+	if (chunk_player_is_on == nullptr) {
+		log("Error: Chunk player is on is not being drawn");
+		assert(false);
+		return;
+	}
+
+	// This is technically what cube the player is in right now
+	// until I implement an offset from that player
+	Cube* cube_player_is_on = nullptr;
+	V3 cube_player_is_on_pos = {};
+
+	// NOTE: SOMETHING WRONG WITH THIS
+	int offset_z = 1;
+	int player_cube_pos_x = (int)gl_renderer->player_pos.x % CHUNK_WIDTH;
+	int player_cube_pos_y = (int)gl_renderer->player_pos.y % CHUNK_LENGTH;
+	int player_cube_pos_z = (int)gl_renderer->player_pos.z % CHUNK_HEIGHT;
+	player_cube_pos_z += -offset_z;
+	
+	// Offset the player a little so we are standing on top of the cube
+	if (player_cube_pos_x < 0) {
+		player_cube_pos_x += CHUNK_WIDTH;
+	}
+	if (player_cube_pos_y < 0) {
+		player_cube_pos_y += CHUNK_LENGTH;
+	}
+	for (int x = 0; x < CHUNK_WIDTH; x++) {
+		for (int y = 0; y < CHUNK_LENGTH; y++) {
+			for (int z = 0; z < CHUNK_HEIGHT; z++) {
+				// This is the cube the player is on
+				if (x == player_cube_pos_x &&
+					y == player_cube_pos_y &&
+					z == player_cube_pos_z) {
+					cube_player_is_on = &chunk_player_is_on->cubes[x][y][z];
+					cube_player_is_on_pos = {(float)x, (float)y, (float)z};
+					cube_position_player_is_on = cube_player_is_on_pos;
+				}
+			}
+		}
+	}
+
+	// Apply gravity if the player isn't colliding with any cube
+	// NOTE: THERE IS A ISSUE WITH HOW THE MINUS BLOCKS CALCULATE THE 
+	// PLAYER'S POSITION WITH RESPECT TO EACH CHUNK. PRINT OUT ALL THE 
+	// POSITIONS OF THE CHUNKS TO SEE HOW THEY ARE DRAWN
+	if (cube_player_is_on == nullptr) {
+		gl_renderer->player_pos.z -= GRAVITY;
+	}
+	else {
+		if (cube_player_is_on->type == IT_Air) {
+			gl_renderer->player_pos.z -= GRAVITY;
+		}
+		else {
+			gl_renderer->player_pos.z = cube_player_is_on_pos.z + offset_z;
+		}
+	}
+	
+
+	// See if there is a chunk above that chunk that is air,
+	// if it is, this is a value location. If not, just freeze the 
+	// character (like they are stuck)
+
+}
+
+void draw_cube_coordinates(GL_Renderer* gl_renderer, Font* font) {
+	for (Chunk* chunk : gl_renderer->chunks_to_draw) {
+		for (int x = 0; x < CHUNK_WIDTH; x++) {
+			for (int y = 0; y < CHUNK_LENGTH; y++) {
+				for (int z = 0; z < CHUNK_HEIGHT; z++) {
+					V3 cube_pos = { (float)x, (float)y, (float)z };
+					cube_pos.x += chunk->chunk_x * CHUNK_WIDTH;
+					cube_pos.y += chunk->chunk_y * CHUNK_LENGTH;
+					std::string str = std::to_string(chunk->chunk_x) + " " + std::to_string(chunk->chunk_y);
+					draw_string_ws(gl_renderer, font, str.c_str(), cube_pos, 2, false);
+				}
+			}
+		}
+	}
+}
+
 int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd) {
 	OutputDebugString("Hello World!\n");
 
@@ -2568,6 +2675,11 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 
 		update_fireballs(gl_renderer);
 
+		// Collision
+		if (apply_player_collision) {
+			check_player_collision(gl_renderer);
+		}
+
 		// GL_COLOR_BUFFER_BIT: This clears the color buffer, which is responsible for holding the color 
 		// information of the pixels. Clearing this buffer sets all the pixels to the color specified by glClearColor.
 		// GL_DEPTH_BUFFER_BIT: This clears the depth buffer, which is responsible for holding the depth 
@@ -2608,7 +2720,6 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		MX4 mx_child_of_that_child = mx_child_of_child * translation_matrix_mx_4(0, 2, 0) * scaling_matrix_mx_4(2.0f, 2.0f, 2.0f);
 		draw_cube_mx(gl_renderer, mx_child_of_that_child);
 #endif
-
 		// draw_chunks(gl_renderer);
 		// gl_draw_cubes(gl_renderer);
 		// Drawing fireballs
@@ -2645,6 +2756,22 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		MX4 view_mx = matrix_transpose(gl_renderer->view_from_world);
 		draw_mx4(gl_renderer, "View_from_world", &font, view_mx, 0, 0, 2, false);
 		
+		std::string player_pos = "Player ws position: x = "
+		    + std::to_string(gl_renderer->player_pos.x)
+			+ " y = "
+			+ std::to_string(gl_renderer->player_pos.y)
+			+ " z = "
+			+ std::to_string(gl_renderer->player_pos.z);
+		draw_string(gl_renderer, &font, player_pos.c_str(), 450, 110, 2, true);
+
+		std::string cube_player_is_on = "Cube player is on pos: x = "
+			+ std::to_string(cube_position_player_is_on.x)
+			+ " y = "
+			+ std::to_string(cube_position_player_is_on.y)
+			+ " z = "
+			+ std::to_string(cube_position_player_is_on.z);
+		draw_string(gl_renderer, &font, cube_player_is_on.c_str(), 450, 135, 2, true);
+
 		draw_string_ws(gl_renderer, &font, "x", { 5, 0, 0 }, 3, true);
 		draw_string_ws(gl_renderer, &font, "y", { 0, 5, 0 }, 3, true);
 		draw_string_ws(gl_renderer, &font, "z", { 0, 0, 5 }, 3, true);
@@ -2652,8 +2779,12 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		for (Chunk* chunk : gl_renderer->chunks_to_draw) {
 			std::string str = std::to_string(chunk->chunk_x) + "," + std::to_string(chunk->chunk_y);
 			V3 chunk_pos = { (float)chunk->chunk_x * CHUNK_WIDTH, (float)chunk->chunk_y * CHUNK_LENGTH, 256.0f }; 
+			chunk_pos.x += CHUNK_WIDTH / 2;
+			chunk_pos.y += CHUNK_LENGTH / 2;
 			draw_string_ws(gl_renderer, &font, str.c_str(), chunk_pos, 2, false);
 		}
+
+		// draw_cube_coordinates(gl_renderer, &font);
 
 		gl_upload_and_draw_2d_string(gl_renderer, &font);
 
