@@ -15,6 +15,8 @@
 #include <assert.h>
 #include <format>
 
+#include "..\libs\tracy\tracy\Tracy.hpp"
+
 #define STB_PERLIN_IMPLEMENTATION
 #include "Perlin.h"
 #define STB_IMAGE_IMPLEMENTATION
@@ -130,7 +132,7 @@ struct Chunk_Vbo {
 };
 
 // IN CHUNKS
-int VIEW_DISTANCE = 2;
+int VIEW_DISTANCE = 4;
 
 struct Open_GL {
 	GLuint vao;
@@ -193,9 +195,9 @@ struct Cube {
 
 const int CUBE_SIZE = 1;
 
-const int CHUNK_WIDTH = 4;
-const int CHUNK_LENGTH = 4;
-const int CHUNK_HEIGHT = 16;
+const int CHUNK_WIDTH = 16;
+const int CHUNK_LENGTH = 16;
+const int CHUNK_HEIGHT = 256;
 
 struct Chunk {
 	GLuint ebo;
@@ -1464,6 +1466,7 @@ V2 get_texture_sprite_sheet_uv_coordinates(Image_Type type, int pos_x, int pos_y
 }
 
 void generate_world_chunk(GL_Renderer* gl_renderer, int chunk_world_index_x, int chunk_world_index_y, float noise) {
+	ZoneScoped;
 	Chunk* new_chunk = nullptr;
 
 #if 0
@@ -1563,6 +1566,7 @@ Chunk* get_existing_chunk(GL_Renderer* gl_renderer, int x, int y) {
 }
 
 void buffer_world_chunk(GL_Renderer* gl_renderer, int chunk_world_index_x, int chunk_world_index_y) {
+	ZoneScoped;
 	Chunk* chunk = get_existing_chunk(gl_renderer, chunk_world_index_x, chunk_world_index_y);
 	if (chunk == nullptr) {
 		return;
@@ -2536,13 +2540,13 @@ void check_player_collision(GL_Renderer* gl_renderer) {
 	V3 cube_player_is_on_pos = {};
 
 	// NOTE: SOMETHING WRONG WITH THIS
+	// Offset the player a little so we are standing on top of the cube
 	int offset_z = 1;
 	int player_cube_pos_x = (int)gl_renderer->player_pos.x % CHUNK_WIDTH;
 	int player_cube_pos_y = (int)gl_renderer->player_pos.y % CHUNK_LENGTH;
 	int player_cube_pos_z = (int)gl_renderer->player_pos.z % CHUNK_HEIGHT;
 	player_cube_pos_z += -offset_z;
 	
-	// Offset the player a little so we are standing on top of the cube
 	if (player_cube_pos_x < 0) {
 		player_cube_pos_x += CHUNK_WIDTH;
 	}
@@ -2650,8 +2654,12 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 
 	gl_renderer->fireball_speed = 10.0f;
 
+	init_job_system(); 
+
 	bool running = true;
 	while (running) {
+		// Scope inside of a function (Use ZoneScope for the whole scope)
+		ZoneScopedN("Gameloop");
 		reset_Pressed_This_Frame();
 		last_mouse_position = current_mouse_position;
 		MSG msg;
@@ -2791,14 +2799,33 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		gl_update_renderer(gl_renderer);
 		SwapBuffers(gl_renderer->hdc);
 
-		// init_job_system(); 
+		add_job(JT_Increment_Number);
+		add_job(JT_Print_Stars);
+		add_job(JT_Increment_Number);
+		add_job(JT_Print_Stars);
+		add_job(JT_Increment_Number);
+		add_job(JT_Print_Stars);
+		add_job(JT_Increment_Number);
+		add_job(JT_Print_Stars);
+		add_job(JT_Increment_Number);
+		add_job(JT_Print_Stars);
 
-		// add_job(JT_Increment_Number);
+		add_job(JT_Increment_Number);
+		add_job(JT_Print_Stars);
+		add_job(JT_Increment_Number);
+		add_job(JT_Print_Stars);
+		add_job(JT_Increment_Number);
+		add_job(JT_Print_Stars);
+		add_job(JT_Increment_Number);
+		add_job(JT_Print_Stars);
+		add_job(JT_Increment_Number);
+		add_job(JT_Print_Stars);
 
-		// execute_all_jobs();
+		ensure_threads_finished();
 		
-		Sleep(1);
+		Sleep(10);
 	}
+	terminate_all_threads();
 	// TODO: Clean up shaders
 	//      glDeleteShader(vertex_shader);
 	//      glDeleteShader(fragment_shader);

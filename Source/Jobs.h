@@ -9,12 +9,14 @@
 
 enum Job_Type {
 	JT_Increment_Number,
+	JT_Print_Stars,
 	JT_Total
 };
 
 void init_job_system();
+void terminate_all_threads();
+void ensure_threads_finished();
 void add_job(Job_Type type);
-void execute_all_jobs();
 
 // In order, what to do:
 // 1) Add a job to a job list

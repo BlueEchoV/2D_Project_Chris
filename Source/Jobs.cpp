@@ -1,25 +1,44 @@
 #include "Jobs.h"
 #include "Utility.h"
+#include "..\libs\tracy\tracy\Tracy.hpp"
 
 #include <stdint.h>
 
-static int increment_value = 0;
+std::atomic increment_value = 0;
 void job_increment_number() {
-	increment_value++;
-	log("Increment value = %i", increment_value);
+	for (int i = 0; i < 1000; i++) {
+		increment_value++;
+	}
+	log("Increment value = %i\n", (int)increment_value);
+}
+
+void job_print_stars() {
+	for (int i = 0; i < 3; i++) {
+		log("*****************\n");
+	}
 }
 
 std::mutex job_mutex;
 std::vector<Job_Type> jobs = {};
+std::atomic current_threads_executing_a_job = 0;
+const int TOTAL_THREADS = 10;
+std::counting_semaphore<100> semaphore(0);
+std::vector<std::thread> threads;
 void add_job(Job_Type type) {
-	std::lock_guard<std::mutex> lock(job_mutex);
+	job_mutex.lock();
 	jobs.push_back(type);
+    semaphore.release();  
+	job_mutex.unlock();
 }
 
 void execute_job_type(Job_Type type) {
 	switch(type) {
 	case JT_Increment_Number: {
 		job_increment_number();
+		break;
+	}
+	case JT_Print_Stars: {
+		job_print_stars();
 		break;
 	}
 	default: {
@@ -30,48 +49,56 @@ void execute_job_type(Job_Type type) {
 	}
 }
 
-// Max 10 with a count of 0
-std::counting_semaphore<100> semaphore(0);
-
-const int TOTAL_THREADS = 10;
-std::vector<std::thread> threads;
+bool should_terminate_threads = false;
+void terminate_all_threads() {
+	should_terminate_threads = true;
+}
 
 void thread_worker() {
     while (true) {
-		// Lock the jobs vector to safely access it
-		// The mutex is unlocked when it goes out of scope
-		std::lock_guard<std::mutex> lock(job_mutex);
-
-		if (jobs.empty()) {
+		ZoneScoped;
+		if (should_terminate_threads) {
 			break;
 		}
 
-		// Wait for a job to be available
-		// NOTE: Acquire will not allow the below code to 
-		// execute if the increment value is 0
-        semaphore.acquire();  
+		job_mutex.lock();
+		if (jobs.empty()) {
+			job_mutex.unlock();
+			continue;
+		}
 
-		// Get the last job
+		// This should never stall because release
+		// is directly linked to adding a job.
+		// If job is not empty, then there is 
+		// definitely a value to be taken from the 
+		// semaphore
+		semaphore.acquire();  
+
 		Job_Type job = jobs.back();  
-		// Remove it from the list
 		jobs.pop_back();
-		// Execute the job
+		job_mutex.unlock();
+
+		current_threads_executing_a_job++;
 		execute_job_type(job);  
+		current_threads_executing_a_job--;
     }
 }
 
 void init_job_system() {
 	threads.reserve(TOTAL_THREADS);
 	for (int i = 0; i < TOTAL_THREADS; i++) {
-		// NOTE: This Creates a new thread and immediately starts executing 
-		// the thread_worker function in that thread. 
 		threads.emplace_back(thread_worker);
 	}
 }
 
+void ensure_threads_finished() {
+	while (current_threads_executing_a_job > 0) {
+	}
+}
+
+#if 0
 void execute_all_jobs() {
     for (int i = 0; i < jobs.size(); i++) {
-		// Signal the semaphore to wake up a thread
         semaphore.release();  
     }
 
@@ -82,7 +109,6 @@ void execute_all_jobs() {
     }
 }
 
-#if 0
 void Job_Increment_Value::execute_job() {
 	// lambda for execution
 	std::thread new_thread([this]() {
