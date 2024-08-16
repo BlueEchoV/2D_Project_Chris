@@ -4,57 +4,33 @@
 
 #include <stdint.h>
 
-std::atomic increment_value = 0;
-void job_increment_number() {
-	for (int i = 0; i < 1000; i++) {
-		increment_value++;
-	}
-	log("Increment value = %i\n", (int)increment_value);
-}
-
-void job_print_stars() {
-	for (int i = 0; i < 3; i++) {
-		log("*****************\n");
-	}
-}
-
 std::mutex job_mutex;
-std::vector<Job_Type> jobs = {};
+std::vector<Job> jobs = {};
 std::atomic current_threads_executing_a_job = 0;
 const int TOTAL_THREADS = 10;
 std::counting_semaphore<100> semaphore(0);
 std::vector<std::thread> threads;
-void add_job(Job_Type type) {
+void add_job(Job_Type type, void* data) {
 	job_mutex.lock();
-	jobs.push_back(type);
+	Job new_job;
+	new_job.type = type;
+	new_job.data = data;
+	jobs.push_back(new_job);
     semaphore.release();  
 	job_mutex.unlock();
-}
-
-void execute_job_type(Job_Type type) {
-	switch(type) {
-	case JT_Increment_Number: {
-		job_increment_number();
-		break;
-	}
-	case JT_Print_Stars: {
-		job_print_stars();
-		break;
-	}
-	default: {
-		log("Error: Invalid job type");
-		assert(false);
-		break;
-	}
-	}
 }
 
 bool should_terminate_threads = false;
 void terminate_all_threads() {
 	should_terminate_threads = true;
+	for (int i = 0; i < TOTAL_THREADS; i++) {
+		// Wakeup all the threads to check the 
+		// should_terminate_threads variable
+		semaphore.release();
+	}
 }
 
-void thread_worker() {
+void thread_worker(void(*execute_job_type)(Job_Type, void*)) {
     while (true) {
 		ZoneScoped;
 		if (should_terminate_threads) {
@@ -74,25 +50,28 @@ void thread_worker() {
 		// semaphore
 		semaphore.acquire();  
 
-		Job_Type job = jobs.back();  
+		Job job = jobs.back();  
 		jobs.pop_back();
 		job_mutex.unlock();
 
-		current_threads_executing_a_job++;
-		execute_job_type(job);  
-		current_threads_executing_a_job--;
+		execute_job_type(job.type, job.data);  
     }
 }
 
-void init_job_system() {
+void init_job_system(void(*execute_job_type)(Job_Type, void*)) {
 	threads.reserve(TOTAL_THREADS);
+	execute_job_type = execute_job_type;
 	for (int i = 0; i < TOTAL_THREADS; i++) {
-		threads.emplace_back(thread_worker);
-	}
-}
-
-void ensure_threads_finished() {
-	while (current_threads_executing_a_job > 0) {
+		// Direct Call: thread_worker(execute_job_type) evaluates the 
+		// function immediately, producing a void result, which is not 
+		// what std::thread expects.
+		// Lambda: The lambda captures the function pointer and postpones 
+		// the execution until the thread is actually running, which is 
+		// what std::thread needs to correctly start the thread with the 
+		// given work.
+		threads.emplace_back([execute_job_type]() {
+			thread_worker(execute_job_type);
+		});
 	}
 }
 

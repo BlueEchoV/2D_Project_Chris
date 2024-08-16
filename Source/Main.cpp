@@ -1465,6 +1465,14 @@ V2 get_texture_sprite_sheet_uv_coordinates(Image_Type type, int pos_x, int pos_y
 	return result;
 }
 
+struct Generate_Chunks_Function {
+	GL_Renderer* gl_renderer;
+	int chunk_world_index_x;
+	int chunk_world_index_y;
+	float noise;
+};
+
+std::mutex generate_chunk_mutex;
 void generate_world_chunk(GL_Renderer* gl_renderer, int chunk_world_index_x, int chunk_world_index_y, float noise) {
 	ZoneScoped;
 	Chunk* new_chunk = nullptr;
@@ -1495,10 +1503,10 @@ void generate_world_chunk(GL_Renderer* gl_renderer, int chunk_world_index_x, int
 	if (new_chunk == nullptr) {
 		new_chunk = new Chunk();
 		new_chunk->buffer_sub_data = false;
+		generate_chunk_mutex.lock();
 		gl_renderer->chunks_to_draw.push_back(new_chunk);
+		generate_chunk_mutex.unlock();
 	}
-
-
 
 	new_chunk->allocated = true;
 
@@ -1556,11 +1564,13 @@ void generate_world_chunk(GL_Renderer* gl_renderer, int chunk_world_index_x, int
 
 Chunk* get_existing_chunk(GL_Renderer* gl_renderer, int x, int y) {
 	Chunk* result = nullptr;
+	generate_chunk_mutex.lock();
 	for (Chunk* chunk : gl_renderer->chunks_to_draw) {
 		if (x == chunk->chunk_x && y == chunk->chunk_y) {
 			result = chunk;
 		}
 	}
+	generate_chunk_mutex.unlock();
 
 	return result;
 }
@@ -2360,7 +2370,13 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 	// log("chunks_to_generate_size = %i", chunks_to_generate.size());
 	// Generate the chunks first
 	for (V2 chunk : chunks_to_generate) {
-		generate_world_chunk(gl_renderer, (int)chunk.x, (int)chunk.y, noise);
+		Generate_Chunks_Function* data = new Generate_Chunks_Function;
+		data->gl_renderer = gl_renderer;
+		data->chunk_world_index_x = (int)chunk.x;
+		data->chunk_world_index_y = (int)chunk.y;
+		data->noise = noise;
+		add_job(JT_Generate_World_Chunk, data);
+		// generate_world_chunk(gl_renderer, (int)chunk.x, (int)chunk.y, noise);
 	}
 	// Buffer the data second
 	for (V2 chunk : chunks_to_generate) {
@@ -2607,6 +2623,41 @@ void draw_cube_coordinates(GL_Renderer* gl_renderer, Font* font) {
 	}
 }
 
+std::atomic increment_value = 0;
+void job_increment_number() {
+	for (int i = 0; i < 1000; i++) {
+		increment_value++;
+	}
+	log("Increment value = %i\n", (int)increment_value);
+}
+
+void job_print_stars() {
+	log("*****************\n");
+}
+
+void execute_job_type(Job_Type type, void* d) {
+	switch(type) {
+	case JT_Increment_Number: {
+		job_increment_number();
+		break;
+	}
+	case JT_Print_Stars: {
+		job_print_stars();
+		break;
+	}
+	case JT_Generate_World_Chunk: {
+		Generate_Chunks_Function* data = (Generate_Chunks_Function*)d;
+		generate_world_chunk(data->gl_renderer, data->chunk_world_index_x, data->chunk_world_index_y, data->noise);
+		break;
+	}
+	default: {
+		log("Error: Invalid job type");
+		assert(false);
+		break;
+	}
+	}
+}
+
 int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd) {
 	OutputDebugString("Hello World!\n");
 
@@ -2654,7 +2705,7 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 
 	gl_renderer->fireball_speed = 10.0f;
 
-	init_job_system(); 
+	init_job_system(execute_job_type); 
 
 	bool running = true;
 	while (running) {
@@ -2670,7 +2721,6 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 			if (msg.message == WM_QUIT) {
 				running = false;
 			}
-			
 		}
 
 		uint64_t current_milliseconds = get_clock_milliseconds();
@@ -2799,29 +2849,7 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		gl_update_renderer(gl_renderer);
 		SwapBuffers(gl_renderer->hdc);
 
-		add_job(JT_Increment_Number);
-		add_job(JT_Print_Stars);
-		add_job(JT_Increment_Number);
-		add_job(JT_Print_Stars);
-		add_job(JT_Increment_Number);
-		add_job(JT_Print_Stars);
-		add_job(JT_Increment_Number);
-		add_job(JT_Print_Stars);
-		add_job(JT_Increment_Number);
-		add_job(JT_Print_Stars);
-
-		add_job(JT_Increment_Number);
-		add_job(JT_Print_Stars);
-		add_job(JT_Increment_Number);
-		add_job(JT_Print_Stars);
-		add_job(JT_Increment_Number);
-		add_job(JT_Print_Stars);
-		add_job(JT_Increment_Number);
-		add_job(JT_Print_Stars);
-		add_job(JT_Increment_Number);
-		add_job(JT_Print_Stars);
-
-		ensure_threads_finished();
+		// AddJob
 		
 		Sleep(10);
 	}

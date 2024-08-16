@@ -10,13 +10,18 @@
 enum Job_Type {
 	JT_Increment_Number,
 	JT_Print_Stars,
+	JT_Generate_World_Chunk,
 	JT_Total
 };
 
-void init_job_system();
+struct Job {
+	Job_Type type;
+	void* data;
+};
+
+void init_job_system(void(*execute_job_type)(Job_Type, void*));
 void terminate_all_threads();
-void ensure_threads_finished();
-void add_job(Job_Type type);
+void add_job(Job_Type type, void* data);
 
 // In order, what to do:
 // 1) Add a job to a job list
