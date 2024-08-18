@@ -1575,6 +1575,7 @@ Chunk* get_existing_chunk(GL_Renderer* gl_renderer, int x, int y) {
 	return result;
 }
 
+std::mutex buffer_world_mutex;
 void buffer_world_chunk(GL_Renderer* gl_renderer, int chunk_world_index_x, int chunk_world_index_y) {
 	ZoneScoped;
 	Chunk* chunk = get_existing_chunk(gl_renderer, chunk_world_index_x, chunk_world_index_y);
@@ -1682,6 +1683,9 @@ void buffer_world_chunk(GL_Renderer* gl_renderer, int chunk_world_index_x, int c
 					// Emit a face
 					// The points go in clockwise order
 					// NOTE: This offset is wrong
+					if (current_cube->type == IT_Air) {
+						assert(false);
+					}
 					Image_Type t = current_cube->type;
 					if (back_cube.type == IT_Air) {
 						// Emit a face
@@ -2013,6 +2017,10 @@ void buffer_world_chunk(GL_Renderer* gl_renderer, int chunk_world_index_x, int c
 			//											  size of the data that is being replaced
 			glBufferSubData(GL_ARRAY_BUFFER, (GLintptr)0, new_size, faces_vertices.data());
 
+			// IF I HIT THIS, I KNOW THERE'S AN ISSUE WITH THE LOGIC
+			if (chunk->ebo <= 0) {
+				assert(false);
+			}
 			glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, chunk->ebo);
 			glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, (GLintptr)0, faces_indices.size() * sizeof(UINT32), faces_indices.data());
 		}
@@ -2377,6 +2385,9 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 		data->noise = noise;
 		add_job(JT_Generate_World_Chunk, data);
 		// generate_world_chunk(gl_renderer, (int)chunk.x, (int)chunk.y, noise);
+	}
+	while(!threads_finished_executing_jobs()) {
+		// Wait
 	}
 	// Buffer the data second
 	for (V2 chunk : chunks_to_generate) {

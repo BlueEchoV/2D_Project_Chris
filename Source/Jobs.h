@@ -20,6 +20,7 @@ struct Job {
 };
 
 void init_job_system(void(*execute_job_type)(Job_Type, void*));
+bool threads_finished_executing_jobs();
 void terminate_all_threads();
 void add_job(Job_Type type, void* data);
 
