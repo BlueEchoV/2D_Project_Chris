@@ -11,6 +11,7 @@ enum Job_Type {
 	JT_Increment_Number,
 	JT_Print_Stars,
 	JT_Generate_World_Chunk,
+	JT_Buffer_World_Chunk,
 	JT_Total
 };
 
@@ -20,7 +21,7 @@ struct Job {
 };
 
 void init_job_system(void(*execute_job_type)(Job_Type, void*));
-bool threads_finished_executing_jobs();
+int get_semaphore_count();
 void terminate_all_threads();
 void add_job(Job_Type type, void* data);
 

@@ -205,6 +205,8 @@ struct Chunk {
 	int chunk_y;
 	bool allocated = false;
 	bool buffer_sub_data = false;
+	
+	std::atomic<bool> is_buffered = false;
 
 	GLuint total_vertices;
 	GLuint vbo;
@@ -1465,11 +1467,12 @@ V2 get_texture_sprite_sheet_uv_coordinates(Image_Type type, int pos_x, int pos_y
 	return result;
 }
 
-struct Generate_Chunks_Function {
+struct Job_Chunk {
 	GL_Renderer* gl_renderer;
 	int chunk_world_index_x;
 	int chunk_world_index_y;
 	float noise;
+	std::atomic<bool> data_is_buffered = false;
 };
 
 std::mutex generate_chunk_mutex;
@@ -1493,9 +1496,14 @@ void generate_world_chunk(GL_Renderer* gl_renderer, int chunk_world_index_x, int
 	if (new_chunk == nullptr) {
 		for (Chunk* chunk : gl_renderer->chunks_to_draw) {
 			if (chunk->allocated == false) {
-				new_chunk = chunk;
-				new_chunk->buffer_sub_data = true;
-				break;
+				if (chunk->is_buffered) {
+					new_chunk = chunk;
+					new_chunk->buffer_sub_data = true;
+					break;
+				} else {
+					// DON'T REGENERATE IF IT IS IN THE PROCESS OF BEING BUFFERED
+					return;
+				}
 			}
 		}
 	}
@@ -1508,6 +1516,7 @@ void generate_world_chunk(GL_Renderer* gl_renderer, int chunk_world_index_x, int
 		generate_chunk_mutex.unlock();
 	}
 
+	new_chunk->is_buffered = false;
 	new_chunk->allocated = true;
 
 	new_chunk->chunk_x = chunk_world_index_x;
@@ -2023,6 +2032,7 @@ void buffer_world_chunk(GL_Renderer* gl_renderer, int chunk_world_index_x, int c
 			}
 			glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, chunk->ebo);
 			glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, (GLintptr)0, faces_indices.size() * sizeof(UINT32), faces_indices.data());
+			chunk->is_buffered = true;
 		}
 		else {
 			force_reallocate = true;
@@ -2051,6 +2061,7 @@ void buffer_world_chunk(GL_Renderer* gl_renderer, int chunk_world_index_x, int c
 			gl_renderer->chunks_to_draw.push_back(chunk);
 		}
 #endif
+		chunk->is_buffered = true;
 	}
 	faces_vertices.clear();
 }
@@ -2064,39 +2075,41 @@ void gl_draw_cube_faces_vbo(GL_Renderer* gl_renderer, GLuint textures_handle) {
 	// Bind the sprite sheet with all the textures
 	// log("chunks_to_draw_size = %i", gl_renderer->chunks_to_draw.size());
 	for (Chunk* chunk: gl_renderer->chunks_to_draw) {
-		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, chunk->ebo);
-		if (chunk->ebo <= 0) {
-			assert(false);
+		if (chunk->is_buffered == true) {
+			glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, chunk->ebo);
+			if (chunk->ebo <= 0) {
+				assert(false);
+			}
+			glBindBuffer(GL_ARRAY_BUFFER, chunk->vbo);
+			glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Faces), (void*)offsetof(Vertex_3D_Faces, pos));
+			glEnableVertexAttribArray(0);
+			glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Faces), (void*)offsetof(Vertex_3D_Faces, uv));
+			glEnableVertexAttribArray(1);
+			glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Faces), (void*)offsetof(Vertex_3D_Faces, normal));
+			glEnableVertexAttribArray(2);
+
+			glBindTexture(GL_TEXTURE_2D, textures_handle);
+
+			GLuint shader_program = shader_program_types[SPT_Cube_Face];
+			if (!shader_program) {
+				log("ERROR: Shader program not specified");
+				assert(false);
+			}
+			glUseProgram(shader_program);
+
+			MX4 perspective_from_world = gl_renderer->perspective_from_view * gl_renderer->view_from_world;
+
+			GLuint perspective_from_world_loc = glGetUniformLocation(shader_program, "perspective_from_world");
+			glUniformMatrix4fv(perspective_from_world_loc, 1, GL_FALSE, perspective_from_world.e);
+
+			GLuint time_loc = glGetUniformLocation(shader_program, "u_time");
+			glUniform1f(time_loc, gl_renderer->time);
+
+			// GLuint light_fireball_loc = glGetUniformLocation(shader_program, "light_position_fireball");
+			// glUniform3fv(time_loc, );
+
+			glDrawElements(GL_TRIANGLES, chunk->total_indices_to_be_rendered, GL_UNSIGNED_INT, (void*)0);
 		}
-		glBindBuffer(GL_ARRAY_BUFFER, chunk->vbo);
-		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Faces), (void*)offsetof(Vertex_3D_Faces, pos));
-		glEnableVertexAttribArray(0);
-		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Faces), (void*)offsetof(Vertex_3D_Faces, uv));
-		glEnableVertexAttribArray(1);
-		glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Faces), (void*)offsetof(Vertex_3D_Faces, normal));
-		glEnableVertexAttribArray(2);
-
-		glBindTexture(GL_TEXTURE_2D, textures_handle);
-
-		GLuint shader_program = shader_program_types[SPT_Cube_Face];
-		if (!shader_program) {
-			log("ERROR: Shader program not specified");
-			assert(false);
-		}
-		glUseProgram(shader_program);
-
-		MX4 perspective_from_world = gl_renderer->perspective_from_view * gl_renderer->view_from_world;
-
-		GLuint perspective_from_world_loc = glGetUniformLocation(shader_program, "perspective_from_world");
-		glUniformMatrix4fv(perspective_from_world_loc, 1, GL_FALSE, perspective_from_world.e);
-
-		GLuint time_loc = glGetUniformLocation(shader_program, "u_time");
-		glUniform1f(time_loc, gl_renderer->time);
-
-		// GLuint light_fireball_loc = glGetUniformLocation(shader_program, "light_position_fireball");
-		// glUniform3fv(time_loc, );
-
-		glDrawElements(GL_TRIANGLES, chunk->total_indices_to_be_rendered, GL_UNSIGNED_INT, (void*)0);
 	}
 }
 
@@ -2297,7 +2310,7 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 		&& current_chunk_player_y == previous_chunk_player_y) {
 		player_on_same_chunk = true;
 	}
-	std::vector<V2> chunks_to_generate = {};
+	std::vector<Job_Chunk*> chunks_to_generate = {};
 	if (player_on_same_chunk == false || force_regenerate) {
 		for (Chunk* chunk : gl_renderer->chunks_to_draw) {
 			chunk->allocated = false;
@@ -2369,7 +2382,13 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 					}
 				}
 				if (already_generated == false) {
-					chunks_to_generate.push_back({(float)chunk_x, (float)chunk_y});
+					Job_Chunk* data = new Job_Chunk;
+					data->gl_renderer = gl_renderer;
+					data->chunk_world_index_x = (int)chunk_x;
+					data->chunk_world_index_y = (int)chunk_y;
+					data->noise = noise;
+					data->data_is_buffered = false;
+					chunks_to_generate.push_back(data);
 				}
 			}
 		}
@@ -2377,23 +2396,19 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 	// Do this after the loop so we don't overwrite any currently allocated chunks
 	// log("chunks_to_generate_size = %i", chunks_to_generate.size());
 	// Generate the chunks first
-	for (V2 chunk : chunks_to_generate) {
-		Generate_Chunks_Function* data = new Generate_Chunks_Function;
-		data->gl_renderer = gl_renderer;
-		data->chunk_world_index_x = (int)chunk.x;
-		data->chunk_world_index_y = (int)chunk.y;
-		data->noise = noise;
-		add_job(JT_Generate_World_Chunk, data);
-		// generate_world_chunk(gl_renderer, (int)chunk.x, (int)chunk.y, noise);
+	for (Job_Chunk* chunk : chunks_to_generate) {
+		add_job(JT_Generate_World_Chunk, chunk);
 	}
-	while(!threads_finished_executing_jobs()) {
-		// Wait
+	while (get_semaphore_count() > 0) {
+		// wait
 	}
 	// Buffer the data second
-	for (V2 chunk : chunks_to_generate) {
-		buffer_world_chunk(gl_renderer, (int)chunk.x, (int)chunk.y);
+	for (Job_Chunk* chunk : chunks_to_generate) {
+		// add_job(JT_Buffer_World_Chunk, chunk);
+		buffer_world_chunk(gl_renderer, chunk->chunk_world_index_x, chunk->chunk_world_index_y);
 	}
 	chunks_to_generate.clear();
+#if 0
 	std::erase_if(gl_renderer->chunks_to_draw, [](const Chunk* chunk) {
 		if (!chunk->allocated) {
 			glDeleteBuffers(1, &chunk->vbo);
@@ -2402,6 +2417,7 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 		}
 		return false;
 	});
+#endif
 	gl_draw_cube_faces_vbo(gl_renderer, textures_handle);
 	force_regenerate = false;
 	profile_time_to_execute_finish_milliseconds("generate_and_draw_chunks_around_player", false);
@@ -2657,8 +2673,16 @@ void execute_job_type(Job_Type type, void* d) {
 		break;
 	}
 	case JT_Generate_World_Chunk: {
-		Generate_Chunks_Function* data = (Generate_Chunks_Function*)d;
+		Job_Chunk* data = (Job_Chunk*)d;
 		generate_world_chunk(data->gl_renderer, data->chunk_world_index_x, data->chunk_world_index_y, data->noise);
+		break;
+	}
+	case JT_Buffer_World_Chunk: {
+		Job_Chunk* data = (Job_Chunk*)d;
+		if (data->data_is_buffered == false) {
+			buffer_world_chunk(data->gl_renderer, data->chunk_world_index_x, data->chunk_world_index_y);
+			data->data_is_buffered = true;
+		}
 		break;
 	}
 	default: {

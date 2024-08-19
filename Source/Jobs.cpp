@@ -6,16 +6,13 @@
 
 std::mutex job_mutex;
 std::vector<Job> jobs = {};
-int current_threads_executing_a_job = 0;
 const int TOTAL_THREADS = 10;
-std::counting_semaphore<100> semaphore(0);
+std::counting_semaphore<200> semaphore(0);
+std::atomic semaphore_count = 0;
 std::vector<std::thread> threads;
 
-bool threads_finished_executing_jobs() {
-	if (current_threads_executing_a_job <= 0) {
-		return true;
-	}
-	return false;
+int get_semaphore_count() {
+	return semaphore_count;
 }
 
 void add_job(Job_Type type, void* data) {
@@ -25,6 +22,7 @@ void add_job(Job_Type type, void* data) {
 	new_job.data = data;
 	jobs.push_back(new_job);
     semaphore.release();  
+	semaphore_count++;
 	job_mutex.unlock();
 }
 
@@ -35,6 +33,7 @@ void terminate_all_threads() {
 		// Wakeup all the threads to check the 
 		// should_terminate_threads variable
 		semaphore.release();
+		semaphore_count++;
 	}
 }
 
@@ -62,9 +61,8 @@ void thread_worker(void(*execute_job_type)(Job_Type, void*)) {
 		jobs.pop_back();
 		job_mutex.unlock();
 
-		current_threads_executing_a_job++;
 		execute_job_type(job.type, job.data);  
-		current_threads_executing_a_job--;
+		semaphore_count--;
     }
 }
 
