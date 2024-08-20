@@ -2272,13 +2272,27 @@ void draw_chunks_around_player(GL_Renderer* gl_renderer) {
 }
 #endif
 
+void get_player_chunk(GL_Renderer* gl_renderer, int& x, int& y) {
+	// I need to account for negative values.
+	x = ((int)gl_renderer->player_pos.x / CHUNK_WIDTH);
+	if (gl_renderer->player_pos.x < 0) {
+		x -= 1;
+	}
+	y = ((int)gl_renderer->player_pos.y / CHUNK_LENGTH);
+	if (gl_renderer->player_pos.y < 0) {
+		y -= 1;
+	}
+}
+
 int apron_size = 1;
 void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint textures_handle, float noise) {
 	profile_time_to_execute_start_milliseconds();
 	// ONLY overwrite if we are in range of new chunks
 	// log("x = %fg, z = %f", gl_renderer->player_pos.x, gl_renderer->player_pos.y);
-	int current_chunk_player_x = (int)gl_renderer->player_pos.x / CHUNK_WIDTH;
-	int current_chunk_player_y = (int)gl_renderer->player_pos.y / CHUNK_LENGTH;
+	int current_chunk_player_x = 0;
+	int current_chunk_player_y = 0;
+	get_player_chunk(gl_renderer, current_chunk_player_x, current_chunk_player_y);
+	// log("Player is on chunk: x = %i, y = %i", current_chunk_player_x, current_chunk_player_y);
 
 	int previous_chunk_player_x = gl_renderer->previous_chunk_player_x;
 	int previous_chunk_player_y = gl_renderer->previous_chunk_player_y;
@@ -2290,8 +2304,51 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 	}
 	std::vector<Job_Chunk*> chunks_to_generate = {};
 	if (player_on_same_chunk == false || force_regenerate) {
+		int difference_x = current_chunk_player_x - gl_renderer->previous_chunk_player_x;
+		int difference_y = current_chunk_player_y - gl_renderer->previous_chunk_player_y;
+
 		gl_renderer->previous_chunk_player_x = current_chunk_player_x;
 		gl_renderer->previous_chunk_player_y = current_chunk_player_y;
+		
+		// Erase all the aprons so they can regenerate
+		std::erase_if(gl_renderer->chunks_to_draw, [difference_x, difference_y](const Chunk* chunk) {
+			if (chunk->is_apron) {
+				// Positive X
+				if (difference_x > 0) {
+					if (chunk->chunk_x >= 0) {
+						glDeleteBuffers(1, &chunk->vbo);
+						delete chunk;
+						return true;
+					}
+				}
+				// Positive Y
+				if (difference_y > 0) {
+					if (chunk->chunk_y >= 0) {
+						glDeleteBuffers(1, &chunk->vbo);
+						delete chunk;
+						return true;
+					}
+				}
+				// Negative X
+				if (difference_x < 0) {
+					if (chunk->chunk_x < 0) {
+						glDeleteBuffers(1, &chunk->vbo);
+						delete chunk;
+						return true;
+					}
+				}
+				// Negative Y
+				if (difference_y < 0) {
+					if (chunk->chunk_y < 0) {
+						glDeleteBuffers(1, &chunk->vbo);
+						delete chunk;
+						return true;
+					}
+				}
+			}
+			return false;
+		});
+
 
 		for (Chunk* chunk : gl_renderer->chunks_to_draw) {
 			chunk->allocated = false;
@@ -2391,7 +2448,6 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 	}
 	chunks_to_generate.clear();
 
-#if 0
 	std::erase_if(gl_renderer->chunks_to_draw, [](const Chunk* chunk) {
 		if (!chunk->allocated) {
 			glDeleteBuffers(1, &chunk->vbo);
@@ -2400,7 +2456,6 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 		}
 		return false;
 	});
-#endif
 
 	gl_draw_cube_faces_vbo(gl_renderer, textures_handle);
 	force_regenerate = false;
@@ -2547,13 +2602,9 @@ const float GRAVITY = 0.1f;
 void check_player_collision(GL_Renderer* gl_renderer) {
 	// FOUND THE PROBLEM. THIS VALUE HERE IS NOT CALCULATING THE APPROPRIATE 
 	// CHUNK WHEN THE VALUE IS NEGATIVE.
-	int chunk_player_is_on_x = (int)gl_renderer->player_pos.x / CHUNK_WIDTH;
-#if 0
-	if ((int)gl_renderer->player_pos.x < 0) {
-		(int)gl_renderer->player_pos.x;
-	}
-#endif
-	int chunk_player_is_on_y = (int)gl_renderer->player_pos.y / CHUNK_LENGTH;
+	int chunk_player_is_on_x = 0; 
+	int chunk_player_is_on_y = 0;
+	get_player_chunk(gl_renderer, chunk_player_is_on_x, chunk_player_is_on_y);
 	log("Chunk player is on: x = %i, y = %i", chunk_player_is_on_x, chunk_player_is_on_y);
 
 	Chunk* chunk_player_is_on = nullptr;
@@ -2877,8 +2928,8 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		for (Chunk* chunk : gl_renderer->chunks_to_draw) {
 			std::string str = std::to_string(chunk->chunk_x) + "," + std::to_string(chunk->chunk_y);
 			V3 chunk_pos = { (float)chunk->chunk_x * CHUNK_WIDTH, (float)chunk->chunk_y * CHUNK_LENGTH, (float)CHUNK_HEIGHT };
-			chunk_pos.x += CHUNK_WIDTH / 2;
-			chunk_pos.y += CHUNK_LENGTH / 2;
+			// chunk_pos.x += CHUNK_WIDTH / 2;
+			// chunk_pos.y += CHUNK_LENGTH / 2;
 			if (chunk->is_apron) {
 				std::string apron_str = "AP";
 				draw_string_ws(gl_renderer, &font, apron_str.c_str(), chunk_pos, 1, false);
