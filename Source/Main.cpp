@@ -128,7 +128,7 @@ struct Chunk_Vbo {
 	int chunk_y;
 	GLuint total_vertices;
 	GLuint vbo;
-	bool destroy = false;;
+	bool destroy = false;
 };
 
 // IN CHUNKS
@@ -200,13 +200,12 @@ const int CHUNK_LENGTH = 16;
 const int CHUNK_HEIGHT = 256;
 
 struct Chunk {
-	GLuint ebo;
+	bool is_apron = false;
 	int chunk_x;
 	int chunk_y;
+	GLuint ebo;
 	bool allocated = false;
 	bool buffer_sub_data = false;
-	
-	std::atomic<bool> is_buffered = false;
 
 	GLuint total_vertices;
 	GLuint vbo;
@@ -1472,52 +1471,38 @@ struct Job_Chunk {
 	int chunk_world_index_x;
 	int chunk_world_index_y;
 	float noise;
+	bool is_apron = false;
 	std::atomic<bool> data_is_buffered = false;
 };
 
 std::mutex generate_chunk_mutex;
-void generate_world_chunk(GL_Renderer* gl_renderer, int chunk_world_index_x, int chunk_world_index_y, float noise) {
+void generate_world_chunk(GL_Renderer* gl_renderer, int chunk_world_index_x, int chunk_world_index_y, bool is_apron, float noise) {
 	ZoneScoped;
 	Chunk* new_chunk = nullptr;
 
-#if 0
-	// See if we have the same chunk coordinates in the draw commands
-	// This means we are trying to generate a chunk at a coordinate that already exists
-	for (Chunk* chunk : gl_renderer->chunks_to_draw) {
-		if (chunk->chunk_x == chunk_world_index_x && chunk->chunk_y == chunk_world_index_y) {
-			new_chunk = chunk;
-			new_chunk->buffer_sub_data = true;
-			break;
-		}
-	}
-#endif
-
 	// See if there is a empty spot in the chunks_to_draw vector
 	if (new_chunk == nullptr) {
+		generate_chunk_mutex.lock();
 		for (Chunk* chunk : gl_renderer->chunks_to_draw) {
 			if (chunk->allocated == false) {
-				if (chunk->is_buffered) {
-					new_chunk = chunk;
-					new_chunk->buffer_sub_data = true;
-					break;
-				} else {
-					// DON'T REGENERATE IF IT IS IN THE PROCESS OF BEING BUFFERED
-					return;
-				}
+				new_chunk = chunk;
+				new_chunk->buffer_sub_data = true;
 			}
 		}
+		generate_chunk_mutex.unlock();
 	}
 	// Create the chunk of the spot doesn't exist
 	if (new_chunk == nullptr) {
 		new_chunk = new Chunk();
 		new_chunk->buffer_sub_data = false;
 		generate_chunk_mutex.lock();
+		// This should be done in the main thread.
 		gl_renderer->chunks_to_draw.push_back(new_chunk);
 		generate_chunk_mutex.unlock();
 	}
 
-	new_chunk->is_buffered = false;
 	new_chunk->allocated = true;
+	new_chunk->is_apron = is_apron;
 
 	new_chunk->chunk_x = chunk_world_index_x;
 	new_chunk->chunk_y = chunk_world_index_y;
@@ -2032,7 +2017,6 @@ void buffer_world_chunk(GL_Renderer* gl_renderer, int chunk_world_index_x, int c
 			}
 			glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, chunk->ebo);
 			glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, (GLintptr)0, faces_indices.size() * sizeof(UINT32), faces_indices.data());
-			chunk->is_buffered = true;
 		}
 		else {
 			force_reallocate = true;
@@ -2048,20 +2032,12 @@ void buffer_world_chunk(GL_Renderer* gl_renderer, int chunk_world_index_x, int c
 		chunk->buffer_size = sizeof(Vertex_3D_Faces) * faces_vertices.size();
 		glBufferData(GL_ARRAY_BUFFER, sizeof(Vertex_3D_Faces) * faces_vertices.size(), faces_vertices.data(), GL_STATIC_DRAW);
 
-
 		if (chunk->ebo <= 0) {
 			glGenBuffers(1, &chunk->ebo);
 		}
 		// Elements buffer
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, chunk->ebo);
 		glBufferData(GL_ELEMENT_ARRAY_BUFFER, faces_indices.size() * sizeof(UINT32), faces_indices.data(), GL_STATIC_DRAW);
-
-#if 0
-		if (!chunk_already_in_chunks_to_draw) {
-			gl_renderer->chunks_to_draw.push_back(chunk);
-		}
-#endif
-		chunk->is_buffered = true;
 	}
 	faces_vertices.clear();
 }
@@ -2070,12 +2046,13 @@ void gl_draw_cube_faces_vbo(GL_Renderer* gl_renderer, GLuint textures_handle) {
 	// V3 light_position = {};
 	// if (gl_renderer->fireballs.size() > 0) {
 	// 	light_position = gl_renderer->fireballs[0].pos;
-	// }
+	// }/
 
 	// Bind the sprite sheet with all the textures
 	// log("chunks_to_draw_size = %i", gl_renderer->chunks_to_draw.size());
 	for (Chunk* chunk: gl_renderer->chunks_to_draw) {
-		if (chunk->is_buffered == true) {
+		// DON'T DRAW THE APRON
+		if (chunk->is_apron == false) {
 			glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, chunk->ebo);
 			if (chunk->ebo <= 0) {
 				assert(false);
@@ -2295,6 +2272,7 @@ void draw_chunks_around_player(GL_Renderer* gl_renderer) {
 }
 #endif
 
+int apron_size = 1;
 void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint textures_handle, float noise) {
 	profile_time_to_execute_start_milliseconds();
 	// ONLY overwrite if we are in range of new chunks
@@ -2312,87 +2290,86 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 	}
 	std::vector<Job_Chunk*> chunks_to_generate = {};
 	if (player_on_same_chunk == false || force_regenerate) {
-		for (Chunk* chunk : gl_renderer->chunks_to_draw) {
-			chunk->allocated = false;
-		}
-		// This is for regenerating the outer walls that have 
-		// faces being draw. We need to regenerate them so 
-		// the don't linger.
-		bool should_force_regen_row_x = false;
-		int force_regen_row_x = 0;
-		if (previous_chunk_player_x != current_chunk_player_x) {
-			if (previous_chunk_player_x < current_chunk_player_x) {
-				force_regen_row_x = previous_chunk_player_x + VIEW_DISTANCE - 1;
-				should_force_regen_row_x = true;
-			}
-			if (previous_chunk_player_x > current_chunk_player_x) {
-				force_regen_row_x = previous_chunk_player_x + -VIEW_DISTANCE;
-				should_force_regen_row_x = true;
-			}
-		}
-		bool should_force_regen_row_y = false;
-		int force_regen_row_y = 0;
-		if (previous_chunk_player_y != current_chunk_player_y) {
-			if (previous_chunk_player_y < current_chunk_player_y) {
-				force_regen_row_y = previous_chunk_player_y + VIEW_DISTANCE - 1;
-				should_force_regen_row_y = true;
-			}
-			if (previous_chunk_player_y> current_chunk_player_y) {
-				force_regen_row_y = previous_chunk_player_y + -VIEW_DISTANCE;
-				should_force_regen_row_y = true;
-			}
-		}
-
 		gl_renderer->previous_chunk_player_x = current_chunk_player_x;
 		gl_renderer->previous_chunk_player_y = current_chunk_player_y;
 
-		for (int x = -VIEW_DISTANCE; x < VIEW_DISTANCE; x++) {
-			for (int y = -VIEW_DISTANCE; y < VIEW_DISTANCE; y++) {
+		for (Chunk* chunk : gl_renderer->chunks_to_draw) {
+			chunk->allocated = false;
+			chunk->is_apron = false;
+		}
+
+		// log("*****************************");
+		int total_checked = 0;
+		for (int x = -VIEW_DISTANCE - apron_size; x <= VIEW_DISTANCE + apron_size; x++) {
+			for (int y = -VIEW_DISTANCE - apron_size; y <= VIEW_DISTANCE + apron_size; y++) {
+				bool is_apron = false;
+				if (x == -VIEW_DISTANCE - apron_size ||
+					y == -VIEW_DISTANCE - apron_size ||
+					x == VIEW_DISTANCE + apron_size ||
+					y == VIEW_DISTANCE + apron_size) {
+					is_apron = true;
+				}
+
 				int chunk_x = x + current_chunk_player_x;
 				int chunk_y = y + current_chunk_player_y;
+				if (chunk_x > current_chunk_player_x + VIEW_DISTANCE + apron_size ||
+					chunk_x < current_chunk_player_x - VIEW_DISTANCE - apron_size || 
+					chunk_y > current_chunk_player_y + VIEW_DISTANCE + apron_size ||
+					chunk_y < current_chunk_player_y - VIEW_DISTANCE - apron_size) {
+					assert(false);
+				}
 				bool already_generated = false;
 				Chunk* previous_chunk = nullptr;
 				for (Chunk* chunk : gl_renderer->chunks_to_draw) {
 					if (chunk->chunk_x == chunk_x &&
 						chunk->chunk_y == chunk_y) {
-						if (force_regen_row_x == chunk->chunk_x) {
-							if (should_force_regen_row_x) {
-								chunk->allocated = false;
-								already_generated = false;
-							}
-						}
-						if (force_regen_row_y == chunk->chunk_y) {
-							if (should_force_regen_row_y) {
-								chunk->allocated = false;
-								already_generated = false;
-							}
-						}
-						if (force_regen_row_x == chunk->chunk_x || force_regen_row_y == chunk->chunk_y) {
-							continue;
-						}
+						total_checked++;
+
+#if 0
 						if (previous_chunk != nullptr) {
 							previous_chunk->allocated = false;
 							chunk->allocated = true;
 							previous_chunk = chunk;
 							continue;
 						}
+#endif
 						chunk->allocated = true;
+						chunk->is_apron = is_apron;
 						already_generated = true;
 						previous_chunk = chunk;
 					}
 				}
+
 				if (already_generated == false) {
+					total_checked++;
 					Job_Chunk* data = new Job_Chunk;
 					data->gl_renderer = gl_renderer;
-					data->chunk_world_index_x = (int)chunk_x;
-					data->chunk_world_index_y = (int)chunk_y;
+					data->chunk_world_index_x = chunk_x;
+					data->chunk_world_index_y = chunk_y;
 					data->noise = noise;
 					data->data_is_buffered = false;
+					data->is_apron = is_apron;
 					chunks_to_generate.push_back(data);
 				}
 			}
 		}
+		// log("Total draw calls: %i", (int)gl_renderer->chunks_to_draw.size());
+		// log("Total checked:    %i", total_checked);
 	}
+
+#if 0
+	for (Chunk* chunk : gl_renderer->chunks_to_draw) {
+		int temp_x = current_chunk_player_x - chunk->chunk_x;
+		int temp_y = current_chunk_player_y - chunk->chunk_y;
+		if (temp_x < -VIEW_DISTANCE - apron_size ||
+			temp_y < -VIEW_DISTANCE - apron_size ||
+			temp_x > VIEW_DISTANCE + apron_size ||
+			temp_y > VIEW_DISTANCE + apron_size) {
+			if (chunk);
+		}
+	}
+#endif
+
 	// Do this after the loop so we don't overwrite any currently allocated chunks
 	// log("chunks_to_generate_size = %i", chunks_to_generate.size());
 	// Generate the chunks first
@@ -2402,12 +2379,18 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 	while (get_semaphore_count() > 0) {
 		// wait
 	}
-	// Buffer the data second
+	// We don't want to proceed until all the chunks have finished generating
 	for (Job_Chunk* chunk : chunks_to_generate) {
+		// NOTE: Add jobs function here didn't work as intended. Only one call to 
+		// glBuffer data can happen at a time. Not in multiple chunks.
 		// add_job(JT_Buffer_World_Chunk, chunk);
 		buffer_world_chunk(gl_renderer, chunk->chunk_world_index_x, chunk->chunk_world_index_y);
 	}
+	for (Job_Chunk* chunk : chunks_to_generate) {
+		delete chunk;
+	}
 	chunks_to_generate.clear();
+
 #if 0
 	std::erase_if(gl_renderer->chunks_to_draw, [](const Chunk* chunk) {
 		if (!chunk->allocated) {
@@ -2418,14 +2401,15 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 		return false;
 	});
 #endif
+
 	gl_draw_cube_faces_vbo(gl_renderer, textures_handle);
 	force_regenerate = false;
 	profile_time_to_execute_finish_milliseconds("generate_and_draw_chunks_around_player", false);
 }
 
 void draw_wire_frames(GL_Renderer* gl_renderer){
-	for (int x = -VIEW_DISTANCE; x < VIEW_DISTANCE; x++) {
-		for (int y = -VIEW_DISTANCE; y < VIEW_DISTANCE; y++) {
+	for (int x = -VIEW_DISTANCE - apron_size; x < VIEW_DISTANCE + apron_size; x++) {
+		for (int y = -VIEW_DISTANCE - apron_size; y < VIEW_DISTANCE + apron_size; y++) {
 			int chunk_selected_x = x + gl_renderer->previous_chunk_player_x;
 			int chunk_selected_y = y + gl_renderer->previous_chunk_player_y;
 			// This is the corner position of the chunk. 
@@ -2561,8 +2545,16 @@ void draw_mx4(GL_Renderer* gl_renderer, std::string mx_name, Font* font, MX4 mx,
 V3 cube_position_player_is_on = {};
 const float GRAVITY = 0.1f;
 void check_player_collision(GL_Renderer* gl_renderer) {
+	// FOUND THE PROBLEM. THIS VALUE HERE IS NOT CALCULATING THE APPROPRIATE 
+	// CHUNK WHEN THE VALUE IS NEGATIVE.
 	int chunk_player_is_on_x = (int)gl_renderer->player_pos.x / CHUNK_WIDTH;
+#if 0
+	if ((int)gl_renderer->player_pos.x < 0) {
+		(int)gl_renderer->player_pos.x;
+	}
+#endif
 	int chunk_player_is_on_y = (int)gl_renderer->player_pos.y / CHUNK_LENGTH;
+	log("Chunk player is on: x = %i, y = %i", chunk_player_is_on_x, chunk_player_is_on_y);
 
 	Chunk* chunk_player_is_on = nullptr;
 	for (Chunk* chunk : gl_renderer->chunks_to_draw) {
@@ -2585,10 +2577,24 @@ void check_player_collision(GL_Renderer* gl_renderer) {
 	// NOTE: SOMETHING WRONG WITH THIS
 	// Offset the player a little so we are standing on top of the cube
 	int offset_z = 1;
-	int player_cube_pos_x = (int)gl_renderer->player_pos.x % CHUNK_WIDTH;
-	int player_cube_pos_y = (int)gl_renderer->player_pos.y % CHUNK_LENGTH;
-	int player_cube_pos_z = (int)gl_renderer->player_pos.z % CHUNK_HEIGHT;
-	player_cube_pos_z += -offset_z;
+	int player_cube_pos_x = 0;
+	if (gl_renderer->player_pos.x < 0) {
+		player_cube_pos_x = (int)(gl_renderer->player_pos.x * -1) % CHUNK_WIDTH;
+		player_cube_pos_x *= -1;
+	} else {
+		player_cube_pos_x = (int)gl_renderer->player_pos.x % CHUNK_WIDTH;
+	} 
+
+	int player_cube_pos_y = 0;
+	if (gl_renderer->player_pos.y < 0) {
+		player_cube_pos_y = (int)(gl_renderer->player_pos.y * -1) % CHUNK_LENGTH;
+		player_cube_pos_y *= -1;
+	} else {
+		player_cube_pos_y = (int)gl_renderer->player_pos.y % CHUNK_LENGTH;
+	} 
+	// log("Player is on cube: x = %i, y = %i", player_cube_pos_x, player_cube_pos_y);
+
+	int player_cube_pos_z = (int)gl_renderer->player_pos.z;
 	
 	if (player_cube_pos_x < 0) {
 		player_cube_pos_x += CHUNK_WIDTH;
@@ -2603,6 +2609,7 @@ void check_player_collision(GL_Renderer* gl_renderer) {
 				if (x == player_cube_pos_x &&
 					y == player_cube_pos_y &&
 					z == player_cube_pos_z) {
+					log("Cube player is supposedly on: x = %i, y = %i", player_cube_pos_x, player_cube_pos_y);
 					cube_player_is_on = &chunk_player_is_on->cubes[x][y][z];
 					cube_player_is_on_pos = {(float)x, (float)y, (float)z};
 					cube_position_player_is_on = cube_player_is_on_pos;
@@ -2638,13 +2645,11 @@ void draw_cube_coordinates(GL_Renderer* gl_renderer, Font* font) {
 	for (Chunk* chunk : gl_renderer->chunks_to_draw) {
 		for (int x = 0; x < CHUNK_WIDTH; x++) {
 			for (int y = 0; y < CHUNK_LENGTH; y++) {
-				for (int z = 0; z < CHUNK_HEIGHT; z++) {
-					V3 cube_pos = { (float)x, (float)y, (float)z };
-					cube_pos.x += chunk->chunk_x * CHUNK_WIDTH;
-					cube_pos.y += chunk->chunk_y * CHUNK_LENGTH;
-					std::string str = std::to_string(chunk->chunk_x) + " " + std::to_string(chunk->chunk_y);
-					draw_string_ws(gl_renderer, font, str.c_str(), cube_pos, 2, false);
-				}
+				V3 cube_pos = { (float)x, (float)y, (float)CHUNK_HEIGHT };
+				cube_pos.x += chunk->chunk_x * CHUNK_WIDTH;
+				cube_pos.y += chunk->chunk_y * CHUNK_LENGTH;
+				std::string str = "[" + std::to_string(x) + "," + std::to_string(y) + "]";
+				draw_string_ws(gl_renderer, font, str.c_str(), cube_pos, 2, false);
 			}
 		}
 	}
@@ -2674,7 +2679,7 @@ void execute_job_type(Job_Type type, void* d) {
 	}
 	case JT_Generate_World_Chunk: {
 		Job_Chunk* data = (Job_Chunk*)d;
-		generate_world_chunk(data->gl_renderer, data->chunk_world_index_x, data->chunk_world_index_y, data->noise);
+		generate_world_chunk(data->gl_renderer, data->chunk_world_index_x, data->chunk_world_index_y, data->is_apron, data->noise);
 		break;
 	}
 	case JT_Buffer_World_Chunk: {
@@ -2871,10 +2876,16 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 
 		for (Chunk* chunk : gl_renderer->chunks_to_draw) {
 			std::string str = std::to_string(chunk->chunk_x) + "," + std::to_string(chunk->chunk_y);
-			V3 chunk_pos = { (float)chunk->chunk_x * CHUNK_WIDTH, (float)chunk->chunk_y * CHUNK_LENGTH, 256.0f }; 
+			V3 chunk_pos = { (float)chunk->chunk_x * CHUNK_WIDTH, (float)chunk->chunk_y * CHUNK_LENGTH, (float)CHUNK_HEIGHT };
 			chunk_pos.x += CHUNK_WIDTH / 2;
 			chunk_pos.y += CHUNK_LENGTH / 2;
-			draw_string_ws(gl_renderer, &font, str.c_str(), chunk_pos, 2, false);
+			if (chunk->is_apron) {
+				std::string apron_str = "AP";
+				draw_string_ws(gl_renderer, &font, apron_str.c_str(), chunk_pos, 1, false);
+			}
+			else {
+				draw_string_ws(gl_renderer, &font, str.c_str(), chunk_pos, 1, false);
+			}
 		}
 
 		// draw_cube_coordinates(gl_renderer, &font);

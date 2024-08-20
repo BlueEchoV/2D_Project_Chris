@@ -6,7 +6,7 @@
 
 std::mutex job_mutex;
 std::vector<Job> jobs = {};
-const int TOTAL_THREADS = 10;
+const int TOTAL_THREADS = 16;
 std::counting_semaphore<200> semaphore(0);
 std::atomic semaphore_count = 0;
 std::vector<std::thread> threads;
@@ -16,14 +16,14 @@ int get_semaphore_count() {
 }
 
 void add_job(Job_Type type, void* data) {
-	job_mutex.lock();
-	Job new_job;
+	Job new_job = {};
 	new_job.type = type;
 	new_job.data = data;
+	job_mutex.lock();
 	jobs.push_back(new_job);
+	job_mutex.unlock();
     semaphore.release();  
 	semaphore_count++;
-	job_mutex.unlock();
 }
 
 bool should_terminate_threads = false;
@@ -44,24 +44,30 @@ void thread_worker(void(*execute_job_type)(Job_Type, void*)) {
 			break;
 		}
 
-		job_mutex.lock();
-		if (jobs.empty()) {
-			job_mutex.unlock();
-			continue;
-		}
-
 		// This should never stall because release
 		// is directly linked to adding a job.
 		// If job is not empty, then there is 
 		// definitely a value to be taken from the 
 		// semaphore
-		semaphore.acquire();  
+		semaphore.acquire();
 
-		Job job = jobs.back();  
-		jobs.pop_back();
+		if (should_terminate_threads) {
+			break;
+		}
+		bool job_available = false;
+		job_mutex.lock();
+		Job job = {};
+		if (!jobs.empty()) {
+			job = jobs.back();
+			jobs.pop_back();
+			job_available = true;
+		}
 		job_mutex.unlock();
 
-		execute_job_type(job.type, job.data);  
+		if (job_available) {
+			execute_job_type(job.type, job.data);
+		}
+
 		semaphore_count--;
     }
 }
