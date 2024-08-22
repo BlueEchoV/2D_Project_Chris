@@ -10,15 +10,20 @@
 enum Job_Type {
 	JT_Increment_Number,
 	JT_Print_Stars,
-	JT_Generate_World_Chunk,
-	JT_Buffer_World_Chunk,
+	JT_Generate_Chunk_Perlin,
+	JT_Generate_Chunk_Faces,
 	JT_Total
 };
 
 struct Job {
 	Job_Type type;
 	void* data;
+	bool complete;
 };
+
+extern std::vector<Job> jobs_list;
+extern std::mutex job_finished_mutex;
+extern std::vector<Job> jobs_finished;
 
 void init_job_system(void(*execute_job_type)(Job_Type, void*));
 int get_semaphore_count();

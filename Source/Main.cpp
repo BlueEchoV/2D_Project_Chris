@@ -124,8 +124,6 @@ struct GL_Rect_3D {
 };
 
 struct Chunk_Vbo {
-	int chunk_x;
-	int chunk_y;
 	GLuint total_vertices;
 	GLuint vbo;
 	bool destroy = false;
@@ -199,21 +197,7 @@ const int CHUNK_WIDTH = 16;
 const int CHUNK_LENGTH = 16;
 const int CHUNK_HEIGHT = 256;
 
-struct Chunk {
-	bool is_apron = false;
-	int chunk_x;
-	int chunk_y;
-	GLuint ebo;
-	bool allocated = false;
-	bool buffer_sub_data = false;
-
-	GLuint total_vertices;
-	GLuint vbo;
-	GLsizeiptr buffer_size;
-	GLuint total_indices_to_be_rendered;
-
-	Cube cubes[CHUNK_WIDTH][CHUNK_LENGTH][CHUNK_HEIGHT] = {};
-};
+const int TOTAL_ADJACENT_CHUNKS = 4;
 
 struct Vertex_3D_Faces {
 	V3 pos;
@@ -226,6 +210,33 @@ struct Vertex_3D {
 	V2 uv;
 };
 
+struct Chunk {
+	bool is_apron = false;
+
+	int world_index_x;
+	int world_index_y;
+
+	GLuint ebo;
+	bool allocated = false;
+	bool buffer_sub_data = false;
+
+	GLuint total_vertices;
+	GLuint vbo;
+	GLsizeiptr buffer_size;
+
+	std::vector<UINT32> faces_indices = {};
+	std::vector<Vertex_3D_Faces> faces_vertices = {};
+
+	float noise;
+
+	Cube cubes[CHUNK_WIDTH][CHUNK_LENGTH][CHUNK_HEIGHT] = {};
+};
+
+struct Job_Chunk {
+	Chunk* chunk;
+	Chunk* adjacent_chunks[4];
+};
+
 struct GL_Renderer {
 	HWND window;
 	HDC hdc;
@@ -234,8 +245,10 @@ struct GL_Renderer {
 	std::vector<Vertex_3D_Line> lines_vertices;
 	std::vector<Cube_Draw> cubes;
 	std::vector<Vertex_String> strings;
-	std::vector<Chunk*> chunks_to_draw;
+	std::vector<Chunk> chunks_to_draw;
 	std::vector<Vertex_3D> quads_to_draw;
+
+	std::vector<Job_Chunk> active_jobs_list;
 
 	float time;
 	float player_speed;
@@ -1466,15 +1479,59 @@ V2 get_texture_sprite_sheet_uv_coordinates(Image_Type type, int pos_x, int pos_y
 	return result;
 }
 
-struct Job_Chunk {
-	GL_Renderer* gl_renderer;
-	int chunk_world_index_x;
-	int chunk_world_index_y;
-	float noise;
-	bool is_apron = false;
-	std::atomic<bool> data_is_buffered = false;
-};
+void generate_chunk_perlin(Chunk* new_chunk) {
+	new_chunk->total_vertices = 0;
+	new_chunk->allocated = true;
 
+	for (int x = 0; x < CHUNK_WIDTH; x++) {
+		for (int y = 0; y < CHUNK_LENGTH; y++) {
+			float world_space_x = x + (float)new_chunk->world_index_x * CHUNK_WIDTH;
+			float world_space_y = y + (float)new_chunk->world_index_y * CHUNK_LENGTH;
+			float height_value = stb_perlin_noise3((float)world_space_x / new_chunk->noise, 0, world_space_y / new_chunk->noise, 0, 0, 0);
+			// The perlin value is between -1 and 1, and this line normalizes it to a 
+			// range of 0 to CHUNK_HEIGHT, determining the height of the terrain
+			// at that (x, y) position.
+			float max_height_range = 30.0f;
+			int column_height = (int)((height_value + 1.0f) * 0.5f * max_height_range);
+			column_height += (CHUNK_HEIGHT - (int)max_height_range);
+
+			for (int z = 0; z < CHUNK_HEIGHT; z++) {
+				float world_space_z = (float)z;
+				float perlin_result = stb_perlin_noise3(
+					(float)world_space_x / new_chunk->noise, 
+					(float)world_space_y / new_chunk->noise,
+					(float)world_space_z / new_chunk->noise, 
+					0, 0, 0 // wrapping
+				);
+
+				Image_Type result = IT_Air;
+
+				// We know this is the top chunk
+				if (world_space_z < column_height) {
+					if (world_space_z == column_height - 1) {
+						result = IT_Grass;
+					} else if (world_space_z < column_height - 1 && world_space_z >= column_height - 4) {
+						result = IT_Dirt;
+					} else if (world_space_z < column_height - 4 && world_space_z >= column_height - 8) {
+						result = IT_Cobblestone;
+					} else {
+						if (perlin_result > -0.3) {
+							result = IT_Cobblestone;
+						} else {
+							result = IT_Air;
+						}
+					}
+				} else {
+					result = IT_Air;
+				}
+
+				new_chunk->cubes[x][y][z].type = result;
+			}
+		}
+	}
+}
+
+#if 0
 std::mutex generate_chunk_mutex;
 void generate_world_chunk(GL_Renderer* gl_renderer, int chunk_world_index_x, int chunk_world_index_y, bool is_apron, float noise) {
 	ZoneScoped;
@@ -1504,12 +1561,12 @@ void generate_world_chunk(GL_Renderer* gl_renderer, int chunk_world_index_x, int
 	new_chunk->allocated = true;
 	new_chunk->is_apron = is_apron;
 
-	new_chunk->chunk_x = chunk_world_index_x;
-	new_chunk->chunk_y = chunk_world_index_y;
+	new_chunk->world_index_x = chunk_world_index_x;
+	new_chunk->world_index_y = chunk_world_index_y;
 	for (int x = 0; x < CHUNK_WIDTH; x++) {
 		for (int y = 0; y < CHUNK_LENGTH; y++) {
-			float world_space_x = x + (float)new_chunk->chunk_x * CHUNK_WIDTH;
-			float world_space_y = y + (float)new_chunk->chunk_y * CHUNK_LENGTH;
+			float world_space_x = x + (float)new_chunk->world_index_x * CHUNK_WIDTH;
+			float world_space_y = y + (float)new_chunk->world_index_y * CHUNK_LENGTH;
 			float height_value = stb_perlin_noise3((float)world_space_x / (float)noise, 0, world_space_y / noise, 0, 0, 0);
 			// The perlin value is between -1 and 1, and this line normalizes it to a 
 			// range of 0 to CHUNK_HEIGHT, determining the height of the terrain
@@ -1555,20 +1612,20 @@ void generate_world_chunk(GL_Renderer* gl_renderer, int chunk_world_index_x, int
 
 	new_chunk->total_vertices = 0;
 }
+#endif
 
 Chunk* get_existing_chunk(GL_Renderer* gl_renderer, int x, int y) {
 	Chunk* result = nullptr;
-	generate_chunk_mutex.lock();
-	for (Chunk* chunk : gl_renderer->chunks_to_draw) {
-		if (x == chunk->chunk_x && y == chunk->chunk_y) {
-			result = chunk;
+	for (Chunk& chunk : gl_renderer->chunks_to_draw) {
+		if (x == chunk.world_index_x && y == chunk.world_index_y) {
+			result = &chunk;
 		}
 	}
-	generate_chunk_mutex.unlock();
 
 	return result;
 }
 
+#if 0
 std::mutex buffer_world_mutex;
 void buffer_world_chunk(GL_Renderer* gl_renderer, int chunk_world_index_x, int chunk_world_index_y) {
 	ZoneScoped;
@@ -1580,7 +1637,7 @@ void buffer_world_chunk(GL_Renderer* gl_renderer, int chunk_world_index_x, int c
 	// Generate the data to be sent to the GPU
 	std::vector<Vertex_3D_Faces> faces_vertices = {};
 	std::vector<UINT32> faces_indices = {};
-	V3 chunk_ws_pos = { chunk->chunk_x * (float)CHUNK_WIDTH, chunk->chunk_y * (float)CHUNK_LENGTH, 0 };
+	V3 chunk_ws_pos = { chunk->world_index_x * (float)CHUNK_WIDTH, chunk->world_index_y * (float)CHUNK_LENGTH, 0 };
 	for (int x = 0; x < CHUNK_WIDTH; x++) {
 		for (int y = 0; y < CHUNK_LENGTH; y++) {
 			for (int z = 0; z < CHUNK_HEIGHT; z++) {
@@ -2041,6 +2098,484 @@ void buffer_world_chunk(GL_Renderer* gl_renderer, int chunk_world_index_x, int c
 	}
 	faces_vertices.clear();
 }
+#endif
+
+void generate_chunk_faces(Job_Chunk* job_chunk) {
+	if (job_chunk == nullptr) {
+		return;
+	}
+	Chunk* chunk = job_chunk->chunk;
+
+	// Generate the data to be sent to the GPU
+	std::vector<Vertex_3D_Faces> faces_vertices = {};
+	std::vector<UINT32> faces_indices = {};
+	V3 chunk_ws_pos = { chunk->world_index_x * (float)CHUNK_WIDTH, chunk->world_index_y * (float)CHUNK_LENGTH, 0 };
+	for (int x = 0; x < CHUNK_WIDTH; x++) {
+		for (int y = 0; y < CHUNK_LENGTH; y++) {
+			for (int z = 0; z < CHUNK_HEIGHT; z++) {
+				// Grab the cube I want
+				V3 cube_ws_pos = chunk_ws_pos;
+				cube_ws_pos.x += x;
+				cube_ws_pos.y += y;
+
+				cube_ws_pos.z = (float)z;
+
+				Cube* current_cube = &chunk->cubes[x][y][z];
+				if (current_cube->type != IT_Air) {
+					// The cubes around the current cube
+					Cube back_cube = {};
+					Cube top_cube = {};
+					Cube right_cube = {};
+
+					Cube front_cube = {};
+					Cube bottom_cube = {};
+					Cube left_cube = {};
+
+					// Loop over the faces
+					// This currently doesn't take into account adjacent chunks when 
+					// drawing the faces
+					if (x + 1 < CHUNK_WIDTH) {
+						front_cube = chunk->cubes[x + 1][y][z];
+					} 
+					if (y + 1 < CHUNK_LENGTH) {
+						right_cube = chunk->cubes[x][y + 1][z];
+					}
+					if (z + 1 < CHUNK_HEIGHT) {
+						top_cube = chunk->cubes[x][y][z + 1];
+					}
+					if (x > 0) {
+						back_cube = chunk->cubes[x - 1][y][z];
+					}
+					if (y > 0) {
+						left_cube = chunk->cubes[x][y - 1][z];
+					}
+					if (z > 0) {
+						bottom_cube = chunk->cubes[x][y][z - 1];
+					}
+
+					// Check if the index is one out of bounds for adjacent chunks
+					// NOTE: Ignore the height because I'm not stacking chunks
+					if (x + 1 == CHUNK_WIDTH) {
+						Chunk* adjacent_chunk = job_chunk->adjacent_chunks[0];
+
+						// Grab the adjacent cube
+						if (adjacent_chunk != nullptr) {
+							front_cube = adjacent_chunk->cubes[0][y][z];
+						}
+						// else {
+						// 	front_cube.type = IT_Dirt;
+						// }
+					}
+					if (y + 1 == CHUNK_LENGTH) {
+						Chunk* adjacent_chunk = job_chunk->adjacent_chunks[1];
+
+						// Grab the adjacent cube
+						if (adjacent_chunk != nullptr) {
+							right_cube = adjacent_chunk->cubes[x][0][z];
+						}
+						// else {
+						// 	front_cube.type = IT_Dirt;
+						// }
+					}
+					if (x == 0) {
+						Chunk* adjacent_chunk = job_chunk->adjacent_chunks[2];
+
+						// Grab the adjacent cube
+						if (adjacent_chunk != nullptr) {
+							back_cube = adjacent_chunk->cubes[CHUNK_WIDTH - 1][y][z];
+						}
+						// else {
+						// 	front_cube.type = IT_Dirt;
+						// }
+					}
+					if (y == 0) {
+						Chunk* adjacent_chunk = job_chunk->adjacent_chunks[3];
+
+						// Grab the adjacent cube
+						if (adjacent_chunk != nullptr) {
+							left_cube = adjacent_chunk->cubes[x][CHUNK_LENGTH - 1][z];
+						}
+						else {
+							front_cube.type = IT_Dirt;
+						}
+					}
+
+					// NOTE: The cube is draw from the center. I might just 
+					// have the faces draw from the bottom corner
+
+					// Emit a face
+					// The points go in clockwise order
+					// NOTE: This offset is wrong
+					if (current_cube->type == IT_Air) {
+						assert(false);
+					}
+					Image_Type t = current_cube->type;
+					if (back_cube.type == IT_Air) {
+						// Emit a face
+						Cube_Face face = {};
+
+						face.p1 = cube_ws_pos;
+
+						face.p2 = cube_ws_pos;
+						face.p2.z += CUBE_SIZE;
+
+						face.p3 = cube_ws_pos;
+						face.p3.y += CUBE_SIZE;
+						face.p3.z += CUBE_SIZE;
+
+						face.p4 = cube_ws_pos;
+						face.p4.y += CUBE_SIZE;
+
+						Vertex_3D_Faces vertex = {};
+
+						vertex.normal = { -1, 0, 0 };
+
+						// Square (Indices)
+						vertex.pos = face.p1;
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 0);
+						faces_vertices.push_back(vertex);
+
+						vertex.pos = face.p2;
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 0);
+						faces_vertices.push_back(vertex);
+
+						vertex.pos = face.p3;
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 1);
+						faces_vertices.push_back(vertex);
+
+						vertex.pos = face.p4;
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 1);
+						faces_vertices.push_back(vertex);
+
+						chunk->total_vertices += 4;
+
+						// No need to store starting index becuase I'm going to be doing a massive 
+						// glDrawElements call
+						UINT32 base_index = (UINT32)(faces_vertices.size()) - 4;
+						// First Triangle
+						faces_indices.push_back(base_index + 0);
+						faces_indices.push_back(base_index + 2);
+						faces_indices.push_back(base_index + 1);
+
+						// Second Triangle
+						faces_indices.push_back(base_index + 3);
+						faces_indices.push_back(base_index + 2);
+						faces_indices.push_back(base_index + 0);
+					}
+
+					if (top_cube.type == IT_Air) {
+						Cube_Face face = {};
+
+						face.p1 = cube_ws_pos;
+						face.p1.z += CUBE_SIZE;
+
+						face.p2 = cube_ws_pos;
+						face.p2.x += CUBE_SIZE;
+						face.p2.z += CUBE_SIZE;
+
+						face.p3 = cube_ws_pos;
+						face.p3.x += CUBE_SIZE;
+						face.p3.y += CUBE_SIZE;
+						face.p3.z += CUBE_SIZE;
+
+						face.p4 = cube_ws_pos;
+						face.p4.y += CUBE_SIZE;
+						face.p4.z += CUBE_SIZE;
+
+						Vertex_3D_Faces vertex = {};
+
+						vertex.normal = { 0, 0, 1 };
+
+						// Square (Indices)
+						vertex.pos = face.p1;
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 0);
+						faces_vertices.push_back(vertex);
+
+						vertex.pos = face.p2;
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 1);
+						faces_vertices.push_back(vertex);
+
+						vertex.pos = face.p3;
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 1);
+						faces_vertices.push_back(vertex);
+
+						vertex.pos = face.p4;
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 0);
+						faces_vertices.push_back(vertex);
+
+						chunk->total_vertices += 4;
+
+						UINT32 base_index = (UINT32)(faces_vertices.size()) - 4;
+						// First Triangle
+						faces_indices.push_back(base_index + 0);
+						faces_indices.push_back(base_index + 3);
+						faces_indices.push_back(base_index + 2);
+
+						// Second Triangle
+						faces_indices.push_back(base_index + 2);
+						faces_indices.push_back(base_index + 1);
+						faces_indices.push_back(base_index + 0);
+					}
+
+					if (right_cube.type == IT_Air) {
+						Cube_Face face = {};
+
+						face.p1 = cube_ws_pos;
+						face.p1.y += CUBE_SIZE;
+
+						face.p2 = cube_ws_pos;
+						face.p2.y += CUBE_SIZE;
+						face.p2.z += CUBE_SIZE;
+
+						face.p3 = cube_ws_pos;
+						face.p3.x += CUBE_SIZE;
+						face.p3.y += CUBE_SIZE;
+						face.p3.z += CUBE_SIZE;
+
+						face.p4 = cube_ws_pos;
+						face.p4.x += CUBE_SIZE;
+						face.p4.y += CUBE_SIZE;
+
+						Vertex_3D_Faces vertex = {};
+
+						vertex.normal = { 0, 1, 0 };
+
+						// Square (Indices)
+						vertex.pos = face.p1;
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 0);
+						faces_vertices.push_back(vertex);
+
+						vertex.pos = face.p2;
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 1);
+						faces_vertices.push_back(vertex);
+
+						vertex.pos = face.p3;
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 1);
+						faces_vertices.push_back(vertex);
+
+						vertex.pos = face.p4;
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 0);
+						faces_vertices.push_back(vertex);
+
+						chunk->total_vertices += 4;
+
+						UINT32 base_index = (UINT32)(faces_vertices.size()) - 4;
+						// First Triangle
+						faces_indices.push_back(base_index + 0);
+						faces_indices.push_back(base_index + 3);
+						faces_indices.push_back(base_index + 2);
+
+						// Second Triangle
+						faces_indices.push_back(base_index + 2);
+						faces_indices.push_back(base_index + 1);
+						faces_indices.push_back(base_index + 0);
+					}
+
+					if (front_cube.type == IT_Air) {
+						Cube_Face face = {};
+
+						face.p1 = cube_ws_pos;
+						face.p1.x += CUBE_SIZE;
+
+						face.p2 = cube_ws_pos;
+						face.p2.x += CUBE_SIZE;
+						face.p2.z += CUBE_SIZE;
+
+						face.p3 = cube_ws_pos;
+						face.p3.x += CUBE_SIZE;
+						face.p3.y += CUBE_SIZE;
+						face.p3.z += CUBE_SIZE;
+
+						face.p4 = cube_ws_pos;
+						face.p4.x += CUBE_SIZE;
+						face.p4.y += CUBE_SIZE;
+
+						Vertex_3D_Faces vertex = {};
+
+						vertex.normal = { 1, 0, 0 };
+
+						// Square (Indices)
+						vertex.pos = face.p1;
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 0);
+						faces_vertices.push_back(vertex);
+
+						vertex.pos = face.p2;
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 1);
+						faces_vertices.push_back(vertex);
+
+						vertex.pos = face.p3;
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 1);
+						faces_vertices.push_back(vertex);
+
+						vertex.pos = face.p4;
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 0);
+						faces_vertices.push_back(vertex);
+
+						chunk->total_vertices += 4;
+
+						UINT32 base_index = (UINT32)(faces_vertices.size()) - 4;
+						// First Triangle
+						faces_indices.push_back(base_index + 0);
+						faces_indices.push_back(base_index + 2);
+						faces_indices.push_back(base_index + 3);
+
+						// Second Triangle
+						faces_indices.push_back(base_index + 1);
+						faces_indices.push_back(base_index + 2);
+						faces_indices.push_back(base_index + 0);
+					}
+
+					if (bottom_cube.type == IT_Air) {
+						Cube_Face face = {};
+
+						face.p1 = cube_ws_pos;
+
+						face.p2 = cube_ws_pos;
+						face.p2.y += CUBE_SIZE;
+
+						face.p3 = cube_ws_pos;
+						face.p3.x += CUBE_SIZE;
+						face.p3.y += CUBE_SIZE;
+
+						face.p4 = cube_ws_pos;
+						face.p4.x += CUBE_SIZE;
+
+						Vertex_3D_Faces vertex = {};
+
+						vertex.normal = { 0, 0, -1 };
+
+						// Square (Indices)
+						vertex.pos = face.p1;
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 0);
+						faces_vertices.push_back(vertex);
+
+						vertex.pos = face.p2;
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 1);
+						faces_vertices.push_back(vertex);
+
+						vertex.pos = face.p3;
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 1);
+						faces_vertices.push_back(vertex);
+
+						vertex.pos = face.p4;
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 0);
+						faces_vertices.push_back(vertex);
+
+						chunk->total_vertices += 4;
+
+						UINT32 base_index = (UINT32)(faces_vertices.size()) - 4;
+						// First Triangle
+						faces_indices.push_back(base_index + 0);
+						faces_indices.push_back(base_index + 3);
+						faces_indices.push_back(base_index + 2);
+
+						// Second Triangle
+						faces_indices.push_back(base_index + 2);
+						faces_indices.push_back(base_index + 1);
+						faces_indices.push_back(base_index + 0);
+					}
+
+					if (left_cube.type == IT_Air) {
+						Cube_Face face = {};
+
+						face.p1 = cube_ws_pos;
+
+						face.p2 = cube_ws_pos;
+						face.p2.z += CUBE_SIZE;
+
+						face.p3 = cube_ws_pos;
+						face.p3.x += CUBE_SIZE;
+						face.p3.z += CUBE_SIZE;
+
+						face.p4 = cube_ws_pos;
+						face.p4.x += CUBE_SIZE;
+
+						Vertex_3D_Faces vertex = {};
+
+						vertex.normal = { 0, -1, 0 };
+
+						// Square (Indices)
+						vertex.pos = face.p1;
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 0);
+						faces_vertices.push_back(vertex);
+
+						vertex.pos = face.p2;
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 0, 1);
+						faces_vertices.push_back(vertex);
+
+						vertex.pos = face.p3;
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 1);
+						faces_vertices.push_back(vertex);
+
+						vertex.pos = face.p4;
+						vertex.uv = get_texture_sprite_sheet_uv_coordinates(t, 1, 0);
+						faces_vertices.push_back(vertex);
+
+						chunk->total_vertices += 4;
+
+						UINT32 base_index = (UINT32)(faces_vertices.size()) - 4;
+						// First Triangle
+						faces_indices.push_back(base_index + 0);
+						faces_indices.push_back(base_index + 1);
+						faces_indices.push_back(base_index + 2);
+
+						// Second Triangle
+						faces_indices.push_back(base_index + 2);
+						faces_indices.push_back(base_index + 3);
+						faces_indices.push_back(base_index + 0);
+					}
+				}
+			}
+		}
+	}
+
+	chunk->faces_vertices.clear();
+	chunk->faces_vertices = faces_vertices;
+	chunk->faces_indices.clear();
+	chunk->faces_indices = faces_indices;
+	faces_indices.clear();
+}
+
+void buffer_data(Chunk* chunk) {
+	bool force_reallocate = false;
+	if (chunk->buffer_sub_data) {
+		GLsizeiptr new_size = sizeof(Vertex_3D_Faces) * chunk->faces_indices.size();
+		// ONLY ALLOCATE IF THERE IS ENOUGH SIZE IN THE CURRENT BUFFER
+		if (new_size <= chunk->buffer_size && chunk->vbo > 0) {
+			glBindBuffer(GL_ARRAY_BUFFER, chunk->vbo);
+			//											  size of the data that is being replaced
+			glBufferSubData(GL_ARRAY_BUFFER, (GLintptr)0, new_size, chunk->faces_indices.data());
+
+			// IF I HIT THIS, I KNOW THERE'S AN ISSUE WITH THE LOGIC
+			if (chunk->ebo <= 0) {
+				assert(false);
+			}
+			glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, chunk->ebo);
+			glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, (GLintptr)0, chunk->faces_indices.size() * sizeof(UINT32), chunk->faces_indices.data());
+		}
+		else {
+			force_reallocate = true;
+		}
+	}
+	if (!chunk->buffer_sub_data || force_reallocate) {
+		bool chunk_already_in_chunks_to_draw = true;
+		if (chunk->vbo <= 0) {
+			glGenBuffers(1, &chunk->vbo);
+			chunk_already_in_chunks_to_draw = false;
+		}
+		glBindBuffer(GL_ARRAY_BUFFER, chunk->vbo);
+		chunk->buffer_size = sizeof(Vertex_3D_Faces) * chunk->faces_vertices.size();
+		glBufferData(GL_ARRAY_BUFFER, sizeof(Vertex_3D_Faces) * chunk->faces_vertices.size(), chunk->faces_vertices.data(), GL_STATIC_DRAW);
+
+		if (chunk->ebo <= 0) {
+			glGenBuffers(1, &chunk->ebo);
+		}
+		// Elements buffer
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, chunk->ebo);
+		glBufferData(GL_ELEMENT_ARRAY_BUFFER, chunk->faces_indices.size() * sizeof(UINT32), chunk->faces_indices.data(), GL_STATIC_DRAW);
+	}
+}
+
 
 void gl_draw_cube_faces_vbo(GL_Renderer* gl_renderer, GLuint textures_handle) {
 	// V3 light_position = {};
@@ -2050,14 +2585,14 @@ void gl_draw_cube_faces_vbo(GL_Renderer* gl_renderer, GLuint textures_handle) {
 
 	// Bind the sprite sheet with all the textures
 	// log("chunks_to_draw_size = %i", gl_renderer->chunks_to_draw.size());
-	for (Chunk* chunk: gl_renderer->chunks_to_draw) {
+	for (Chunk& chunk: gl_renderer->chunks_to_draw) {
 		// DON'T DRAW THE APRON
-		if (chunk->is_apron == false) {
-			glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, chunk->ebo);
-			if (chunk->ebo <= 0) {
+		if (chunk.is_apron == false) {
+			glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, chunk.ebo);
+			if (chunk.ebo <= 0) {
 				assert(false);
 			}
-			glBindBuffer(GL_ARRAY_BUFFER, chunk->vbo);
+			glBindBuffer(GL_ARRAY_BUFFER, chunk.vbo);
 			glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Faces), (void*)offsetof(Vertex_3D_Faces, pos));
 			glEnableVertexAttribArray(0);
 			glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Faces), (void*)offsetof(Vertex_3D_Faces, uv));
@@ -2085,7 +2620,7 @@ void gl_draw_cube_faces_vbo(GL_Renderer* gl_renderer, GLuint textures_handle) {
 			// GLuint light_fireball_loc = glGetUniformLocation(shader_program, "light_position_fireball");
 			// glUniform3fv(time_loc, );
 
-			glDrawElements(GL_TRIANGLES, chunk->total_indices_to_be_rendered, GL_UNSIGNED_INT, (void*)0);
+			glDrawElements(GL_TRIANGLES, (GLuint)chunk.faces_indices.size(), GL_UNSIGNED_INT, (void*)0);
 		}
 	}
 }
@@ -2284,6 +2819,27 @@ void get_player_chunk(GL_Renderer* gl_renderer, int& x, int& y) {
 	}
 }
 
+void get_adjacent_chunks(GL_Renderer* gl_renderer, Chunk* origin_chunk, Chunk* adjacent_chunks[]) {
+	int chunk_world_index_x = origin_chunk->world_index_x;
+	int chunk_world_index_y = origin_chunk->world_index_y;
+	Chunk* front_chunk = get_existing_chunk(gl_renderer, chunk_world_index_x + 1, chunk_world_index_y);
+	if (front_chunk != nullptr) {
+		adjacent_chunks[0] = front_chunk;
+	}
+	Chunk* right_chunk = get_existing_chunk(gl_renderer, chunk_world_index_x, chunk_world_index_y + 1);
+	if (right_chunk != nullptr) {
+		adjacent_chunks[1] = right_chunk;
+	}
+	Chunk* back_chunk = get_existing_chunk(gl_renderer, chunk_world_index_x - 1, chunk_world_index_y);
+	if (back_chunk != nullptr) {
+		adjacent_chunks[2] = back_chunk;
+	}
+	Chunk* left_chunk = get_existing_chunk(gl_renderer, chunk_world_index_x, chunk_world_index_y - 1);
+	if (left_chunk != nullptr) {
+		adjacent_chunks[3] = left_chunk;
+	}
+}
+
 int apron_size = 1;
 void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint textures_handle, float noise) {
 	profile_time_to_execute_start_milliseconds();
@@ -2294,15 +2850,12 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 	get_player_chunk(gl_renderer, current_chunk_player_x, current_chunk_player_y);
 	// log("Player is on chunk: x = %i, y = %i", current_chunk_player_x, current_chunk_player_y);
 
-	int previous_chunk_player_x = gl_renderer->previous_chunk_player_x;
-	int previous_chunk_player_y = gl_renderer->previous_chunk_player_y;
-
 	bool player_on_same_chunk = false;
-	if (current_chunk_player_x == previous_chunk_player_x
-		&& current_chunk_player_y == previous_chunk_player_y) {
+	if (current_chunk_player_x == gl_renderer->previous_chunk_player_x 
+		&& current_chunk_player_y == gl_renderer->previous_chunk_player_y) {
 		player_on_same_chunk = true;
 	}
-	std::vector<Job_Chunk*> chunks_to_generate = {};
+	std::vector<Chunk> chunks_to_generate = {};
 	if (player_on_same_chunk == false || force_regenerate) {
 		int difference_x = current_chunk_player_x - gl_renderer->previous_chunk_player_x;
 		int difference_y = current_chunk_player_y - gl_renderer->previous_chunk_player_y;
@@ -2311,37 +2864,33 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 		gl_renderer->previous_chunk_player_y = current_chunk_player_y;
 		
 		// Erase all the aprons so they can regenerate
-		std::erase_if(gl_renderer->chunks_to_draw, [difference_x, difference_y](const Chunk* chunk) {
-			if (chunk->is_apron) {
+		std::erase_if(gl_renderer->chunks_to_draw, [difference_x, difference_y](Chunk& chunk) {
+			if (chunk.is_apron) {
 				// Positive X
 				if (difference_x > 0) {
-					if (chunk->chunk_x >= 0) {
-						glDeleteBuffers(1, &chunk->vbo);
-						delete chunk;
+					if (chunk.world_index_x >= 0) {
+						glDeleteBuffers(1, &chunk.vbo);
 						return true;
 					}
 				}
 				// Positive Y
 				if (difference_y > 0) {
-					if (chunk->chunk_y >= 0) {
-						glDeleteBuffers(1, &chunk->vbo);
-						delete chunk;
+					if (chunk.world_index_y >= 0) {
+						glDeleteBuffers(1, &chunk.vbo);
 						return true;
 					}
 				}
 				// Negative X
 				if (difference_x < 0) {
-					if (chunk->chunk_x < 0) {
-						glDeleteBuffers(1, &chunk->vbo);
-						delete chunk;
+					if (chunk.world_index_x < 0) {
+						glDeleteBuffers(1, &chunk.vbo);
 						return true;
 					}
 				}
 				// Negative Y
 				if (difference_y < 0) {
-					if (chunk->chunk_y < 0) {
-						glDeleteBuffers(1, &chunk->vbo);
-						delete chunk;
+					if (chunk.world_index_y < 0) {
+						glDeleteBuffers(1, &chunk.vbo);
 						return true;
 					}
 				}
@@ -2349,14 +2898,12 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 			return false;
 		});
 
-
-		for (Chunk* chunk : gl_renderer->chunks_to_draw) {
-			chunk->allocated = false;
-			chunk->is_apron = false;
+		for (Chunk& chunk : gl_renderer->chunks_to_draw) {
+			chunk.allocated = false;
+			chunk.is_apron = false;
 		}
 
 		// log("*****************************");
-		int total_checked = 0;
 		for (int x = -VIEW_DISTANCE - apron_size; x <= VIEW_DISTANCE + apron_size; x++) {
 			for (int y = -VIEW_DISTANCE - apron_size; y <= VIEW_DISTANCE + apron_size; y++) {
 				bool is_apron = false;
@@ -2367,45 +2914,27 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 					is_apron = true;
 				}
 
-				int chunk_x = x + current_chunk_player_x;
-				int chunk_y = y + current_chunk_player_y;
-				if (chunk_x > current_chunk_player_x + VIEW_DISTANCE + apron_size ||
-					chunk_x < current_chunk_player_x - VIEW_DISTANCE - apron_size || 
-					chunk_y > current_chunk_player_y + VIEW_DISTANCE + apron_size ||
-					chunk_y < current_chunk_player_y - VIEW_DISTANCE - apron_size) {
-					assert(false);
-				}
+				int world_index_x = x + current_chunk_player_x;
+				int world_index_y = y + current_chunk_player_y;
 				bool already_generated = false;
-				Chunk* previous_chunk = nullptr;
-				for (Chunk* chunk : gl_renderer->chunks_to_draw) {
-					if (chunk->chunk_x == chunk_x &&
-						chunk->chunk_y == chunk_y) {
-						total_checked++;
-
-#if 0
-						if (previous_chunk != nullptr) {
-							previous_chunk->allocated = false;
-							chunk->allocated = true;
-							previous_chunk = chunk;
-							continue;
-						}
-#endif
-						chunk->allocated = true;
-						chunk->is_apron = is_apron;
+				for (Chunk& chunk : gl_renderer->chunks_to_draw) {
+					if (chunk.world_index_x == world_index_x &&
+						chunk.world_index_y == world_index_y) {
+						chunk.allocated = true;
+						chunk.is_apron = is_apron;
 						already_generated = true;
-						previous_chunk = chunk;
 					}
 				}
 
 				if (already_generated == false) {
-					total_checked++;
-					Job_Chunk* data = new Job_Chunk;
-					data->gl_renderer = gl_renderer;
-					data->chunk_world_index_x = chunk_x;
-					data->chunk_world_index_y = chunk_y;
-					data->noise = noise;
-					data->data_is_buffered = false;
-					data->is_apron = is_apron;
+					Chunk data = {};
+
+					data.world_index_x = world_index_x;
+					data.world_index_y = world_index_y;
+					data.is_apron = is_apron;
+
+					data.noise = noise;
+
 					chunks_to_generate.push_back(data);
 				}
 			}
@@ -2414,44 +2943,63 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 		// log("Total checked:    %i", total_checked);
 	}
 
-#if 0
-	for (Chunk* chunk : gl_renderer->chunks_to_draw) {
-		int temp_x = current_chunk_player_x - chunk->chunk_x;
-		int temp_y = current_chunk_player_y - chunk->chunk_y;
-		if (temp_x < -VIEW_DISTANCE - apron_size ||
-			temp_y < -VIEW_DISTANCE - apron_size ||
-			temp_x > VIEW_DISTANCE + apron_size ||
-			temp_y > VIEW_DISTANCE + apron_size) {
-			if (chunk);
+	for (Chunk chunk_to_generate : chunks_to_generate) {
+		Chunk* chunk_being_generated = nullptr;
+		// See if there is a empty spot in the chunks_to_draw vector
+		for (Chunk& chunk_to_draw : gl_renderer->chunks_to_draw) {
+			if (chunk_to_draw.allocated == false) {
+				// Set it to point at the location in the vector that is open
+				chunk_being_generated = &chunk_to_draw;
+				// Initialize the data in the slot to the new data
+				*chunk_being_generated = chunk_to_generate;
+				// Set the buffer data value
+				chunk_being_generated->buffer_sub_data = true;
+			}
+		}
+		// Create the chunk of the spot doesn't exist
+		if (chunk_being_generated == nullptr) {
+			Chunk new_chunk = {};
+			new_chunk.buffer_sub_data = false;
+			gl_renderer->chunks_to_draw.push_back(new_chunk);
+			// Set it to point at the location in the vector that is open
+			chunk_being_generated = &gl_renderer->chunks_to_draw.back();
+		}
+
+		add_job(JT_Generate_Chunk_Perlin, chunk_being_generated);
+	}
+
+	// We know this job has finished and we can loop through them
+	job_finished_mutex.lock();
+	for (Job& job_finish : jobs_finished) {
+		if (job_finish.type == JT_Generate_Chunk_Perlin) {
+			Chunk* chunk = (Chunk*)job_finish.data;
+			Job_Chunk job_chunk = {};
+			job_chunk.chunk = chunk;
+			get_adjacent_chunks(gl_renderer, chunk, job_chunk.adjacent_chunks);
+			add_job(JT_Generate_Chunk_Faces, &job_chunk);
+			job_finish.complete = true;
+		} else {
+			job_finish.complete = true;
 		}
 	}
-#endif
 
-	// Do this after the loop so we don't overwrite any currently allocated chunks
-	// log("chunks_to_generate_size = %i", chunks_to_generate.size());
-	// Generate the chunks first
-	for (Job_Chunk* chunk : chunks_to_generate) {
-		add_job(JT_Generate_World_Chunk, chunk);
-	}
-	while (get_semaphore_count() > 0) {
-		// wait
-	}
-	// We don't want to proceed until all the chunks have finished generating
-	for (Job_Chunk* chunk : chunks_to_generate) {
-		// NOTE: Add jobs function here didn't work as intended. Only one call to 
-		// glBuffer data can happen at a time. Not in multiple chunks.
-		// add_job(JT_Buffer_World_Chunk, chunk);
-		buffer_world_chunk(gl_renderer, chunk->chunk_world_index_x, chunk->chunk_world_index_y);
-	}
-	for (Job_Chunk* chunk : chunks_to_generate) {
-		delete chunk;
-	}
+	// Clear the jobs finished vector
+	std::erase_if(jobs_finished, [](Job& job) {
+		if (job.complete) {
+			if (job.type == JT_Generate_Chunk_Faces) {
+				Job_Chunk* job_chunk = (Job_Chunk*)job.data;
+				buffer_data(job_chunk->chunk);
+			}
+			return true;
+		}
+		return false;
+	});
+	job_finished_mutex.unlock();
 	chunks_to_generate.clear();
 
-	std::erase_if(gl_renderer->chunks_to_draw, [](const Chunk* chunk) {
-		if (!chunk->allocated) {
-			glDeleteBuffers(1, &chunk->vbo);
-			delete chunk;
+	std::erase_if(gl_renderer->chunks_to_draw, [](Chunk& chunk) {
+		if (!chunk.allocated) {
+			glDeleteBuffers(1, &chunk.vbo);
 			return true;
 		}
 		return false;
@@ -2608,10 +3156,10 @@ void check_player_collision(GL_Renderer* gl_renderer) {
 	log("Chunk player is on: x = %i, y = %i", chunk_player_is_on_x, chunk_player_is_on_y);
 
 	Chunk* chunk_player_is_on = nullptr;
-	for (Chunk* chunk : gl_renderer->chunks_to_draw) {
-		if (chunk->chunk_x == chunk_player_is_on_x
-			&& chunk->chunk_y == chunk_player_is_on_y) {
-			chunk_player_is_on = chunk;
+	for (Chunk& chunk : gl_renderer->chunks_to_draw) {
+		if (chunk.world_index_x == chunk_player_is_on_x
+			&& chunk.world_index_y == chunk_player_is_on_y) {
+			chunk_player_is_on = &chunk;
 		}
 	}
 	if (chunk_player_is_on == nullptr) {
@@ -2693,12 +3241,12 @@ void check_player_collision(GL_Renderer* gl_renderer) {
 }
 
 void draw_cube_coordinates(GL_Renderer* gl_renderer, Font* font) {
-	for (Chunk* chunk : gl_renderer->chunks_to_draw) {
+	for (Chunk& chunk : gl_renderer->chunks_to_draw) {
 		for (int x = 0; x < CHUNK_WIDTH; x++) {
 			for (int y = 0; y < CHUNK_LENGTH; y++) {
 				V3 cube_pos = { (float)x, (float)y, (float)CHUNK_HEIGHT };
-				cube_pos.x += chunk->chunk_x * CHUNK_WIDTH;
-				cube_pos.y += chunk->chunk_y * CHUNK_LENGTH;
+				cube_pos.x += chunk.world_index_x * CHUNK_WIDTH;
+				cube_pos.y += chunk.world_index_y * CHUNK_LENGTH;
 				std::string str = "[" + std::to_string(x) + "," + std::to_string(y) + "]";
 				draw_string_ws(gl_renderer, font, str.c_str(), cube_pos, 2, false);
 			}
@@ -2718,7 +3266,7 @@ void job_print_stars() {
 	log("*****************\n");
 }
 
-void execute_job_type(Job_Type type, void* d) {
+void execute_job_type(Job_Type type, void* data) {
 	switch(type) {
 	case JT_Increment_Number: {
 		job_increment_number();
@@ -2728,17 +3276,14 @@ void execute_job_type(Job_Type type, void* d) {
 		job_print_stars();
 		break;
 	}
-	case JT_Generate_World_Chunk: {
-		Job_Chunk* data = (Job_Chunk*)d;
-		generate_world_chunk(data->gl_renderer, data->chunk_world_index_x, data->chunk_world_index_y, data->is_apron, data->noise);
+	case JT_Generate_Chunk_Perlin: {
+		Chunk* chunk = (Chunk*)data;
+		generate_chunk_perlin(chunk);
 		break;
 	}
-	case JT_Buffer_World_Chunk: {
-		Job_Chunk* data = (Job_Chunk*)d;
-		if (data->data_is_buffered == false) {
-			buffer_world_chunk(data->gl_renderer, data->chunk_world_index_x, data->chunk_world_index_y);
-			data->data_is_buffered = true;
-		}
+	case JT_Generate_Chunk_Faces: {
+		Job_Chunk* job_chunk = (Job_Chunk*)data;
+		generate_chunk_faces(job_chunk);
 		break;
 	}
 	default: {
@@ -2832,7 +3377,7 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		// GL_COLOR_BUFFER_BIT: This clears the color buffer, which is responsible for holding the color 
 		// information of the pixels. Clearing this buffer sets all the pixels to the color specified by glClearColor.
 		// GL_DEPTH_BUFFER_BIT: This clears the depth buffer, which is responsible for holding the depth 
-		// information of the pixels. The depth buffer keeps track of the distance from the camera to each pixel
+		// information of the pixels. The depth *buffer keeps track of the distance from the camera to each pixel
 		// to handle occlusion correctly.
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -2925,12 +3470,12 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		draw_string_ws(gl_renderer, &font, "y", { 0, 5, 0 }, 3, true);
 		draw_string_ws(gl_renderer, &font, "z", { 0, 0, 5 }, 3, true);
 
-		for (Chunk* chunk : gl_renderer->chunks_to_draw) {
-			std::string str = std::to_string(chunk->chunk_x) + "," + std::to_string(chunk->chunk_y);
-			V3 chunk_pos = { (float)chunk->chunk_x * CHUNK_WIDTH, (float)chunk->chunk_y * CHUNK_LENGTH, (float)CHUNK_HEIGHT };
+		for (Chunk& chunk : gl_renderer->chunks_to_draw) {
+			std::string str = std::to_string(chunk.world_index_x) + "," + std::to_string(chunk.world_index_y);
+			V3 chunk_pos = { (float)chunk.world_index_x * CHUNK_WIDTH, (float)chunk.world_index_y * CHUNK_LENGTH, (float)CHUNK_HEIGHT };
 			// chunk_pos.x += CHUNK_WIDTH / 2;
 			// chunk_pos.y += CHUNK_LENGTH / 2;
-			if (chunk->is_apron) {
+			if (chunk.is_apron) {
 				std::string apron_str = "AP";
 				draw_string_ws(gl_renderer, &font, apron_str.c_str(), chunk_pos, 1, false);
 			}

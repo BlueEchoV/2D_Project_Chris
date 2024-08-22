@@ -5,7 +5,10 @@
 #include <stdint.h>
 
 std::mutex job_mutex;
-std::vector<Job> jobs = {};
+std::vector<Job> jobs_list = {};
+std::mutex job_finished_mutex = {};
+std::vector<Job> jobs_finished = {};
+
 const int TOTAL_THREADS = 16;
 std::counting_semaphore<200> semaphore(0);
 std::atomic semaphore_count = 0;
@@ -15,12 +18,14 @@ int get_semaphore_count() {
 	return semaphore_count;
 }
 
+// Returns a reference to the job for keeping track of them
 void add_job(Job_Type type, void* data) {
 	Job new_job = {};
 	new_job.type = type;
 	new_job.data = data;
+	new_job.complete = false;
 	job_mutex.lock();
-	jobs.push_back(new_job);
+	jobs_list.push_back(new_job);
 	job_mutex.unlock();
     semaphore.release();  
 	semaphore_count++;
@@ -57,15 +62,19 @@ void thread_worker(void(*execute_job_type)(Job_Type, void*)) {
 		bool job_available = false;
 		job_mutex.lock();
 		Job job = {};
-		if (!jobs.empty()) {
-			job = jobs.back();
-			jobs.pop_back();
+		if (!jobs_list.empty()) {
+			job = jobs_list.back();
+			jobs_list.pop_back();
 			job_available = true;
 		}
 		job_mutex.unlock();
 
 		if (job_available) {
 			execute_job_type(job.type, job.data);
+			job.complete = false;
+			job_finished_mutex.lock();
+			jobs_finished.push_back(job);
+			job_finished_mutex.unlock();
 		}
 
 		semaphore_count--;
