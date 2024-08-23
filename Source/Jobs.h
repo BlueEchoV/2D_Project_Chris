@@ -18,7 +18,7 @@ enum Job_Type {
 struct Job {
 	Job_Type type;
 	void* data;
-	bool complete;
+	bool finished_executing_all_steps;
 };
 
 extern std::vector<Job> jobs_list;

@@ -23,7 +23,7 @@ void add_job(Job_Type type, void* data) {
 	Job new_job = {};
 	new_job.type = type;
 	new_job.data = data;
-	new_job.complete = false;
+	new_job.finished_executing_all_steps = false;
 	job_mutex.lock();
 	jobs_list.push_back(new_job);
 	job_mutex.unlock();
@@ -71,7 +71,7 @@ void thread_worker(void(*execute_job_type)(Job_Type, void*)) {
 
 		if (job_available) {
 			execute_job_type(job.type, job.data);
-			job.complete = false;
+			job.finished_executing_all_steps = false;
 			job_finished_mutex.lock();
 			jobs_finished.push_back(job);
 			job_finished_mutex.unlock();
@@ -97,57 +97,3 @@ void init_job_system(void(*execute_job_type)(Job_Type, void*)) {
 		});
 	}
 }
-
-#if 0
-void execute_all_jobs() {
-    for (int i = 0; i < jobs.size(); i++) {
-        semaphore.release();  
-    }
-
-    for (std::thread& thread : threads) {
-        if (thread.joinable()) {
-			// Wait for all threads to complete
-            thread.join();          }
-    }
-}
-
-void Job_Increment_Value::execute_job() {
-	// lambda for execution
-	std::thread new_thread([this]() {
-		a++;
-		log("a = %i", a);
-	});
-	// Detach the thread if you don't need to wait for it to finish
-	new_thread.detach();
-}
-
-std::atomic<bool> ready(false);
-std::vector<Job*> jobs = {};
-std::vector<std::thread> threads = {};
-
-// void init_threads() {
-// 	std::thread t1();
-// 	std::thread t2;
-// }
-
-void execute_jobs() {
-	for (Job* job : jobs) {
-		// If a thread is available, give the job over to a thread
-		// while (thread is aviailble)
-		job->execute_job();
-	}
-}
-
-void finish_executing_all_threads() {
-	for (std::thread& thread : threads) {
-		thread.join();
-	}
-	std::erase_if(jobs, [](Job* job) {
-		if (!job->job_executed) {
-			delete job;
-			return true;
-		}
-		return false;
-	});
-}
-#endif

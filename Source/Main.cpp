@@ -1480,6 +1480,9 @@ V2 get_texture_sprite_sheet_uv_coordinates(Image_Type type, int pos_x, int pos_y
 }
 
 void generate_chunk_perlin(Chunk* new_chunk) {
+	if (new_chunk == nullptr) {
+		assert(false);
+	}
 	new_chunk->total_vertices = 0;
 	new_chunk->allocated = true;
 
@@ -2841,6 +2844,7 @@ void get_adjacent_chunks(GL_Renderer* gl_renderer, Chunk* origin_chunk, Chunk* a
 }
 
 int apron_size = 1;
+std::vector<Chunk> chunks_to_generate = {};
 void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint textures_handle, float noise) {
 	profile_time_to_execute_start_milliseconds();
 	// ONLY overwrite if we are in range of new chunks
@@ -2855,7 +2859,6 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 		&& current_chunk_player_y == gl_renderer->previous_chunk_player_y) {
 		player_on_same_chunk = true;
 	}
-	std::vector<Chunk> chunks_to_generate = {};
 	if (player_on_same_chunk == false || force_regenerate) {
 		int difference_x = current_chunk_player_x - gl_renderer->previous_chunk_player_x;
 		int difference_y = current_chunk_player_y - gl_renderer->previous_chunk_player_y;
@@ -2944,28 +2947,29 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 	}
 
 	for (Chunk chunk_to_generate : chunks_to_generate) {
-		Chunk* chunk_being_generated = nullptr;
+		bool slot_available = false;
 		// See if there is a empty spot in the chunks_to_draw vector
 		for (Chunk& chunk_to_draw : gl_renderer->chunks_to_draw) {
 			if (chunk_to_draw.allocated == false) {
-				// Set it to point at the location in the vector that is open
-				chunk_being_generated = &chunk_to_draw;
-				// Initialize the data in the slot to the new data
-				*chunk_being_generated = chunk_to_generate;
 				// Set the buffer data value
-				chunk_being_generated->buffer_sub_data = true;
+				chunk_to_draw = {};
+				chunk_to_draw = chunk_to_generate;
+				chunk_to_draw.buffer_sub_data = true;
+
+				// NOTE: I THINK I AM OVERWRITTING THE POINTER THAT I'M PASSING IN
+				add_job(JT_Generate_Chunk_Perlin, &chunk_to_draw);
+				slot_available = true;
+				break;
 			}
 		}
 		// Create the chunk of the spot doesn't exist
-		if (chunk_being_generated == nullptr) {
+		if (slot_available == false) {
 			Chunk new_chunk = {};
+			new_chunk = chunk_to_generate;
 			new_chunk.buffer_sub_data = false;
 			gl_renderer->chunks_to_draw.push_back(new_chunk);
-			// Set it to point at the location in the vector that is open
-			chunk_being_generated = &gl_renderer->chunks_to_draw.back();
+			add_job(JT_Generate_Chunk_Perlin, &gl_renderer->chunks_to_draw.back());
 		}
-
-		add_job(JT_Generate_Chunk_Perlin, chunk_being_generated);
 	}
 
 	// We know this job has finished and we can loop through them
@@ -2977,15 +2981,15 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 			job_chunk.chunk = chunk;
 			get_adjacent_chunks(gl_renderer, chunk, job_chunk.adjacent_chunks);
 			add_job(JT_Generate_Chunk_Faces, &job_chunk);
-			job_finish.complete = true;
+			job_finish.finished_executing_all_steps = true;
 		} else {
-			job_finish.complete = true;
+			job_finish.finished_executing_all_steps = true;
 		}
 	}
 
 	// Clear the jobs finished vector
 	std::erase_if(jobs_finished, [](Job& job) {
-		if (job.complete) {
+		if (job.finished_executing_all_steps) {
 			if (job.type == JT_Generate_Chunk_Faces) {
 				Job_Chunk* job_chunk = (Job_Chunk*)job.data;
 				buffer_data(job_chunk->chunk);
