@@ -5,9 +5,7 @@
 #include <stdint.h>
 
 std::mutex job_mutex;
-std::vector<Job> jobs_list = {};
-std::mutex job_finished_mutex = {};
-std::vector<Job> jobs_finished = {};
+std::vector<std::shared_ptr<Job>> jobs_list = {};
 
 const int TOTAL_THREADS = 16;
 std::counting_semaphore<200> semaphore(0);
@@ -19,13 +17,15 @@ int get_semaphore_count() {
 }
 
 // Returns a reference to the job for keeping track of them
+// NOTE: This could return a value to increment the reference 
+// counter
 void add_job(Job_Type type, void* data) {
 	Job new_job = {};
 	new_job.type = type;
 	new_job.data = data;
 	new_job.finished_executing_all_steps = false;
 	job_mutex.lock();
-	jobs_list.push_back(new_job);
+	jobs_list.push_back(std::make_shared<Job>(new_job));
 	job_mutex.unlock();
     semaphore.release();  
 	semaphore_count++;
@@ -61,20 +61,18 @@ void thread_worker(void(*execute_job_type)(Job_Type, void*)) {
 		}
 		bool job_available = false;
 		job_mutex.lock();
-		Job job = {};
+		std::shared_ptr<Job> job = {};
 		if (!jobs_list.empty()) {
 			job = jobs_list.back();
+			// This should delete the shared pointer
+			// because the reference counter will be zero
 			jobs_list.pop_back();
 			job_available = true;
 		}
 		job_mutex.unlock();
 
 		if (job_available) {
-			execute_job_type(job.type, job.data);
-			job.finished_executing_all_steps = false;
-			job_finished_mutex.lock();
-			jobs_finished.push_back(job);
-			job_finished_mutex.unlock();
+			execute_job_type(job->type, job->data);
 		}
 
 		semaphore_count--;

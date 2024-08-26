@@ -21,10 +21,6 @@ struct Job {
 	bool finished_executing_all_steps;
 };
 
-extern std::vector<Job> jobs_list;
-extern std::mutex job_finished_mutex;
-extern std::vector<Job> jobs_finished;
-
 void init_job_system(void(*execute_job_type)(Job_Type, void*));
 int get_semaphore_count();
 void terminate_all_threads();
@@ -33,7 +29,7 @@ void add_job(Job_Type type, void* data);
 // In order, what to do:
 // 1) Add a job to a job list
 // 2) Have a list of threads that are created to grab the jobs and execute them
-// 3) Wait until all threads are finised to progress
+// 3) Wait until all threads are finished to progress
 
 #if 0
 struct Job {

@@ -210,19 +210,25 @@ struct Vertex_3D {
 	V2 uv;
 };
 
-struct Chunk {
-	bool is_apron = false;
+enum Job_Phase {
+	JP_Perlin_Finished,
+	JP_Generate_Faces_Finished,
+	JP_Total
+};
 
+struct Chunk {
+	GLuint ebo;
 	int world_index_x;
 	int world_index_y;
 
-	GLuint ebo;
+	bool is_apron = false;
 	bool allocated = false;
 	bool buffer_sub_data = false;
 
 	GLuint total_vertices;
 	GLuint vbo;
 	GLsizeiptr buffer_size;
+	Job_Phase phase;
 
 	std::vector<UINT32> faces_indices = {};
 	std::vector<Vertex_3D_Faces> faces_vertices = {};
@@ -233,8 +239,9 @@ struct Chunk {
 };
 
 struct Job_Chunk {
-	Chunk* chunk;
-	Chunk* adjacent_chunks[4];
+	std::atomic<bool> is_completed;
+	std::shared_ptr<Chunk> chunk;
+	std::shared_ptr<Chunk> adjacent_chunks[4];
 };
 
 struct GL_Renderer {
@@ -245,7 +252,7 @@ struct GL_Renderer {
 	std::vector<Vertex_3D_Line> lines_vertices;
 	std::vector<Cube_Draw> cubes;
 	std::vector<Vertex_String> strings;
-	std::vector<Chunk> chunks_to_draw;
+	std::vector<std::shared_ptr<Chunk>> chunks_to_draw;
 	std::vector<Vertex_3D> quads_to_draw;
 
 	std::vector<Job_Chunk> active_jobs_list;
@@ -1479,7 +1486,7 @@ V2 get_texture_sprite_sheet_uv_coordinates(Image_Type type, int pos_x, int pos_y
 	return result;
 }
 
-void generate_chunk_perlin(Chunk* new_chunk) {
+void generate_chunk_perlin(std::shared_ptr<Chunk> new_chunk) {
 	if (new_chunk == nullptr) {
 		assert(false);
 	}
@@ -1619,12 +1626,11 @@ void generate_world_chunk(GL_Renderer* gl_renderer, int chunk_world_index_x, int
 
 Chunk* get_existing_chunk(GL_Renderer* gl_renderer, int x, int y) {
 	Chunk* result = nullptr;
-	for (Chunk& chunk : gl_renderer->chunks_to_draw) {
-		if (x == chunk.world_index_x && y == chunk.world_index_y) {
-			result = &chunk;
+	for (Chunk* chunk : gl_renderer->chunks_to_draw) {
+		if (x == chunk->world_index_x && y == chunk->world_index_y) {
+			result = chunk;
 		}
 	}
-
 	return result;
 }
 
@@ -2103,7 +2109,7 @@ void buffer_world_chunk(GL_Renderer* gl_renderer, int chunk_world_index_x, int c
 }
 #endif
 
-void generate_chunk_faces(Job_Chunk* job_chunk) {
+void generate_chunk_faces(std::shared_ptr<Job_Chunk> job_chunk) {
 	if (job_chunk == nullptr) {
 		return;
 	}
@@ -2588,14 +2594,14 @@ void gl_draw_cube_faces_vbo(GL_Renderer* gl_renderer, GLuint textures_handle) {
 
 	// Bind the sprite sheet with all the textures
 	// log("chunks_to_draw_size = %i", gl_renderer->chunks_to_draw.size());
-	for (Chunk& chunk: gl_renderer->chunks_to_draw) {
+	for (Chunk* chunk: gl_renderer->chunks_to_draw) {
 		// DON'T DRAW THE APRON
-		if (chunk.is_apron == false) {
-			glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, chunk.ebo);
-			if (chunk.ebo <= 0) {
+		if (chunk->is_apron == false) {
+			glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, chunk->ebo);
+			if (chunk->ebo <= 0) {
 				assert(false);
 			}
-			glBindBuffer(GL_ARRAY_BUFFER, chunk.vbo);
+			glBindBuffer(GL_ARRAY_BUFFER, chunk->vbo);
 			glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Faces), (void*)offsetof(Vertex_3D_Faces, pos));
 			glEnableVertexAttribArray(0);
 			glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Faces), (void*)offsetof(Vertex_3D_Faces, uv));
@@ -2623,7 +2629,7 @@ void gl_draw_cube_faces_vbo(GL_Renderer* gl_renderer, GLuint textures_handle) {
 			// GLuint light_fireball_loc = glGetUniformLocation(shader_program, "light_position_fireball");
 			// glUniform3fv(time_loc, );
 
-			glDrawElements(GL_TRIANGLES, (GLuint)chunk.faces_indices.size(), GL_UNSIGNED_INT, (void*)0);
+			glDrawElements(GL_TRIANGLES, (GLuint)chunk->faces_indices.size(), GL_UNSIGNED_INT, (void*)0);
 		}
 	}
 }
@@ -2822,29 +2828,29 @@ void get_player_chunk(GL_Renderer* gl_renderer, int& x, int& y) {
 	}
 }
 
-void get_adjacent_chunks(GL_Renderer* gl_renderer, Chunk* origin_chunk, Chunk* adjacent_chunks[]) {
+void get_adjacent_chunks(GL_Renderer* gl_renderer, std::shared_ptr<Chunk> origin_chunk, std::shared_ptr<Chunk> adjacent_chunks[]) {
 	int chunk_world_index_x = origin_chunk->world_index_x;
 	int chunk_world_index_y = origin_chunk->world_index_y;
 	Chunk* front_chunk = get_existing_chunk(gl_renderer, chunk_world_index_x + 1, chunk_world_index_y);
 	if (front_chunk != nullptr) {
-		adjacent_chunks[0] = front_chunk;
+		*adjacent_chunks[0] = *front_chunk;
 	}
 	Chunk* right_chunk = get_existing_chunk(gl_renderer, chunk_world_index_x, chunk_world_index_y + 1);
 	if (right_chunk != nullptr) {
-		adjacent_chunks[1] = right_chunk;
+		*adjacent_chunks[1] = *right_chunk;
 	}
 	Chunk* back_chunk = get_existing_chunk(gl_renderer, chunk_world_index_x - 1, chunk_world_index_y);
 	if (back_chunk != nullptr) {
-		adjacent_chunks[2] = back_chunk;
+		*adjacent_chunks[2] = *back_chunk;
 	}
 	Chunk* left_chunk = get_existing_chunk(gl_renderer, chunk_world_index_x, chunk_world_index_y - 1);
 	if (left_chunk != nullptr) {
-		adjacent_chunks[3] = left_chunk;
+		*adjacent_chunks[3] = *left_chunk;
 	}
 }
 
 int apron_size = 1;
-std::vector<Chunk> chunks_to_generate = {};
+std::vector<std::shared_ptr<Chunk>> chunks_to_generate = {};
 void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint textures_handle, float noise) {
 	profile_time_to_execute_start_milliseconds();
 	// ONLY overwrite if we are in range of new chunks
@@ -2867,33 +2873,33 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 		gl_renderer->previous_chunk_player_y = current_chunk_player_y;
 		
 		// Erase all the aprons so they can regenerate
-		std::erase_if(gl_renderer->chunks_to_draw, [difference_x, difference_y](Chunk& chunk) {
-			if (chunk.is_apron) {
+		std::erase_if(gl_renderer->chunks_to_draw, [difference_x, difference_y](Chunk* chunk) {
+			if (chunk->is_apron) {
 				// Positive X
 				if (difference_x > 0) {
-					if (chunk.world_index_x >= 0) {
-						glDeleteBuffers(1, &chunk.vbo);
+					if (chunk->world_index_x >= 0) {
+						glDeleteBuffers(1, &chunk->vbo);
 						return true;
 					}
 				}
 				// Positive Y
 				if (difference_y > 0) {
-					if (chunk.world_index_y >= 0) {
-						glDeleteBuffers(1, &chunk.vbo);
+					if (chunk->world_index_y >= 0) {
+						glDeleteBuffers(1, &chunk->vbo);
 						return true;
 					}
 				}
 				// Negative X
 				if (difference_x < 0) {
-					if (chunk.world_index_x < 0) {
-						glDeleteBuffers(1, &chunk.vbo);
+					if (chunk->world_index_x < 0) {
+						glDeleteBuffers(1, &chunk->vbo);
 						return true;
 					}
 				}
 				// Negative Y
 				if (difference_y < 0) {
-					if (chunk.world_index_y < 0) {
-						glDeleteBuffers(1, &chunk.vbo);
+					if (chunk->world_index_y < 0) {
+						glDeleteBuffers(1, &chunk->vbo);
 						return true;
 					}
 				}
@@ -2901,9 +2907,9 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 			return false;
 		});
 
-		for (Chunk& chunk : gl_renderer->chunks_to_draw) {
-			chunk.allocated = false;
-			chunk.is_apron = false;
+		for (std::shared_ptr<Chunk> chunk : gl_renderer->chunks_to_draw) {
+			chunk->allocated = false;
+			chunk->is_apron = false;
 		}
 
 		// log("*****************************");
@@ -2920,23 +2926,22 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 				int world_index_x = x + current_chunk_player_x;
 				int world_index_y = y + current_chunk_player_y;
 				bool already_generated = false;
-				for (Chunk& chunk : gl_renderer->chunks_to_draw) {
-					if (chunk.world_index_x == world_index_x &&
-						chunk.world_index_y == world_index_y) {
-						chunk.allocated = true;
-						chunk.is_apron = is_apron;
+				for (std::shared_ptr<Chunk> chunk : gl_renderer->chunks_to_draw) {
+					if (chunk->world_index_x == world_index_x &&
+						chunk->world_index_y == world_index_y) {
+						chunk->allocated = true;
+						chunk->is_apron = is_apron;
 						already_generated = true;
 					}
 				}
 
 				if (already_generated == false) {
-					Chunk data = {};
+					std::shared_ptr<Chunk> data = std::make_shared<Chunk>();
 
-					data.world_index_x = world_index_x;
-					data.world_index_y = world_index_y;
-					data.is_apron = is_apron;
-
-					data.noise = noise;
+					data->world_index_x = world_index_x;
+					data->world_index_y = world_index_y;
+					data->is_apron = is_apron;
+					data->noise = noise;
 
 					chunks_to_generate.push_back(data);
 				}
@@ -2946,18 +2951,19 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 		// log("Total checked:    %i", total_checked);
 	}
 
-	for (Chunk chunk_to_generate : chunks_to_generate) {
+	// NOTE: Erase_if decrements the reference counter
+	// NOTE: Passing the shared pointer into a function decrements 
+	// the counter
+	for (Chunk& chunk_to_generate : chunks_to_generate) {
 		bool slot_available = false;
 		// See if there is a empty spot in the chunks_to_draw vector
-		for (Chunk& chunk_to_draw : gl_renderer->chunks_to_draw) {
-			if (chunk_to_draw.allocated == false) {
-				// Set the buffer data value
-				chunk_to_draw = {};
-				chunk_to_draw = chunk_to_generate;
-				chunk_to_draw.buffer_sub_data = true;
+		for (std::shared_ptr<Chunk> chunk_to_draw : gl_renderer->chunks_to_draw) {
+			if (chunk_to_draw->allocated == false) {
+				*chunk_to_draw = chunk_to_generate;
+				chunk_to_draw->buffer_sub_data = true;
 
-				// NOTE: I THINK I AM OVERWRITTING THE POINTER THAT I'M PASSING IN
-				add_job(JT_Generate_Chunk_Perlin, &chunk_to_draw);
+				// NOTE: This does NOT increment the reference counter in shared pointer
+				add_job(JT_Generate_Chunk_Perlin, (void*)(&chunk_to_draw));
 				slot_available = true;
 				break;
 			}
@@ -2967,43 +2973,25 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 			Chunk new_chunk = {};
 			new_chunk = chunk_to_generate;
 			new_chunk.buffer_sub_data = false;
-			gl_renderer->chunks_to_draw.push_back(new_chunk);
-			add_job(JT_Generate_Chunk_Perlin, &gl_renderer->chunks_to_draw.back());
+			gl_renderer->chunks_to_draw.push_back(std::make_shared<Chunk>(new_chunk));
+			add_job(JT_Generate_Chunk_Perlin, (void*)&gl_renderer->chunks_to_draw.back());
 		}
 	}
 
-	// We know this job has finished and we can loop through them
-	job_finished_mutex.lock();
-	for (Job& job_finish : jobs_finished) {
-		if (job_finish.type == JT_Generate_Chunk_Perlin) {
-			Chunk* chunk = (Chunk*)job_finish.data;
+	for (std::shared_ptr<Chunk> chunk_to_draw : gl_renderer->chunks_to_draw) {
+		if (chunk_to_draw->phase == JP_Perlin_Finished) {
 			Job_Chunk job_chunk = {};
-			job_chunk.chunk = chunk;
-			get_adjacent_chunks(gl_renderer, chunk, job_chunk.adjacent_chunks);
-			add_job(JT_Generate_Chunk_Faces, &job_chunk);
-			job_finish.finished_executing_all_steps = true;
-		} else {
-			job_finish.finished_executing_all_steps = true;
+			job_chunk.chunk = chunk_to_draw;
+			get_adjacent_chunks(gl_renderer, job_chunk.chunk, job_chunk.adjacent_chunks);
+			add_job(JT_Generate_Chunk_Faces, (void*)&std::make_shared<Job_Chunk>(job_chunk));
 		}
 	}
-
-	// Clear the jobs finished vector
-	std::erase_if(jobs_finished, [](Job& job) {
-		if (job.finished_executing_all_steps) {
-			if (job.type == JT_Generate_Chunk_Faces) {
-				Job_Chunk* job_chunk = (Job_Chunk*)job.data;
-				buffer_data(job_chunk->chunk);
-			}
-			return true;
-		}
-		return false;
-	});
-	job_finished_mutex.unlock();
 	chunks_to_generate.clear();
 
-	std::erase_if(gl_renderer->chunks_to_draw, [](Chunk& chunk) {
-		if (!chunk.allocated) {
-			glDeleteBuffers(1, &chunk.vbo);
+	std::erase_if(gl_renderer->chunks_to_draw, [](std::shared_ptr<Chunk> chunk) {
+		if (!chunk->allocated) {
+			glDeleteBuffers(1, &chunk->vbo);
+			glDeleteBuffers(1, &chunk->ebo);
 			return true;
 		}
 		return false;
@@ -3160,10 +3148,10 @@ void check_player_collision(GL_Renderer* gl_renderer) {
 	log("Chunk player is on: x = %i, y = %i", chunk_player_is_on_x, chunk_player_is_on_y);
 
 	Chunk* chunk_player_is_on = nullptr;
-	for (Chunk& chunk : gl_renderer->chunks_to_draw) {
-		if (chunk.world_index_x == chunk_player_is_on_x
-			&& chunk.world_index_y == chunk_player_is_on_y) {
-			chunk_player_is_on = &chunk;
+	for (Chunk* chunk : gl_renderer->chunks_to_draw) {
+		if (chunk->world_index_x == chunk_player_is_on_x
+			&& chunk->world_index_y == chunk_player_is_on_y) {
+			chunk_player_is_on = chunk;
 		}
 	}
 	if (chunk_player_is_on == nullptr) {
@@ -3245,12 +3233,12 @@ void check_player_collision(GL_Renderer* gl_renderer) {
 }
 
 void draw_cube_coordinates(GL_Renderer* gl_renderer, Font* font) {
-	for (Chunk& chunk : gl_renderer->chunks_to_draw) {
+	for (Chunk* chunk : gl_renderer->chunks_to_draw) {
 		for (int x = 0; x < CHUNK_WIDTH; x++) {
 			for (int y = 0; y < CHUNK_LENGTH; y++) {
 				V3 cube_pos = { (float)x, (float)y, (float)CHUNK_HEIGHT };
-				cube_pos.x += chunk.world_index_x * CHUNK_WIDTH;
-				cube_pos.y += chunk.world_index_y * CHUNK_LENGTH;
+				cube_pos.x += chunk->world_index_x * CHUNK_WIDTH;
+				cube_pos.y += chunk->world_index_y * CHUNK_LENGTH;
 				std::string str = "[" + std::to_string(x) + "," + std::to_string(y) + "]";
 				draw_string_ws(gl_renderer, font, str.c_str(), cube_pos, 2, false);
 			}
@@ -3281,13 +3269,18 @@ void execute_job_type(Job_Type type, void* data) {
 		break;
 	}
 	case JT_Generate_Chunk_Perlin: {
-		Chunk* chunk = (Chunk*)data;
-		generate_chunk_perlin(chunk);
+		// Oh this is interesting 
+		std::shared_ptr<Chunk>* chunk_ptr = (std::shared_ptr<Chunk>*)data;
+		generate_chunk_perlin(*chunk_ptr);
+		std::shared_ptr<Chunk>& chunk = *chunk_ptr;
+		chunk->phase = JP_Perlin_Finished;
 		break;
 	}
 	case JT_Generate_Chunk_Faces: {
-		Job_Chunk* job_chunk = (Job_Chunk*)data;
-		generate_chunk_faces(job_chunk);
+		std::shared_ptr<Job_Chunk>* job_chunk_ptr = (std::shared_ptr<Job_Chunk>*)data;
+		generate_chunk_faces(*job_chunk_ptr);
+		std::shared_ptr<Job_Chunk>& job_chunk = *job_chunk_ptr;
+		job_chunk->chunk->phase = JP_Generate_Faces_Finished;
 		break;
 	}
 	default: {
@@ -3474,12 +3467,12 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		draw_string_ws(gl_renderer, &font, "y", { 0, 5, 0 }, 3, true);
 		draw_string_ws(gl_renderer, &font, "z", { 0, 0, 5 }, 3, true);
 
-		for (Chunk& chunk : gl_renderer->chunks_to_draw) {
-			std::string str = std::to_string(chunk.world_index_x) + "," + std::to_string(chunk.world_index_y);
-			V3 chunk_pos = { (float)chunk.world_index_x * CHUNK_WIDTH, (float)chunk.world_index_y * CHUNK_LENGTH, (float)CHUNK_HEIGHT };
+		for (Chunk* chunk : gl_renderer->chunks_to_draw) {
+			std::string str = std::to_string(chunk->world_index_x) + "," + std::to_string(chunk->world_index_y);
+			V3 chunk_pos = { (float)chunk->world_index_x * CHUNK_WIDTH, (float)chunk->world_index_y * CHUNK_LENGTH, (float)CHUNK_HEIGHT };
 			// chunk_pos.x += CHUNK_WIDTH / 2;
 			// chunk_pos.y += CHUNK_LENGTH / 2;
-			if (chunk.is_apron) {
+			if (chunk->is_apron) {
 				std::string apron_str = "AP";
 				draw_string_ws(gl_renderer, &font, apron_str.c_str(), chunk_pos, 1, false);
 			}
