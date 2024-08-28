@@ -2555,18 +2555,20 @@ void generate_chunk_faces(Chunk* chunk) {
 void buffer_data(Chunk* chunk) {
 	bool force_reallocate = false;
 	if (chunk->buffer_sub_data) {
-		GLsizeiptr new_size = sizeof(Vertex_3D_Faces) * chunk->faces_indices.size();
+		GLsizeiptr new_size = sizeof(Vertex_3D_Faces) * chunk->faces_vertices.size();
 		// ONLY ALLOCATE IF THERE IS ENOUGH SIZE IN THE CURRENT BUFFER
 		if (new_size <= chunk->buffer_size && chunk->vbo > 0) {
 			glBindBuffer(GL_ARRAY_BUFFER, chunk->vbo);
 			//											  size of the data that is being replaced
-			glBufferSubData(GL_ARRAY_BUFFER, (GLintptr)0, new_size, chunk->faces_indices.data());
+			glBufferSubData(GL_ARRAY_BUFFER, (GLintptr)0, new_size, chunk->faces_vertices.data());
 
 			// IF I HIT THIS, I KNOW THERE'S AN ISSUE WITH THE LOGIC
 			if (chunk->ebo <= 0) {
 				assert(false);
 			}
 			glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, chunk->ebo);
+			// NOTE: The size of the ebo is based off the size of the vbo, therefore there will be enough space
+			// for the indices if there is enough spaces for the vertices.
 			glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, (GLintptr)0, chunk->faces_indices.size() * sizeof(UINT32), chunk->faces_indices.data());
 			chunk->phase = JCP_Buffered;
 		}
@@ -2915,6 +2917,17 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 		});
 
 		for (Chunk* chunk : gl_renderer->chunks_to_draw) {
+			int x_boundary_negative = current_chunk_player_x + (-VIEW_DISTANCE - apron_size);
+			int x_boundary_positive = current_chunk_player_x + (VIEW_DISTANCE + apron_size);
+			int y_boundary_negative = current_chunk_player_y + (-VIEW_DISTANCE - apron_size);
+			int y_boundary_positive = current_chunk_player_y + (VIEW_DISTANCE + apron_size);
+			// Remove the chunks out of range
+			if (chunk->world_index_x < x_boundary_negative || 
+				chunk->world_index_x > x_boundary_positive ||
+				chunk->world_index_y < y_boundary_negative ||
+				chunk->world_index_y > y_boundary_positive) {
+				chunk->phase = JCP_Available;
+			}
 			chunk->is_apron = false;
 		}
 
