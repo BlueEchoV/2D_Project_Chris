@@ -23,7 +23,6 @@ void add_job(Job_Type type, void* data) {
 	Job new_job = {};
 	new_job.type = type;
 	new_job.data = data;
-	new_job.finished_executing_all_steps = false;
 	job_mutex.lock();
 	jobs_list.push_back(std::make_shared<Job>(new_job));
 	job_mutex.unlock();

@@ -18,7 +18,6 @@ enum Job_Type {
 struct Job {
 	Job_Type type;
 	void* data;
-	bool finished_executing_all_steps;
 };
 
 void init_job_system(void(*execute_job_type)(Job_Type, void*));
