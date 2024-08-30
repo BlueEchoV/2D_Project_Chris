@@ -8,7 +8,7 @@ std::mutex job_mutex;
 std::vector<std::shared_ptr<Job>> jobs_list = {};
 
 const int TOTAL_THREADS = 16;
-std::counting_semaphore<200> semaphore(0);
+std::counting_semaphore<400> semaphore(0);
 std::atomic semaphore_count = 0;
 std::vector<std::thread> threads;
 
