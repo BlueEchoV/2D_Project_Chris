@@ -21,6 +21,6 @@ struct Job {
 };
 
 void init_job_system(void(*execute_job_type)(Job_Type, void*));
-int get_semaphore_count();
 void terminate_all_threads();
+void wake_up_threads();
 void add_job(Job_Type type, void* data);
