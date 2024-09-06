@@ -1,5 +1,14 @@
 #include "Math.h"
 
+float calculate_distance(V2 p1, V2 p2) {
+    return (float)sqrt(((p2.x - p1.x) * (p2.x - p1.x)) + ((p2.y - p1.y) * (p2.y - p1.y)));
+}
+
+// Monotonic
+float calculate_distance_low_cost(V2 p1, V2 p2) {
+    return ((p2.x - p1.x) * (p2.x - p1.x)) + ((p2.y - p1.y) * (p2.y - p1.y));
+}
+
 // NOTE: COLUMN MAJOR
 V3 operator*(const MX3& matrix, const V3& vector) {
     // V3 result;
