@@ -130,7 +130,7 @@ struct Chunk_Vbo {
 };
 
 // IN CHUNKS
-int VIEW_DISTANCE = 4;
+int VIEW_DISTANCE = 25;
 
 struct Open_GL {
 	GLuint vao;
@@ -236,13 +236,18 @@ enum Chunk_Direction {
 	CD_Count
 };
 
+const int PRIME = 31;
+
+uint64_t get_chunk_hash(int x, int y) {
+	return ((x * PRIME) + y);
+}
+
 struct Chunk {
-	int world_index_x;
-	int world_index_y;
+	int x;
+	int y;
 	GLuint ebo;
 
 	std::atomic<Job_Chunk_Phase> phase;
-	bool buffer_sub_data = false;
 
 	std::atomic<int> ref_count = 0;
 	Chunk* adjacent_chunks[CD_Count] = { nullptr , nullptr, nullptr, nullptr };
@@ -267,7 +272,8 @@ struct GL_Renderer {
 	std::vector<Vertex_3D_Line> lines_vertices;
 	std::vector<Cube_Draw> cubes;
 	std::vector<Vertex_String> strings;
-	std::vector<Chunk*> chunks_to_draw;
+	// std::vector<Chunk*> chunks_to_draw;
+	std::unordered_map<uint64_t, Chunk*> chunks_to_draw;
 	std::vector<Vertex_3D> quads_to_draw;
 
 	// std::vector<Job_Chunk> active_jobs_list;
@@ -1502,6 +1508,7 @@ V2 get_texture_sprite_sheet_uv_coordinates(Image_Type type, int pos_x, int pos_y
 }
 
 void generate_chunk_perlin(Chunk* new_chunk) {
+	ZoneScoped;
 	if (new_chunk == nullptr) {
 		assert(false);
 	}
@@ -1509,8 +1516,8 @@ void generate_chunk_perlin(Chunk* new_chunk) {
 
 	for (int x = 0; x < CHUNK_WIDTH; x++) {
 		for (int y = 0; y < CHUNK_LENGTH; y++) {
-			float world_space_x = x + (float)new_chunk->world_index_x * CHUNK_WIDTH;
-			float world_space_y = y + (float)new_chunk->world_index_y * CHUNK_LENGTH;
+			float world_space_x = x + (float)new_chunk->x * CHUNK_WIDTH;
+			float world_space_y = y + (float)new_chunk->y * CHUNK_LENGTH;
 			float height_value = stb_perlin_noise3((float)world_space_x / new_chunk->noise, 0, world_space_y / new_chunk->noise, 0, 0, 0);
 			// The perlin value is between -1 and 1, and this line normalizes it to a 
 			// range of 0 to CHUNK_HEIGHT, determining the height of the terrain
@@ -1585,12 +1592,12 @@ void generate_world_chunk(GL_Renderer* gl_renderer, int chunk_world_index_x, int
 	new_chunk->allocated = true;
 	new_chunk->is_apron = is_apron;
 
-	new_chunk->world_index_x = chunk_world_index_x;
-	new_chunk->world_index_y = chunk_world_index_y;
+	new_chunk->x = chunk_world_index_x;
+	new_chunk->y = chunk_world_index_y;
 	for (int x = 0; x < CHUNK_WIDTH; x++) {
 		for (int y = 0; y < CHUNK_LENGTH; y++) {
-			float world_space_x = x + (float)new_chunk->world_index_x * CHUNK_WIDTH;
-			float world_space_y = y + (float)new_chunk->world_index_y * CHUNK_LENGTH;
+			float world_space_x = x + (float)new_chunk->x * CHUNK_WIDTH;
+			float world_space_y = y + (float)new_chunk->y * CHUNK_LENGTH;
 			float height_value = stb_perlin_noise3((float)world_space_x / (float)noise, 0, world_space_y / noise, 0, 0, 0);
 			// The perlin value is between -1 and 1, and this line normalizes it to a 
 			// range of 0 to CHUNK_HEIGHT, determining the height of the terrain
@@ -1639,10 +1646,9 @@ void generate_world_chunk(GL_Renderer* gl_renderer, int chunk_world_index_x, int
 #endif
 
 Chunk* get_existing_chunk(GL_Renderer* gl_renderer, int x, int y) {
-	for (Chunk* chunk : gl_renderer->chunks_to_draw) {
-		if (x == chunk->world_index_x && y == chunk->world_index_y) {
-			return chunk;
-		}
+	auto iterator = gl_renderer->chunks_to_draw.find(get_chunk_hash(x, y));
+	if (iterator != gl_renderer->chunks_to_draw.end()) {
+		return iterator->second;
 	}
 	return nullptr;
 }
@@ -1659,7 +1665,7 @@ void buffer_world_chunk(GL_Renderer* gl_renderer, int chunk_world_index_x, int c
 	// Generate the data to be sent to the GPU
 	std::vector<Vertex_3D_Faces> faces_vertices = {};
 	std::vector<UINT32> faces_indices = {};
-	V3 chunk_ws_pos = { chunk->world_index_x * (float)CHUNK_WIDTH, chunk->world_index_y * (float)CHUNK_LENGTH, 0 };
+	V3 chunk_ws_pos = { chunk->x * (float)CHUNK_WIDTH, chunk->y * (float)CHUNK_LENGTH, 0 };
 	for (int x = 0; x < CHUNK_WIDTH; x++) {
 		for (int y = 0; y < CHUNK_LENGTH; y++) {
 			for (int z = 0; z < CHUNK_HEIGHT; z++) {
@@ -2123,14 +2129,19 @@ void buffer_world_chunk(GL_Renderer* gl_renderer, int chunk_world_index_x, int c
 #endif
 
 void generate_chunk_faces(Chunk* chunk) {
+	ZoneScoped;
 	if (chunk == nullptr) {
 		return;
 	}
 
 	// Generate the data to be sent to the GPU
-	std::vector<Vertex_3D_Faces> faces_vertices = {};
-	std::vector<UINT32> faces_indices = {};
-	V3 chunk_ws_pos = { chunk->world_index_x * (float)CHUNK_WIDTH, chunk->world_index_y * (float)CHUNK_LENGTH, 0 };
+	chunk->faces_vertices.clear();
+	std::vector<Vertex_3D_Faces>& faces_vertices = chunk->faces_vertices;
+	faces_vertices.reserve(4096);
+	chunk->faces_indices.clear();
+	std::vector<UINT32>& faces_indices = chunk->faces_indices;
+	faces_indices.reserve(4096);
+	V3 chunk_ws_pos = { chunk->x * (float)CHUNK_WIDTH, chunk->y * (float)CHUNK_LENGTH, 0 };
 	for (int x = 0; x < CHUNK_WIDTH; x++) {
 		for (int y = 0; y < CHUNK_LENGTH; y++) {
 			for (int z = 0; z < CHUNK_HEIGHT; z++) {
@@ -2262,7 +2273,6 @@ void generate_chunk_faces(Chunk* chunk) {
 
 						chunk->total_vertices += 4;
 
-						// No need to store starting index becuase I'm going to be doing a massive 
 						// glDrawElements call
 						UINT32 base_index = (UINT32)(faces_vertices.size()) - 4;
 						// First Triangle
@@ -2541,52 +2551,34 @@ void generate_chunk_faces(Chunk* chunk) {
 			}
 		}
 	}
-
-	chunk->faces_vertices.clear();
-	chunk->faces_vertices = faces_vertices;
-	chunk->faces_indices.clear();
-	chunk->faces_indices = faces_indices;
-	faces_indices.clear();
 }
 
 void buffer_data(Chunk* chunk) {
-	bool force_reallocate = false;
-	if (chunk->buffer_sub_data) {
+	if (chunk->vbo > 0) {
 		GLsizeiptr new_size = sizeof(Vertex_3D_Faces) * chunk->faces_vertices.size();
-		// ONLY ALLOCATE IF THERE IS ENOUGH SIZE IN THE CURRENT BUFFER
-		if (new_size <= chunk->buffer_size && chunk->vbo > 0) {
+		if (new_size <= chunk->buffer_size) {
 			glBindBuffer(GL_ARRAY_BUFFER, chunk->vbo);
-			//											  size of the data that is being replaced
 			glBufferSubData(GL_ARRAY_BUFFER, (GLintptr)0, new_size, chunk->faces_vertices.data());
 
-			// IF I HIT THIS, I KNOW THERE'S AN ISSUE WITH THE LOGIC
-			if (chunk->ebo <= 0) {
-				assert(false);
-			}
 			glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, chunk->ebo);
-			// NOTE: The size of the ebo is based off the size of the vbo, therefore there will be enough space
-			// for the indices if there is enough spaces for the vertices.
 			glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, (GLintptr)0, chunk->faces_indices.size() * sizeof(UINT32), chunk->faces_indices.data());
 			chunk->phase = JCP_Buffered;
 		}
 		else {
-			force_reallocate = true;
+			glDeleteBuffers(1, &chunk->vbo);
+			chunk->vbo = 0;
+
+			glDeleteBuffers(1, &chunk->ebo);
+			chunk->ebo = 0;
 		}
-	}
-	if (!chunk->buffer_sub_data || force_reallocate) {
-		bool chunk_already_in_chunks_to_draw = true;
-		if (chunk->vbo <= 0) {
-			glGenBuffers(1, &chunk->vbo);
-			chunk_already_in_chunks_to_draw = false;
-		}
+	} 
+	if (chunk->vbo <= 0) {
+		glGenBuffers(1, &chunk->vbo);
 		glBindBuffer(GL_ARRAY_BUFFER, chunk->vbo);
 		chunk->buffer_size = sizeof(Vertex_3D_Faces) * chunk->faces_vertices.size();
 		glBufferData(GL_ARRAY_BUFFER, sizeof(Vertex_3D_Faces) * chunk->faces_vertices.size(), chunk->faces_vertices.data(), GL_STATIC_DRAW);
 
-		if (chunk->ebo <= 0) {
-			glGenBuffers(1, &chunk->ebo);
-		}
-		// Elements buffer
+		glGenBuffers(1, &chunk->ebo);
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, chunk->ebo);
 		glBufferData(GL_ELEMENT_ARRAY_BUFFER, chunk->faces_indices.size() * sizeof(UINT32), chunk->faces_indices.data(), GL_STATIC_DRAW);
 		chunk->phase = JCP_Buffered;
@@ -2601,14 +2593,14 @@ void gl_draw_cube_faces_vbo(GL_Renderer* gl_renderer, GLuint textures_handle) {
 
 	// Bind the sprite sheet with all the textures
 	// log("chunks_to_draw_size = %i", gl_renderer->chunks_to_draw.size());
-	for (Chunk* chunk: gl_renderer->chunks_to_draw) {
+	for (auto& pair : gl_renderer->chunks_to_draw) {
 		// DON'T DRAW THE APRON
-		if (chunk->phase == JCP_Ready_For_Drawing) {
-			glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, chunk->ebo);
-			if (chunk->ebo <= 0) {
+		if (pair.second->phase == JCP_Ready_For_Drawing) {
+			glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, pair.second->ebo);
+			if (pair.second->ebo <= 0) {
 				assert(false);
 			}
-			glBindBuffer(GL_ARRAY_BUFFER, chunk->vbo);
+			glBindBuffer(GL_ARRAY_BUFFER, pair.second->vbo);
 			glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Faces), (void*)offsetof(Vertex_3D_Faces, pos));
 			glEnableVertexAttribArray(0);
 			glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex_3D_Faces), (void*)offsetof(Vertex_3D_Faces, uv));
@@ -2636,7 +2628,7 @@ void gl_draw_cube_faces_vbo(GL_Renderer* gl_renderer, GLuint textures_handle) {
 			// GLuint light_fireball_loc = glGetUniformLocation(shader_program, "light_position_fireball");
 			// glUniform3fv(time_loc, );
 
-			glDrawElements(GL_TRIANGLES, (GLuint)chunk->faces_indices.size(), GL_UNSIGNED_INT, (void*)0);
+			glDrawElements(GL_TRIANGLES, (GLuint)pair.second->faces_indices.size(), GL_UNSIGNED_INT, (void*)0);
 		}
 	}
 }
@@ -2836,8 +2828,8 @@ void get_player_chunk(GL_Renderer* gl_renderer, int& x, int& y) {
 }
 
 bool get_adjacent_chunks(GL_Renderer* gl_renderer, Chunk* chunk) {
-	int chunk_world_index_x = chunk->world_index_x;
-	int chunk_world_index_y = chunk->world_index_y;
+	int chunk_world_index_x = chunk->x;
+	int chunk_world_index_y = chunk->y;
 
 	Chunk* front_chunk = get_existing_chunk(gl_renderer, chunk_world_index_x + 1, chunk_world_index_y);
 	Chunk* right_chunk = get_existing_chunk(gl_renderer, chunk_world_index_x, chunk_world_index_y + 1);
@@ -2881,9 +2873,9 @@ void release_adjacent_chunks(Chunk* chunk) {
 	left_chunk->ref_count--;
 }
 
-int jobs_added = 0;
 int apron_size = 1;
 void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint textures_handle, float noise) {
+	ZoneScoped;
 	profile_time_to_execute_start_milliseconds();
 
 	int current_chunk_player_x = 0;
@@ -2896,31 +2888,30 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 		player_on_same_chunk = true;
 	}
 
-	int x_boundary_negative = current_chunk_player_x + (-VIEW_DISTANCE - apron_size);
-	int x_boundary_positive = current_chunk_player_x + (VIEW_DISTANCE + apron_size);
-	int y_boundary_negative = current_chunk_player_y + (-VIEW_DISTANCE - apron_size);
-	int y_boundary_positive = current_chunk_player_y + (VIEW_DISTANCE + apron_size);
-	for (Chunk* chunk : gl_renderer->chunks_to_draw) {
-		if (chunk->phase == JCP_Ready_For_Drawing) {
+	int world_boundary_index_x_pos = VIEW_DISTANCE + current_chunk_player_x;
+	int world_boundary_index_y_pos = VIEW_DISTANCE + current_chunk_player_y;
+	int world_boundary_index_x_neg = -VIEW_DISTANCE + current_chunk_player_x;
+	int world_boundary_index_y_neg = -VIEW_DISTANCE + current_chunk_player_y;
+
+#if 0
+	for (auto& pair : gl_renderer->chunks_to_draw) {
+		if (pair.second->phase == JCP_Ready_For_Drawing) {
 			// Remove the chunks out of range
-			if (chunk->world_index_x < x_boundary_negative) {
-				chunk->phase = JCP_Available;
-				log("x = %i", chunk->world_index_x);
+			if (pair.second->x > world_boundary_index_x_pos) {
+				pair.second->phase = JCP_Available;
 			}
-			if (chunk->world_index_x > x_boundary_positive) {
-				chunk->phase = JCP_Available;
-				log("x = %i", chunk->world_index_x);
+			if (pair.second->x < world_boundary_index_x_neg) {
+				pair.second->phase = JCP_Available;
 			}
-			if (chunk->world_index_y < y_boundary_negative) {
-				chunk->phase = JCP_Available;
-				log("y = %i", chunk->world_index_y);
+			if (pair.second->y > world_boundary_index_y_pos) {
+				pair.second->phase = JCP_Available;
 			}
-			if (chunk->world_index_y > y_boundary_positive) {
-				chunk->phase = JCP_Available;
-				log("y = %i", chunk->world_index_y);
+			if (pair.second->y < world_boundary_index_y_neg) {
+				pair.second->phase = JCP_Available;
 			}
 		}
 	}
+#endif
 
 	if (player_on_same_chunk == false || force_regenerate) {
 		// int difference_x = current_chunk_player_x - gl_renderer->previous_chunk_player_x;
@@ -2933,69 +2924,51 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 		// 	chunk->is_apron = false;
 		// }
 
+		// Remove the values outside of the range
+		for (auto it = gl_renderer->chunks_to_draw.begin(); it != gl_renderer->chunks_to_draw.end();) {
+			auto& pair = *it;
+			// Only remove values that are FULLY meshed
+			if (pair.second->phase == JCP_Ready_For_Drawing &&
+				pair.second->ref_count <= 0) {
+				if (pair.second->x > world_boundary_index_x_pos ||
+					pair.second->x < world_boundary_index_x_neg ||
+					pair.second->y > world_boundary_index_y_pos ||
+					pair.second->y < world_boundary_index_y_neg) {
+					
+					glDeleteBuffers(1, &pair.second->vbo);
+					glDeleteBuffers(1, &pair.second->ebo);
+					delete pair.second;
+					// Erase the current element and update the iterator
+					it = gl_renderer->chunks_to_draw.erase(it);
+					// Skip the iterator increment to avoid invalidation
+					continue;  
+				}
+			}  
+			// Increment the iterator only if no erase happened
+			++it;
+		}
+
+		// Make sure the remove the value from the unordered map as well so we don't have a dangling pointer
+		std::vector<Chunk*> chunks_to_delete = {};
 		for (int x = -VIEW_DISTANCE - apron_size; x <= VIEW_DISTANCE + apron_size; x++) {
 			for (int y = -VIEW_DISTANCE - apron_size; y <= VIEW_DISTANCE + apron_size; y++) {
 				int world_index_x = x + current_chunk_player_x;
 				int world_index_y = y + current_chunk_player_y;
 
-				bool is_apron = false;
-				if (x == -VIEW_DISTANCE - apron_size ||
-					y == -VIEW_DISTANCE - apron_size ||
-					x == VIEW_DISTANCE + apron_size ||
-					y == VIEW_DISTANCE + apron_size) {
-					is_apron = true;
-				}
+				auto iterator = gl_renderer->chunks_to_draw.find(get_chunk_hash(world_index_x, world_index_y));
+				if (iterator != gl_renderer->chunks_to_draw.end()) {
+					// Don't do anything if the value is already generated
+					continue;
+				} else {
+					Chunk* new_chunk = new Chunk();
+					new_chunk->x = world_index_x;
+					new_chunk->y = world_index_y;
+					new_chunk->noise = noise;
 
-				bool already_generated = false;
-				for (Chunk* chunk_to_draw : gl_renderer->chunks_to_draw) {
-					// See if the coordinates are already inside the chunks_to_draw
-					if (chunk_to_draw->world_index_x == world_index_x &&
-						chunk_to_draw->world_index_y == world_index_y) {
-						if (is_apron) {
-							chunk_to_draw->phase = JCP_Available;
-							already_generated = false;
-						}
-						else {
-							already_generated = true;
-						}
-					}
-				}
+					new_chunk->phase = JCP_Chunking;
 
-				if (already_generated == false) {
-					bool slot_available = false;
-					// See if there is a empty spot in the chunks_to_draw vector
-					for (Chunk* chunk_to_draw : gl_renderer->chunks_to_draw) {
-						if (chunk_to_draw->phase == JCP_Available) {
-							chunk_to_draw->world_index_x = world_index_x;
-							chunk_to_draw->world_index_y = world_index_y;
-							chunk_to_draw->noise = noise;
-
-							chunk_to_draw->buffer_sub_data = true;
-							chunk_to_draw->phase = JCP_Chunking;
-
-							// NOTE: This does NOT increment the reference counter in shared pointer
-							log("Generate_Chunk_Perlin (Available slot) = %i", jobs_added);
-							jobs_added++;
-							add_job(JT_Generate_Chunk_Perlin, (void*)chunk_to_draw);
-							slot_available = true;
-							break;
-						}
-					}
-					// Create the chunk of the spot doesn't exist
-					if (slot_available == false) {
-						Chunk* new_chunk = new Chunk();
-						new_chunk->world_index_x = world_index_x;
-						new_chunk->world_index_y = world_index_y;
-						new_chunk->noise = noise;
-
-						new_chunk->buffer_sub_data = false;
-						new_chunk->phase = JCP_Chunking;
-
-						gl_renderer->chunks_to_draw.push_back(new_chunk);
-						log("Generate_Chunk_Perlin (No slot available) = %i", jobs_added);
-						jobs_added++;
-						add_job(JT_Generate_Chunk_Perlin, (void*)new_chunk);
-					}
+					gl_renderer->chunks_to_draw[get_chunk_hash(new_chunk->x, new_chunk->y)] = new_chunk;
+					add_job(JT_Generate_Chunk_Perlin, (void*)new_chunk);
 				}
 			}
 		}
@@ -3004,43 +2977,47 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 	}
 
 	// Meshing
-	for (Chunk* chunk_to_draw : gl_renderer->chunks_to_draw) {
-		if (chunk_to_draw->phase == JCP_Chunked) {
-			// SO I DONT MESH THE APRON
-			int world_boundary_index_x_pos = VIEW_DISTANCE + current_chunk_player_x;
-			int world_boundary_index_y_pos = VIEW_DISTANCE + current_chunk_player_y;
-			int world_boundary_index_x_neg = -VIEW_DISTANCE + current_chunk_player_x;
-			int world_boundary_index_y_neg = -VIEW_DISTANCE + current_chunk_player_y;
-			if (chunk_to_draw->world_index_x > world_boundary_index_x_neg &&
-				chunk_to_draw->world_index_x < world_boundary_index_x_pos &&
-				chunk_to_draw->world_index_y > world_boundary_index_y_neg &&
-				chunk_to_draw->world_index_y < world_boundary_index_y_pos) {
-				// We are grabbing these after we have chunked all the chunks
-				if (get_adjacent_chunks(gl_renderer, chunk_to_draw)) {
-					chunk_to_draw->phase = JCP_Meshing;
-					log("Generate_Chunk_Faces = %i", jobs_added);
-					jobs_added++;
-					add_job(JT_Generate_Chunk_Faces, (void*)chunk_to_draw);
+	for (auto& pair : gl_renderer->chunks_to_draw) {
+		// Only touch the chunks that are chunked (no longer being modified by a thread)
+		if (pair.second->phase == JCP_Chunked) {
+			if (pair.second->x >= world_boundary_index_x_neg &&
+				pair.second->x <= world_boundary_index_x_pos &&
+				pair.second->y >= world_boundary_index_y_neg &&
+				pair.second->y <= world_boundary_index_y_pos) {
+				if (get_adjacent_chunks(gl_renderer, pair.second)) {
+					pair.second->phase = JCP_Meshing;
+					add_job(JT_Generate_Chunk_Faces, (void*)pair.second);
+				} else {
+					// CHECK THIS CONDITION
+					log("adjacent_chunks returned false x=%i, y=%i", pair.second->x, pair.second->y);
 				}
+			// Apron
+			} else if (pair.second->x == world_boundary_index_x_neg - apron_size|| 
+				pair.second->x == world_boundary_index_x_pos + apron_size || 
+				pair.second->y == world_boundary_index_y_neg - apron_size || 
+				pair.second->y == world_boundary_index_y_pos + apron_size) {
+				continue;
+			// Remove what's left over
 			}
 		}
 	}
 
 	// Decrement the ref counter so we know we can delete/modify the chunks
-	for (Chunk* chunk_to_draw : gl_renderer->chunks_to_draw) {
-		if (chunk_to_draw->phase == JCP_Meshed) {
-			release_adjacent_chunks(chunk_to_draw);
+	for (auto& pair : gl_renderer->chunks_to_draw) {
+		if (pair.second->phase == JCP_Meshed) {
+			release_adjacent_chunks(pair.second);
 		}
 	}
 
-	for (Chunk* chunk_to_draw : gl_renderer->chunks_to_draw) {
-		if (chunk_to_draw->phase == JCP_Meshed) {
-			chunk_to_draw->phase = JCP_Buffering;
-			buffer_data(chunk_to_draw);
-			chunk_to_draw->phase = JCP_Ready_For_Drawing;
+	for (auto& pair : gl_renderer->chunks_to_draw) {
+		if (pair.second->phase == JCP_Meshed) {
+			pair.second->phase = JCP_Buffering;
+			buffer_data(pair.second);
+			pair.second->phase = JCP_Ready_For_Drawing;
 		}
 	}
 
+#if 0
 	// If we get to this point and it's still available, then just delete
 	std::erase_if(gl_renderer->chunks_to_draw, [](Chunk* chunk) {
 		if (chunk->phase == JCP_Available && chunk->ref_count <= 0) {
@@ -3051,6 +3028,7 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 		}
 		return false;
 	});
+#endif
 
 	gl_draw_cube_faces_vbo(gl_renderer, textures_handle);
 	force_regenerate = false;
@@ -3058,8 +3036,8 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 }
 
 void draw_wire_frames(GL_Renderer* gl_renderer){
-	for (int x = -VIEW_DISTANCE - apron_size; x < VIEW_DISTANCE + apron_size; x++) {
-		for (int y = -VIEW_DISTANCE - apron_size; y < VIEW_DISTANCE + apron_size; y++) {
+	for (int x = -VIEW_DISTANCE - apron_size; x <= VIEW_DISTANCE + apron_size; x++) {
+		for (int y = -VIEW_DISTANCE - apron_size; y <= VIEW_DISTANCE + apron_size; y++) {
 			int chunk_selected_x = x + gl_renderer->previous_chunk_player_x;
 			int chunk_selected_y = y + gl_renderer->previous_chunk_player_y;
 			// This is the corner position of the chunk. 
@@ -3074,24 +3052,6 @@ void draw_wire_frames(GL_Renderer* gl_renderer){
 			int l = CHUNK_LENGTH;
 			int h = CHUNK_HEIGHT;
 
-#if 0
-			// Left face
-			gl_draw_line(gl_renderer, { 1, 0, 0, 1 }, { p1.x,	  p1.y,     p1.z     }, { p2.x + w, p2.y,     p2.z    }); 
-			gl_draw_line(gl_renderer, { 1, 0, 0, 1 }, { p1.x + w, p1.y,     p1.z     }, { p2.x + w, p2.y,     p2.z + h}); 
-			gl_draw_line(gl_renderer, { 1, 0, 0, 1 }, { p1.x + w, p1.y,		p1.z + h }, { p2.x,     p2.y,     p2.z + h}); 
-			gl_draw_line(gl_renderer, { 1, 0, 0, 1 }, { p1.x,	  p1.y,		p1.z + h }, { p2.x,     p2.y,     p2.z    }); 
-			// Right face
-			gl_draw_line(gl_renderer, { 1, 0, 0, 1 }, { p1.x,	  p1.y + l,     p1.z},     { p2.x + w, p2.y + l,     p2.z    });
-			gl_draw_line(gl_renderer, { 1, 0, 0, 1 }, { p1.x + w, p1.y + l,     p1.z},	   { p2.x + w, p2.y + l,	 p2.z + h}); 
-			gl_draw_line(gl_renderer, { 1, 0, 0, 1 }, { p1.x + w, p1.y + l,     p1.z + h}, { p2.x,     p2.y + l,     p2.z + h}); 
-			gl_draw_line(gl_renderer, { 1, 0, 0, 1 }, { p1.x,	  p1.y + l,     p1.z + h}, { p2.x,     p2.y + l,     p2.z    }); 
-			// Connect the squares
-			gl_draw_line(gl_renderer, { 1, 0, 0, 1 }, { p1.x,	  p1.y,     p1.z     }, { p2.x,		p2.y + l, p2.z});
-			gl_draw_line(gl_renderer, { 1, 0, 0, 1 }, { p1.x + w, p1.y,     p1.z     }, { p2.x + w, p2.y + l, p2.z + h}); 
-			gl_draw_line(gl_renderer, { 1, 0, 0, 1 }, { p1.x + w, p1.y,     p1.z + h }, { p2.x + w, p2.y + l, p2.z + h}); 
-			gl_draw_line(gl_renderer, { 1, 0, 0, 1 }, { p1.x,	  p1.y,     p1.z + h }, { p2.x,     p2.y + l, p2.z});  
-#endif
-
 			// Left face (Y-Z plane)
 			gl_draw_line(gl_renderer, { 1, 0, 0, 1 }, { p1.x,	  p1.y,     p1.z     }, { p2.x,     p2.y + l, p2.z    }); 
 			gl_draw_line(gl_renderer, { 1, 0, 0, 1 }, { p1.x,     p1.y + l, p1.z     }, { p2.x,     p2.y + l, p2.z + h}); 
@@ -3105,13 +3065,12 @@ void draw_wire_frames(GL_Renderer* gl_renderer){
 			gl_draw_line(gl_renderer, { 1, 0, 0, 1 }, { p1.x + w, p1.y,     p1.z + h }, { p2.x + w, p2.y,     p2.z    });
 
 			// Connect the squares (X-Z plane)
-			gl_draw_line(gl_renderer, { 0, 0, 0, 1 }, { p1.x,	  p1.y,     p1.z     }, { p2.x + w, p2.y,     p2.z    });
+			gl_draw_line(gl_renderer, { 1, 0, 0, 1 }, { p1.x,	  p1.y,     p1.z     }, { p2.x + w, p2.y,     p2.z    });
 			gl_draw_line(gl_renderer, { 1, 0, 0, 1 }, { p1.x + w, p1.y,     p1.z     }, { p2.x + w, p2.y,     p2.z + h}); 
 			gl_draw_line(gl_renderer, { 1, 0, 0, 1 }, { p1.x + w, p1.y,     p1.z + h }, { p2.x,     p2.y,     p2.z + h}); 
 			gl_draw_line(gl_renderer, { 1, 0, 0, 1 }, { p1.x,	  p1.y,     p1.z + h }, { p2.x,     p2.y,     p2.z    });
-			if (y == (VIEW_DISTANCE + apron_size) - 1) {
-				gl_draw_line(gl_renderer, { 1, 0, 0, 1 }, { p1.x + w, p1.y + w,     p1.z + h }, { p2.x,     p2.y + w,     p2.z + h}); 
-			}
+			gl_draw_line(gl_renderer, { 1, 0, 0, 1 }, { p1.x + w, p1.y + w, p1.z + h }, { p2.x,     p2.y + w, p2.z + h}); 
+			gl_draw_line(gl_renderer, { 1, 0, 0, 1 }, { p1.x + w, p1.y + w, p1.z     }, { p2.x,     p2.y + w, p2.z    }); 
 		}
 	}
 }
@@ -3206,10 +3165,10 @@ void check_player_collision(GL_Renderer* gl_renderer) {
 	log("Chunk player is on: x = %i, y = %i", chunk_player_is_on_x, chunk_player_is_on_y);
 
 	Chunk* chunk_player_is_on = nullptr;
-	for (Chunk* chunk : gl_renderer->chunks_to_draw) {
-		if (chunk->world_index_x == chunk_player_is_on_x
-			&& chunk->world_index_y == chunk_player_is_on_y) {
-			chunk_player_is_on = chunk;
+	for (auto& pair : gl_renderer->chunks_to_draw) {
+		if (pair.second->x == chunk_player_is_on_x
+			&& pair.second->y == chunk_player_is_on_y) {
+			chunk_player_is_on = pair.second;
 		}
 	}
 	if (chunk_player_is_on == nullptr) {
@@ -3291,12 +3250,12 @@ void check_player_collision(GL_Renderer* gl_renderer) {
 }
 
 void draw_cube_coordinates(GL_Renderer* gl_renderer, Font* font) {
-	for (Chunk* chunk : gl_renderer->chunks_to_draw) {
+	for (auto& pair : gl_renderer->chunks_to_draw) {
 		for (int x = 0; x < CHUNK_WIDTH; x++) {
 			for (int y = 0; y < CHUNK_LENGTH; y++) {
 				V3 cube_pos = { (float)x, (float)y, (float)CHUNK_HEIGHT };
-				cube_pos.x += chunk->world_index_x * CHUNK_WIDTH;
-				cube_pos.y += chunk->world_index_y * CHUNK_LENGTH;
+				cube_pos.x += pair.second->x * CHUNK_WIDTH;
+				cube_pos.y += pair.second->y * CHUNK_LENGTH;
 				std::string str = "[" + std::to_string(x) + "," + std::to_string(y) + "]";
 				draw_string_ws(gl_renderer, font, str.c_str(), cube_pos, 2, false);
 			}
@@ -3425,8 +3384,6 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 
 		update_fireballs(gl_renderer);
 
-		wake_up_threads();
-
 		// Collision
 		if (apply_player_collision) {
 			check_player_collision(gl_renderer);
@@ -3529,16 +3486,21 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		draw_string_ws(gl_renderer, &font, "z", { 0, 0, 5 }, 3, true);
 
 		if (toggle_debug_info) {
-			for (Chunk* chunk : gl_renderer->chunks_to_draw) {
-				std::string str = std::to_string(chunk->world_index_x) + "," + std::to_string(chunk->world_index_y);
-				V3 chunk_pos = { (float)chunk->world_index_x * CHUNK_WIDTH, (float)chunk->world_index_y * CHUNK_LENGTH, (float)CHUNK_HEIGHT };
+			int world_boundary_index_x_pos = VIEW_DISTANCE +  gl_renderer->previous_chunk_player_x;
+			int world_boundary_index_y_pos = VIEW_DISTANCE +  gl_renderer->previous_chunk_player_y;
+			int world_boundary_index_x_neg = -VIEW_DISTANCE + gl_renderer->previous_chunk_player_x;
+			int world_boundary_index_y_neg = -VIEW_DISTANCE + gl_renderer->previous_chunk_player_y;
+
+			for (auto& pair : gl_renderer->chunks_to_draw) {
 				// chunk_pos.x += CHUNK_WIDTH / 2;
 				// chunk_pos.y += CHUNK_LENGTH / 2;
-				if (chunk->phase == JCP_Chunked) {
-					std::string apron_str = "AP";
-					draw_string_ws(gl_renderer, &font, apron_str.c_str(), chunk_pos, 1, false);
-				}
-				else {
+				if (pair.second->x >= world_boundary_index_x_neg &&
+					pair.second->x <= world_boundary_index_x_pos &&
+					pair.second->y >= world_boundary_index_y_neg &&
+					pair.second->y <= world_boundary_index_y_pos &&
+					pair.second->phase == JCP_Ready_For_Drawing) {
+					std::string str = std::to_string(pair.second->x) + "," + std::to_string(pair.second->y);
+					V3 chunk_pos = { (float)pair.second->x * CHUNK_WIDTH, (float)pair.second->y * CHUNK_LENGTH, (float)CHUNK_HEIGHT };
 					draw_string_ws(gl_renderer, &font, str.c_str(), chunk_pos, 1, false);
 				}
 			}

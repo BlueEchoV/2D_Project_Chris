@@ -9,7 +9,7 @@ std::mutex job_mutex;
 std::queue<Job> job_list = {};
 
 const int TOTAL_THREADS = 16;
-std::counting_semaphore<TOTAL_THREADS> semaphore(0);
+std::counting_semaphore<4000000000> semaphore(0);
 std::vector<std::thread> threads;
 
 // Returns a reference to the job for keeping track of them
@@ -21,12 +21,21 @@ void add_job(Job_Type type, void* data) {
 	new_job.data = data;
 	job_mutex.lock();
 	job_list.push(new_job);
+	semaphore.release();
 	job_mutex.unlock();
 }
 
 bool should_terminate_threads = false;
 void terminate_all_threads() {
 	should_terminate_threads = true;
+	job_mutex.lock();
+	// This should work fine because I'm not calling new
+	std::queue<Job> empty_job_list;
+	std::swap(job_list, empty_job_list);
+	job_mutex.unlock();
+	for (std::thread& thread : threads) {
+		thread.join();
+	}
 	for (int i = 0; i < TOTAL_THREADS; i++) {
 		// Wakeup all the threads to check the 
 		// should_terminate_threads variable
@@ -34,19 +43,9 @@ void terminate_all_threads() {
 	}
 }
 
-std::atomic<int> current_threads_awakened = 0;
-void wake_up_threads() {
-	job_mutex.lock();
-	if (!job_list.empty() && current_threads_awakened <= TOTAL_THREADS) {
-		semaphore.release();
-		current_threads_awakened++;
-	}
-	job_mutex.unlock();
-}
-
 void thread_worker(void(*execute_job_type)(Job_Type, void*)) {
     while (true) {
-		// ZoneScoped;
+		ZoneScoped;
 		if (should_terminate_threads) {
 			break;
 		}
@@ -71,7 +70,6 @@ void thread_worker(void(*execute_job_type)(Job_Type, void*)) {
 		if (job_available) {
 			execute_job_type(job.type, job.data);
 		}
-		current_threads_awakened--;
     }
 }
 
