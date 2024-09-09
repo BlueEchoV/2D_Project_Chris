@@ -239,10 +239,28 @@ uint64_t get_chunk_hash(int x, int y) {
 	return ((x * PRIME) + y);
 }
 
+struct Chunk_Index {
+    int x;
+    int y;
+
+    bool operator==(const Chunk_Index& other) const {
+        return x == other.x && y == other.y;
+    }
+};
+
+struct Chunk_Index_Hash {
+    std::size_t operator()(const Chunk_Index& index) const {
+        std::size_t hash_x = std::hash<int>{}(index.x);
+        std::size_t hash_y = std::hash<int>{}(index.y);
+		// Combine the hashes
+        return hash_x ^ (hash_y << 1);
+    }
+};
+
 struct Chunk {
 	std::atomic<int> ref_count = 0;
-	int x;
-	int y;
+	
+	Chunk_Index index;
 	int distance;
 	GLuint ebo;
 
@@ -271,7 +289,8 @@ struct GL_Renderer {
 	std::vector<Cube_Draw> cubes;
 	std::vector<Vertex_String> strings;
 	// std::vector<Chunk*> chunks_to_draw;
-	std::unordered_map<uint64_t, Chunk*> chunks_to_draw;
+	//										This is the custom hash function
+	std::unordered_map<Chunk_Index, Chunk*, Chunk_Index_Hash> chunks_to_draw;
 	std::vector<Chunk*> finalized_chunks_to_draw;
 	std::vector<Vertex_3D> quads_to_draw;
 
@@ -1515,8 +1534,8 @@ void generate_chunk_perlin(Chunk* new_chunk) {
 
 	for (int x = 0; x < CHUNK_WIDTH; x++) {
 		for (int y = 0; y < CHUNK_LENGTH; y++) {
-			float world_space_x = x + (float)new_chunk->x * CHUNK_WIDTH;
-			float world_space_y = y + (float)new_chunk->y * CHUNK_LENGTH;
+			float world_space_x = x + (float)new_chunk->index.x * CHUNK_WIDTH;
+			float world_space_y = y + (float)new_chunk->index.y * CHUNK_LENGTH;
 			float height_value = stb_perlin_noise3((float)world_space_x / new_chunk->noise, 0, world_space_y / new_chunk->noise, 0, 0, 0);
 			// The perlin value is between -1 and 1, and this line normalizes it to a 
 			// range of 0 to CHUNK_HEIGHT, determining the height of the terrain
@@ -1561,14 +1580,6 @@ void generate_chunk_perlin(Chunk* new_chunk) {
 	}
 }
 
-Chunk* get_existing_chunk(GL_Renderer* gl_renderer, int x, int y) {
-	auto iterator = gl_renderer->chunks_to_draw.find(get_chunk_hash(x, y));
-	if (iterator != gl_renderer->chunks_to_draw.end()) {
-		return iterator->second;
-	}
-	return nullptr;
-}
-
 void generate_chunk_faces(Chunk* chunk) {
 	ZoneScoped;
 	if (chunk == nullptr) {
@@ -1582,7 +1593,7 @@ void generate_chunk_faces(Chunk* chunk) {
 	chunk->faces_indices.clear();
 	std::vector<UINT32>& faces_indices = chunk->faces_indices;
 	faces_indices.reserve(4096);
-	V3 chunk_ws_pos = { chunk->x * (float)CHUNK_WIDTH, chunk->y * (float)CHUNK_LENGTH, 0 };
+	V3 chunk_ws_pos = { chunk->index.x * (float)CHUNK_WIDTH, chunk->index.y * (float)CHUNK_LENGTH, 0 };
 	for (int x = 0; x < CHUNK_WIDTH; x++) {
 		for (int y = 0; y < CHUNK_LENGTH; y++) {
 			for (int z = 0; z < CHUNK_HEIGHT; z++) {
@@ -2271,13 +2282,17 @@ void get_player_chunk(GL_Renderer* gl_renderer, int& x, int& y) {
 }
 
 bool get_adjacent_chunks(GL_Renderer* gl_renderer, Chunk* chunk) {
-	int chunk_world_index_x = chunk->x;
-	int chunk_world_index_y = chunk->y;
+	Chunk_Index front_index = {chunk->index.x + 1, chunk->index.y};
+	Chunk* front_chunk = gl_renderer->chunks_to_draw[front_index];
 
-	Chunk* front_chunk = get_existing_chunk(gl_renderer, chunk_world_index_x + 1, chunk_world_index_y);
-	Chunk* right_chunk = get_existing_chunk(gl_renderer, chunk_world_index_x, chunk_world_index_y + 1);
-	Chunk* back_chunk = get_existing_chunk(gl_renderer, chunk_world_index_x - 1, chunk_world_index_y);
-	Chunk* left_chunk = get_existing_chunk(gl_renderer, chunk_world_index_x, chunk_world_index_y - 1);
+	Chunk_Index right_index = {chunk->index.x, chunk->index.y + 1};
+	Chunk* right_chunk = gl_renderer->chunks_to_draw[right_index];
+	
+	Chunk_Index back_index = {chunk->index.x - 1, chunk->index.y};
+	Chunk* back_chunk = gl_renderer->chunks_to_draw[back_index];
+
+	Chunk_Index left_index = {chunk->index.x, chunk->index.y - 1};
+	Chunk* left_chunk = gl_renderer->chunks_to_draw[left_index];
 
 	if (front_chunk == nullptr || 
 		right_chunk == nullptr || 
@@ -2344,53 +2359,57 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 		gl_renderer->previous_chunk_player_x = current_chunk_player_x;
 		gl_renderer->previous_chunk_player_y = current_chunk_player_y;
 		log("Player x=%i, y=%i", current_chunk_player_x, current_chunk_player_y);
+		{
+			ZoneScopedN("Just the loop");
+			profile_time_to_execute_start_milliseconds();
+			for (int x = -VIEW_DISTANCE - apron_size; x <= VIEW_DISTANCE + apron_size; x++) {
+				for (int y = -VIEW_DISTANCE - apron_size; y <= VIEW_DISTANCE + apron_size; y++) {
+					int world_index_x = x + current_chunk_player_x;
+					int world_index_y = y + current_chunk_player_y;
 
-		profile_time_to_execute_start_milliseconds();
-		for (int x = -VIEW_DISTANCE - apron_size; x <= VIEW_DISTANCE + apron_size; x++) {
-			for (int y = -VIEW_DISTANCE - apron_size; y <= VIEW_DISTANCE + apron_size; y++) {
-				int world_index_x = x + current_chunk_player_x;
-				int world_index_y = y + current_chunk_player_y;
+					Chunk_Index index = { world_index_x, world_index_y };
+					auto iterator = gl_renderer->chunks_to_draw.find(index);
+					if (iterator != gl_renderer->chunks_to_draw.end()) {
+						// Don't do anything if the value is already generated
+						continue;
+					}
+					else {
+						ZoneScopedN("Inside the loop (else)");
+						Chunk* new_chunk = new Chunk();
+						new_chunk->index.x = world_index_x;
+						new_chunk->index.y = world_index_y;
+						new_chunk->noise = noise;
 
-				uint64_t hash_value = get_chunk_hash(world_index_x, world_index_y);
-				auto iterator = gl_renderer->chunks_to_draw.find(hash_value);
-				if (iterator != gl_renderer->chunks_to_draw.end()) {
-					// Don't do anything if the value is already generated
-					continue;
-				} else {
-					Chunk* new_chunk = new Chunk();
-					new_chunk->x = world_index_x;
-					new_chunk->y = world_index_y;
-					new_chunk->noise = noise;
+						new_chunk->phase = JCP_Chunking;
 
-					new_chunk->phase = JCP_Chunking;
+						new_chunk->distance = (int)calculate_distance_low_cost(
+							{ (float)current_chunk_player_x, (float)current_chunk_player_y },
+							{ (float)new_chunk->index.x,			 (float)new_chunk->index.y }
+						);
 
-					new_chunk->distance = (int)calculate_distance_low_cost(
-						{ (float)current_chunk_player_x, (float)current_chunk_player_y }, 
-						{ (float)new_chunk->x,			 (float)new_chunk->y }
-					);
-
-					gl_renderer->chunks_to_draw[hash_value] = new_chunk;
+						gl_renderer->chunks_to_draw[new_chunk->index] = new_chunk;
+					}
 				}
 			}
-		}
-		profile_time_to_execute_finish_milliseconds("Inside function", 1);
-		// log("Total draw calls: %i", (int)gl_renderer->chunks_to_draw.size());
-		// log("Total checked:    %i", total_checked);
-
-		gl_renderer->finalized_chunks_to_draw.clear();
-		gl_renderer->finalized_chunks_to_draw.reserve(2500);
-		for (const auto& pair : gl_renderer->chunks_to_draw) {
-			// Add key-value pair (hash and Chunk*) to vector
-			gl_renderer->finalized_chunks_to_draw.push_back(pair.second); 
+			profile_time_to_execute_finish_milliseconds("Inside function", 1);
 		}
 
-		std::sort(gl_renderer->finalized_chunks_to_draw.begin(), gl_renderer->finalized_chunks_to_draw.end(), [](const Chunk* a, const Chunk* b) {
-			return a->distance < b->distance;
-		});
+		{
+			ZoneScopedN("After the loop");
+			gl_renderer->finalized_chunks_to_draw.clear();
+			gl_renderer->finalized_chunks_to_draw.reserve(2500);
+			for (const auto& pair : gl_renderer->chunks_to_draw) {
+				gl_renderer->finalized_chunks_to_draw.push_back(pair.second);
+			}
 
-		for (Chunk* chunk : gl_renderer->finalized_chunks_to_draw) {
-			if (chunk->phase == JCP_Chunking) {
-				add_job(JT_Generate_Chunk_Perlin, (void*)chunk);
+			std::sort(gl_renderer->finalized_chunks_to_draw.begin(), gl_renderer->finalized_chunks_to_draw.end(), [](const Chunk* a, const Chunk* b) {
+				return a->distance < b->distance;
+				});
+
+			for (Chunk* chunk : gl_renderer->finalized_chunks_to_draw) {
+				if (chunk->phase == JCP_Chunking) {
+					add_job(JT_Generate_Chunk_Perlin, (void*)chunk);
+				}
 			}
 		}
 	}
@@ -2399,22 +2418,21 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 	for (Chunk* chunk : gl_renderer->finalized_chunks_to_draw) {
 		// Only touch the chunks that are chunked (no longer being modified by a thread)
 		if (chunk->phase == JCP_Chunked) {
-			if (chunk->x >= world_boundary_index_x_neg &&
-				chunk->x <= world_boundary_index_x_pos &&
-				chunk->y >= world_boundary_index_y_neg &&
-				chunk->y <= world_boundary_index_y_pos) {
+			if (chunk->index.x >= world_boundary_index_x_neg &&
+				chunk->index.x <= world_boundary_index_x_pos &&
+				chunk->index.y >= world_boundary_index_y_neg &&
+				chunk->index.y <= world_boundary_index_y_pos) {
 				if (get_adjacent_chunks(gl_renderer, chunk)) {
 					chunk->phase = JCP_Meshing;
 					add_job(JT_Generate_Chunk_Faces, (void*)chunk);
 				} else {
-					// CHECK THIS CONDITION
-					log("adjacent_chunks returned false x=%i, y=%i", chunk->x, chunk->y);
+					log("adjacent_chunks returned false x=%i, y=%i", chunk->index.x, chunk->index.y);
 				}
 			// Apron
-			} else if (chunk->x == world_boundary_index_x_neg - apron_size|| 
-				chunk->x == world_boundary_index_x_pos + apron_size || 
-				chunk->y == world_boundary_index_y_neg - apron_size || 
-				chunk->y == world_boundary_index_y_pos + apron_size) {
+			} else if (chunk->index.x == world_boundary_index_x_neg - apron_size|| 
+				chunk->index.x == world_boundary_index_x_pos + apron_size || 
+				chunk->index.y == world_boundary_index_y_neg - apron_size || 
+				chunk->index.y == world_boundary_index_y_pos + apron_size) {
 				if (chunk->phase == JCP_Meshed) {
 					assert(false);
 				}
@@ -2433,34 +2451,17 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 		}
 	}
 
-#if 0
-	// Remove the values outside of the range
-	for (auto iterator = gl_renderer->chunks_to_draw.begin(); iterator != gl_renderer->chunks_to_draw.end();) {
-		auto& pair = *iterator;
-		// Only remove values that are FULLY meshed
-		// It is set to destroyed if the memory has been cleaned up
-		if (pair.second->phase == JCP_Destroy) {
-			// Erase the current element and update the iterator 
-			iterator = gl_renderer->chunks_to_draw.erase(iterator);
-			// Skip the iterator increment to avoid invalidation
-			continue;  
-		}  
-		// Increment the iterator only if no erase happened
-		iterator++;
-	}
-#endif
-
 	// If we get to this point and it's still available, then just delete
 	// This does not clean up the memory.
 	std::erase_if(gl_renderer->finalized_chunks_to_draw, 
 		[gl_renderer, world_boundary_index_x_pos, world_boundary_index_x_neg, world_boundary_index_y_pos, world_boundary_index_y_neg]
 		(Chunk* chunk) {
 		if (chunk->phase == JCP_Ready_For_Drawing && chunk->ref_count <= 0) {
-			if (chunk->x > world_boundary_index_x_pos ||
-				chunk->x < world_boundary_index_x_neg ||
-				chunk->y > world_boundary_index_y_pos ||
-				chunk->y < world_boundary_index_y_neg) {
-				gl_renderer->chunks_to_draw.erase(get_chunk_hash(chunk->x, chunk->y));
+			if (chunk->index.x > world_boundary_index_x_pos ||
+				chunk->index.x < world_boundary_index_x_neg ||
+				chunk->index.y > world_boundary_index_y_pos ||
+				chunk->index.y < world_boundary_index_y_neg) {
+				gl_renderer->chunks_to_draw.erase(chunk->index);
 				glDeleteBuffers(1, &chunk->vbo);
 				glDeleteBuffers(1, &chunk->ebo);
 				delete chunk;
@@ -2606,8 +2607,8 @@ void check_player_collision(GL_Renderer* gl_renderer) {
 
 	Chunk* chunk_player_is_on = nullptr;
 	for (auto& pair : gl_renderer->chunks_to_draw) {
-		if (pair.second->x == chunk_player_is_on_x
-			&& pair.second->y == chunk_player_is_on_y) {
+		if (pair.second->index.x == chunk_player_is_on_x
+			&& pair.second->index.y == chunk_player_is_on_y) {
 			chunk_player_is_on = pair.second;
 		}
 	}
@@ -2694,8 +2695,8 @@ void draw_cube_coordinates(GL_Renderer* gl_renderer, Font* font) {
 		for (int x = 0; x < CHUNK_WIDTH; x++) {
 			for (int y = 0; y < CHUNK_LENGTH; y++) {
 				V3 cube_pos = { (float)x, (float)y, (float)CHUNK_HEIGHT };
-				cube_pos.x += pair.second->x * CHUNK_WIDTH;
-				cube_pos.y += pair.second->y * CHUNK_LENGTH;
+				cube_pos.x += pair.second->index.x * CHUNK_WIDTH;
+				cube_pos.y += pair.second->index.y * CHUNK_LENGTH;
 				std::string str = "[" + std::to_string(x) + "," + std::to_string(y) + "]";
 				draw_string_ws(gl_renderer, font, str.c_str(), cube_pos, 2, false);
 			}
@@ -2936,13 +2937,13 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 			for (auto& pair : gl_renderer->chunks_to_draw) {
 				// chunk_pos.x += CHUNK_WIDTH / 2;
 				// chunk_pos.y += CHUNK_LENGTH / 2;
-				if (pair.second->x >= world_boundary_index_x_neg &&
-					pair.second->x <= world_boundary_index_x_pos &&
-					pair.second->y >= world_boundary_index_y_neg &&
-					pair.second->y <= world_boundary_index_y_pos &&
+				if (pair.second->index.x >= world_boundary_index_x_neg &&
+					pair.second->index.x <= world_boundary_index_x_pos &&
+					pair.second->index.y >= world_boundary_index_y_neg &&
+					pair.second->index.y <= world_boundary_index_y_pos &&
 					pair.second->phase == JCP_Ready_For_Drawing) {
-					std::string str = std::to_string(pair.second->x) + "," + std::to_string(pair.second->y);
-					V3 chunk_pos = { (float)pair.second->x * CHUNK_WIDTH, (float)pair.second->y * CHUNK_LENGTH, (float)CHUNK_HEIGHT };
+					std::string str = std::to_string(pair.second->index.x) + "," + std::to_string(pair.second->index.y);
+					V3 chunk_pos = { (float)pair.second->index.x * CHUNK_WIDTH, (float)pair.second->index.y * CHUNK_LENGTH, (float)CHUNK_HEIGHT };
 					draw_string_ws(gl_renderer, &font, str.c_str(), chunk_pos, 1, false);
 				}
 			}

@@ -25,7 +25,7 @@ void add_job(Job_Type type, void* data) {
 	job_mutex.unlock();
 }
 
-bool should_terminate_threads = false;
+std::atomic<bool> should_terminate_threads = false;
 void terminate_all_threads() {
 	should_terminate_threads = true;
 	job_mutex.lock();
@@ -33,13 +33,13 @@ void terminate_all_threads() {
 	std::queue<Job> empty_job_list;
 	std::swap(job_list, empty_job_list);
 	job_mutex.unlock();
-	for (std::thread& thread : threads) {
-		thread.join();
-	}
 	for (int i = 0; i < TOTAL_THREADS; i++) {
 		// Wakeup all the threads to check the 
 		// should_terminate_threads variable
 		semaphore.release();
+	}
+	for (std::thread& thread : threads) {
+		thread.join();
 	}
 }
 
