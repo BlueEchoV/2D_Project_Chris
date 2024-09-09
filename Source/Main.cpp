@@ -280,10 +280,9 @@ struct Chunk {
 	Cube cubes[CHUNK_WIDTH][CHUNK_LENGTH][CHUNK_HEIGHT] = {};
 };
 
-#if 0
 const int MAX_CHUNKS = 5000;
 Chunk* all_chunks = nullptr;
-int chunks_count = 0;
+int next_free_chunk = 0;
 void pre_allocate_chunks() {
 	if (all_chunks == nullptr) {
 		all_chunks = new Chunk[MAX_CHUNKS];
@@ -295,7 +294,13 @@ void de_allocate_all_chunk() {
 		all_chunks = nullptr;
 	}
 }
-#endif
+Chunk* get_next_chunk() {
+	if (next_free_chunk < MAX_CHUNKS) {
+		return &all_chunks[next_free_chunk++];
+	}
+	assert(false);
+	return nullptr;
+}
 
 struct GL_Renderer {
 	HWND window;
@@ -2299,11 +2304,10 @@ void get_player_chunk(GL_Renderer* gl_renderer, int& x, int& y) {
 	}
 }
 
-void de_allocate_chunks(GL_Renderer* gl_renderer) {
+void de_allocate_chunks_gl_buffers(GL_Renderer* gl_renderer) {
 	for (auto& pair : gl_renderer->chunks_to_draw) {
 		glDeleteBuffers(1, &pair.second->vbo);
 		glDeleteBuffers(1, &pair.second->ebo);
-		delete pair.second;
 	}
 }
 
@@ -2418,7 +2422,7 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 							new_chunk = gl_renderer->chunk_memory_to_reuse.back();
 							gl_renderer->chunk_memory_to_reuse.pop_back();
 						} else {
-							new_chunk = new Chunk();
+							new_chunk = get_next_chunk();
 						}
 
 						if (new_chunk == nullptr) {
@@ -2852,7 +2856,7 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 
 	init_job_system(execute_job_type); 
 
-	// pre_allocate_chunks();
+	pre_allocate_chunks();
 
 	bool running = true;
 	while (running) {
@@ -3015,8 +3019,8 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		
 		Sleep(10);
 	}
-	// de_allocate_all_chunk();
-	de_allocate_chunks(gl_renderer);
+	de_allocate_chunks_gl_buffers(gl_renderer);
+	de_allocate_all_chunk();
 	terminate_all_threads();
 	// TODO: Clean up shaders
 	//      glDeleteShader(vertex_shader);
