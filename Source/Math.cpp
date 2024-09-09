@@ -4,9 +4,8 @@ float calculate_distance(V2 p1, V2 p2) {
     return (float)sqrt(((p2.x - p1.x) * (p2.x - p1.x)) + ((p2.y - p1.y) * (p2.y - p1.y)));
 }
 
-// Monotonic
-float calculate_distance_low_cost(V2 p1, V2 p2) {
-    return ((p2.x - p1.x) * (p2.x - p1.x)) + ((p2.y - p1.y) * (p2.y - p1.y));
+int calculate_manhattan_distance(V2 p1, V2 p2) {
+    return abs((int)p2.x - (int)p1.x) + abs((int)p2.y - (int)p1.y);
 }
 
 // NOTE: COLUMN MAJOR

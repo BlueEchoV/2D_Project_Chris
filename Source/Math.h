@@ -27,7 +27,7 @@ union V4 {
 };
 
 float calculate_distance(V2 p1, V2 p2);
-float calculate_distance_low_cost(V2 p1, V2 p2);
+int calculate_manhattan_distance(V2 p1, V2 p2);
 
 struct Color_f {
 	float r;

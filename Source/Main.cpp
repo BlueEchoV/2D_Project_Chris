@@ -280,6 +280,23 @@ struct Chunk {
 	Cube cubes[CHUNK_WIDTH][CHUNK_LENGTH][CHUNK_HEIGHT] = {};
 };
 
+#if 0
+const int MAX_CHUNKS = 5000;
+Chunk* all_chunks = nullptr;
+int chunks_count = 0;
+void pre_allocate_chunks() {
+	if (all_chunks == nullptr) {
+		all_chunks = new Chunk[MAX_CHUNKS];
+	}
+}
+void de_allocate_all_chunk() {
+	if (all_chunks != nullptr) {
+		delete[] all_chunks;
+		all_chunks = nullptr;
+	}
+}
+#endif
+
 struct GL_Renderer {
 	HWND window;
 	HDC hdc;
@@ -291,6 +308,7 @@ struct GL_Renderer {
 	// std::vector<Chunk*> chunks_to_draw;
 	//										This is the custom hash function
 	std::unordered_map<Chunk_Index, Chunk*, Chunk_Index_Hash> chunks_to_draw;
+	std::vector<Chunk*> chunk_memory_to_reuse;
 	std::vector<Chunk*> finalized_chunks_to_draw;
 	std::vector<Vertex_3D> quads_to_draw;
 
@@ -2281,6 +2299,14 @@ void get_player_chunk(GL_Renderer* gl_renderer, int& x, int& y) {
 	}
 }
 
+void de_allocate_chunks(GL_Renderer* gl_renderer) {
+	for (auto& pair : gl_renderer->chunks_to_draw) {
+		glDeleteBuffers(1, &pair.second->vbo);
+		glDeleteBuffers(1, &pair.second->ebo);
+		delete pair.second;
+	}
+}
+
 bool get_adjacent_chunks(GL_Renderer* gl_renderer, Chunk* chunk) {
 	Chunk_Index front_index = {chunk->index.x + 1, chunk->index.y};
 	Chunk* front_chunk = gl_renderer->chunks_to_draw[front_index];
@@ -2375,16 +2401,38 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 					}
 					else {
 						ZoneScopedN("Inside the loop (else)");
-						Chunk* new_chunk = new Chunk();
+						/*
+						Chunk* new_chunk = nullptr;
+						if (chunks_count < MAX_CHUNKS) {
+							new_chunk = &all_chunks[chunks_count];
+						} else {
+							assert(false);
+						}
+						if (new_chunk == nullptr) {
+							assert(false);
+						}
+						*/
+						Chunk* new_chunk = nullptr;
+						// Reuse the previous chunk spaces
+						if (gl_renderer->chunk_memory_to_reuse.size() > 0) {
+							new_chunk = gl_renderer->chunk_memory_to_reuse.back();
+							gl_renderer->chunk_memory_to_reuse.pop_back();
+						} else {
+							new_chunk = new Chunk();
+						}
+
+						if (new_chunk == nullptr) {
+							assert(false);
+						}
 						new_chunk->index.x = world_index_x;
 						new_chunk->index.y = world_index_y;
 						new_chunk->noise = noise;
 
 						new_chunk->phase = JCP_Chunking;
 
-						new_chunk->distance = (int)calculate_distance_low_cost(
+						new_chunk->distance = (int)calculate_manhattan_distance(
 							{ (float)current_chunk_player_x, (float)current_chunk_player_y },
-							{ (float)new_chunk->index.x,			 (float)new_chunk->index.y }
+							{ (float)new_chunk->index.x, (float)new_chunk->index.y }
 						);
 
 						gl_renderer->chunks_to_draw[new_chunk->index] = new_chunk;
@@ -2461,10 +2509,15 @@ void generate_and_draw_chunks_around_player(GL_Renderer* gl_renderer, GLuint tex
 				chunk->index.x < world_boundary_index_x_neg ||
 				chunk->index.y > world_boundary_index_y_pos ||
 				chunk->index.y < world_boundary_index_y_neg) {
+				// Reuse the chunks
 				gl_renderer->chunks_to_draw.erase(chunk->index);
-				glDeleteBuffers(1, &chunk->vbo);
-				glDeleteBuffers(1, &chunk->ebo);
-				delete chunk;
+				chunk->phase = JCP_Available;
+				chunk->faces_indices.clear();
+				chunk->faces_vertices.clear();
+				gl_renderer->chunk_memory_to_reuse.push_back(chunk);
+				// glDeleteBuffers(1, &chunk->vbo);
+				// glDeleteBuffers(1, &chunk->ebo);
+				// delete chunk;
 				return true;
 			}
 		}
@@ -2799,6 +2852,8 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 
 	init_job_system(execute_job_type); 
 
+	// pre_allocate_chunks();
+
 	bool running = true;
 	while (running) {
 		// Scope inside of a function (Use ZoneScope for the whole scope)
@@ -2960,6 +3015,8 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 		
 		Sleep(10);
 	}
+	// de_allocate_all_chunk();
+	de_allocate_chunks(gl_renderer);
 	terminate_all_threads();
 	// TODO: Clean up shaders
 	//      glDeleteShader(vertex_shader);
